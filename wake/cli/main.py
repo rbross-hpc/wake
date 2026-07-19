@@ -123,11 +123,11 @@ def _build_override_parser(sub) -> None:
         help="Record a human-reviewed relationship override for one citing work. "
              "Wins over the LLM classification in the next render.",
     )
+    from ..classify import RELATIONSHIPS
     p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     p.add_argument("citing_id", help="OpenAlex ID of the citing work to override.")
     p.add_argument("--relationship", required=True,
-                   choices=["extends", "builds-on", "uses-as-tool", "benchmarks",
-                            "applies-to-domain", "background-mention"],
+                   choices=RELATIONSHIPS,
                    help="The corrected relationship class.")
     p.add_argument("--justification", default="", help="One-line justification for the override.")
 
@@ -330,18 +330,22 @@ def run_classify(args) -> None:
 
     from collections import Counter
     classified_only = [w for w in result if w.get("relationship")]
+    errored_only = [w for w in result if w.get("error") and not w.get("relationship")]
     counts = Counter(w.get("relationship", "?") for w in classified_only)
 
     data = {
         "dry_run": args.dry_run,
         "total_citing": len(citing),
         "classified_count": len(classified_only),
+        "error_count": len(errored_only),
         "by_relationship": dict(counts),
     }
 
     def human(d):
         label = "Would classify" if d["dry_run"] else "Classified"
         print(f"{label}: {d['classified_count']:,} of {d['total_citing']:,} citing works")
+        if d["error_count"]:
+            print(f"  ({d['error_count']:,} failed and will be retried on next run)")
         for rel, cnt in sorted(d["by_relationship"].items(), key=lambda x: x[1], reverse=True):
             print(f"  {rel:<25} {cnt:>5}")
 

@@ -109,3 +109,35 @@ def test_classify_all_scoped_run_preserves_prior_classifications(tmp_path):
         assert first_id in classified_ids, "prior classification must be preserved"
         assert second_id in classified_ids
         assert len(classified2) == 2
+
+
+def test_classify_all_backfills_missing_abstract_before_classifying(tmp_path):
+    """Works with no abstract should be backfilled (if a DOI is present)
+    before being sent to the LLM, so classify_one sees the recovered text."""
+    no_abstract_work = {
+        **SAMPLE_CITING_WORKS[0],
+        "openalex_id": "W1000000099",
+        "abstract": None,
+        "doi": "10.1234/no-abstract-fixture",
+    }
+    assert no_abstract_work["abstract"] is None
+    assert no_abstract_work["doi"]
+
+    seen_abstracts = []
+
+    def _capturing_chat_json(system, user, **kwargs):
+        seen_abstracts.append(user)
+        return {"relationship": "uses-as-tool", "confidence": 0.7, "justification": "x"}
+
+    with patch("wake.classify.chat_json", side_effect=_capturing_chat_json), \
+         patch("wake.backfill.backfill_one", side_effect=lambda w, **kw: {**w, "abstract": "Recovered abstract text.", "abstract_source": "osti"}) as mock_backfill:
+        result = classify_all(
+            PARALLEL_NETCDF_WORK, [no_abstract_work],
+            base=tmp_path, inter_call_delay=0, verbose=False,
+        )
+
+    mock_backfill.assert_called_once()
+    assert any("Recovered abstract text." in u for u in seen_abstracts)
+    classified = [w for w in result if w.get("relationship")]
+    assert len(classified) == 1
+    assert classified[0]["has_abstract"] is True

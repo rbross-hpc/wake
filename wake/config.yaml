@@ -1,20 +1,35 @@
 models:
-  describe: "Claude Sonnet 4.7"
-  classify: "Claude Sonnet 4.7"
+  describe: "Claude Sonnet 4.6"
+  classify: "Claude Sonnet 4.6"
 
 openalex:
   rate_limit_s: 1.0
   per_page: 200
   mailto_default: "rross@anl.gov"
 
+# Lazy abstract backfill: when a citing work selected for classification has
+# no OpenAlex abstract, try these sources in order before falling back to
+# title+venue-only classification. Tried once per citing work; result is
+# cached in the classify sidecar (abstract_source field) so it's never
+# re-fetched. OSTI first (free, no rate limit, high precision but DOE-only
+# coverage); Semantic Scholar second (unauthenticated, ~100 req/5min,
+# broader coverage). Both return None quickly on a miss.
+abstract_backfill:
+  enabled: true
+  sources: [osti, semanticscholar]
+  rate_limit_s:
+    osti: 0.5
+    semanticscholar: 1.2
+
 classify:
-  prompt_version: "classify-1"
+  prompt_version: "classify-2"
   relationships:
     - extends
     - builds-on
     - uses-as-tool
     - benchmarks
     - applies-to-domain
+    - related-infrastructure
     - background-mention
 
 describe:
