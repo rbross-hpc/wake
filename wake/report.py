@@ -124,6 +124,7 @@ def build_metrics(
     by_field: dict[str, int] = Counter()
     highly_cited = 0
     no_abstract = 0
+    backfilled_abstract = 0
 
     for w in citing_works:
         yr = w.get("year")
@@ -137,6 +138,8 @@ def build_metrics(
             highly_cited += 1
         if not w.get("has_abstract"):
             no_abstract += 1
+        if w.get("abstract_source"):
+            backfilled_abstract += 1
 
     by_relationship: dict[str, int] = Counter()
     for w in classified:
@@ -161,6 +164,7 @@ def build_metrics(
         "coverage": round(coverage, 4),
         "highly_cited_citing": highly_cited,
         "no_abstract_count": no_abstract,
+        "backfilled_abstract_count": backfilled_abstract,
         "by_year": per_year_sorted,
         "by_relationship": dict(by_relationship),
         "by_venue_type": dict(by_venue_type),
@@ -239,11 +243,14 @@ def render_markdown(
     total = metrics["total_citing_works"]
     highly_cited = metrics["highly_cited_citing"]
     no_abstract = metrics["no_abstract_count"]
+    backfilled = metrics.get("backfilled_abstract_count", 0)
     lines.append(f"- **{total:,}** works cite this paper")
     if highly_cited:
         lines.append(f"- **{highly_cited:,}** of those are themselves highly cited (≥50 citations)")
+    if backfilled:
+        lines.append(f"- {backfilled:,} abstracts recovered via OSTI/Semantic Scholar backfill (OpenAlex lacked them)")
     if no_abstract:
-        lines.append(f"- {no_abstract:,} citing works lack an abstract (classified from title/venue only)")
+        lines.append(f"- {no_abstract:,} citing works still lack an abstract (classified from title/venue only)")
     lines.append("")
 
     by_year = metrics.get("by_year", [])

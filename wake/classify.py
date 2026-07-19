@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import backfill as backfill_mod
 from . import config, cost as cost_mod
 from .citing import sort_works
 from .errors import RateLimited
@@ -256,6 +257,8 @@ def classify_all(
         to_call += 1
         if dry_run:
             continue
+
+        cw = backfill_mod.backfill_one(cw, verbose=verbose)
 
         try:
             result = classify_one(seed_work, cw, seed_id=seed_id, base=base, record_cost=record_cost)
