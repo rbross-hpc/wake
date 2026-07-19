@@ -7,3 +7,5 @@ build/
 wake-out/
 *.tmp
 .DS_Store
+AGENTS.md
+opencode.json
