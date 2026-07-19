@@ -44,6 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_fill_abstract_parser(sub)
     _build_fetch_pdf_parser(sub)
     _build_evidence_parser(sub)
+    _build_theme_parser(sub)
     _build_bake_parser(sub)
     _build_override_parser(sub)
     _build_cost_parser(sub)
@@ -173,6 +174,45 @@ def _build_evidence_parser(sub) -> None:
                    help="Re-run verification even if a dossier already exists (re-fetches "
                         "the PDF only if not already cached; use `wake fetch-pdf --force` "
                         "separately to force a fresh PDF download).")
+
+
+def _build_theme_parser(sub) -> None:
+    p = sub.add_parser(
+        "theme",
+        help="Combined-evidence thematic documents synthesizing several citing works.",
+    )
+    ssub = p.add_subparsers(dest="theme_action", required=True, metavar="ACTION")
+
+    create = ssub.add_parser(
+        "create",
+        help="Write (or overwrite) a theme document. Always a draft -- no LLM call; "
+             "the agent supplies the title/summary/citing-ids after reading the "
+             "underlying dossiers/classifications itself.",
+    )
+    create.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    create.add_argument("slug", help="Theme identifier, e.g. 'earth-system-modeling' (lowercase, hyphenated).")
+    create.add_argument("--title", required=True, help="Human-readable theme title.")
+    create.add_argument("--summary", required=True, help="Synthesis paragraph, written by the agent.")
+    create.add_argument("--citing-ids", required=True, metavar="ID,ID,...",
+                         help="Comma-separated OpenAlex IDs of the citing works that support this theme.")
+
+    confirm = ssub.add_parser(
+        "confirm",
+        help="Human-approved sign-off promoting a theme from 'draft' to 'confirmed'. "
+             "Always run by the agent on the human's behalf, never by asking the human "
+             "to run this command themselves (see SKILL.md). Refuses unless every cited "
+             "work is already human-verified via `wake override`.",
+    )
+    confirm.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    confirm.add_argument("slug", help="Theme identifier to confirm.")
+
+    queue = ssub.add_parser(
+        "queue",
+        help="List outstanding work across all themes for a seed: citing works with no "
+             "evidence dossier yet, and dossiers that have appeared since a theme was "
+             "last created/reviewed but haven't been re-confirmed.",
+    )
+    queue.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
 
 def _build_bake_parser(sub) -> None:
@@ -627,6 +667,90 @@ def run_evidence(args) -> None:
     emit("evidence", result, as_json=args.json_out, human=human)
 
 
+def run_theme(args) -> None:
+    if args.theme_action == "create":
+        run_theme_create(args)
+    elif args.theme_action == "confirm":
+        run_theme_confirm(args)
+    elif args.theme_action == "queue":
+        run_theme_queue(args)
+
+
+def run_theme_create(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..themes import create_theme
+    base = _work_dir_base(args)
+    citing_ids = [c.strip() for c in args.citing_ids.split(",") if c.strip()]
+
+    try:
+        result = create_theme(
+            work, args.slug,
+            title=args.title, summary=args.summary, citing_ids=citing_ids,
+            base=base,
+        )
+    except ValueError as exc:
+        emit_error("theme", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        print(f"Theme written (draft): {d['theme_path']}")
+        if d["needs_evidence"]:
+            print(f"  {len(d['needs_evidence'])} cited work(s) have no evidence dossier yet: "
+                  f"{', '.join(d['needs_evidence'])}")
+        print("  Present to the human; run `wake theme confirm` on their behalf once "
+              "they approve (requires every cited work to be human-verified first).")
+
+    emit("theme", result, as_json=args.json_out, human=human)
+
+
+def run_theme_confirm(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..themes import confirm_theme
+    base = _work_dir_base(args)
+
+    try:
+        result = confirm_theme(work, args.slug, base=base)
+    except ValueError as exc:
+        emit_error("theme", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        if not d["ok"]:
+            print(d["message"])
+            return
+        print(f"Theme confirmed: {d['theme_path']}")
+
+    emit("theme", result, as_json=args.json_out, human=human)
+    if not result["ok"]:
+        sys.exit(1)
+
+
+def run_theme_queue(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..themes import list_theme_needs_evidence
+    base = _work_dir_base(args)
+
+    entries = list_theme_needs_evidence(work["openalex_id"], base)
+
+    def human(d):
+        if not d:
+            print("No outstanding theme work.")
+            return
+        by_theme: dict[str, list[dict]] = {}
+        for e in d:
+            by_theme.setdefault(e["theme_slug"], []).append(e)
+        for slug, items in by_theme.items():
+            print(f'Theme "{slug}":')
+            for item in items:
+                if item["status"] == "dossier-available-unreviewed":
+                    print(f"  {item['citing_id']} — dossier now available — re-review and "
+                          "re-run `wake theme create` to confirm it still supports this theme")
+                else:
+                    print(f"  {item['citing_id']} — still needs a `wake evidence` dossier")
+
+    emit("theme", {"queue": entries}, as_json=args.json_out, human=lambda d: human(d["queue"]))
+
+
 def run_bake(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
     from ..citing import load_citing
@@ -809,6 +933,8 @@ def main() -> None:
             run_fetch_pdf(args)
         elif args.command == "evidence":
             run_evidence(args)
+        elif args.command == "theme":
+            run_theme(args)
         elif args.command == "bake":
             run_bake(args)
         elif args.command == "override":

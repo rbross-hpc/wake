@@ -98,6 +98,9 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake fill-abstract <seed> <id>` | Manually resolve one via `--from-pdf` or `--text` |
 | `wake fetch-pdf <seed> <id>` | Try to automatically acquire a PDF (OSTI, Semantic Scholar, Unpaywall, arXiv, optional CORE) |
 | `wake evidence <seed> <id>` | Full-text verification: reads the whole PDF, proposes a relationship with quoted, page-cited passages |
+| `wake theme create <seed> <slug>` | Write a combined-evidence theme doc (`--title`, `--summary`, `--citing-ids`); always draft |
+| `wake theme confirm <seed> <slug>` | Human sign-off promoting a theme to confirmed; refuses unless all cited works are verified |
+| `wake theme queue <seed>` | List theme citing-works still needing an evidence dossier, or needing re-review |
 | `wake bake <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
 | `wake override <seed> <id>` | Record a human-reviewed relationship correction (`--verification-source human-judgment\|evidence-dossier`) |
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |
@@ -144,6 +147,10 @@ wake-out/<OpenAlex-ID>/
     <citing-id>.json        — same finding, structured
     index.md                — OKF catalog: Verified / Pending Review, ranked
     log.md                  — OKF chronological log of every investigation
+    themes/                 — combined-evidence syntheses (wake theme create)
+      <slug>.md               — OKF concept doc citing several works' findings
+      <slug>.json              — same theme, structured (status, citing_works)
+      index.md                 — OKF catalog: Confirmed / Draft
 ```
 
 ## Relationship Classes
@@ -288,6 +295,53 @@ and leaves the wiki untouched. Re-running `wake evidence --force` on an
 already-verified dossier resets it back to `pending-human-review` — a
 fresh full-text read is a new finding, not a continuation of the old
 sign-off.
+
+### Thematic synthesis (`wake theme`)
+
+When several citing works together support a broader claim (e.g.
+"extensive use in Earth system modeling"), synthesize them into one
+document instead of listing them separately:
+
+```bash
+wake theme create <seed> earth-system-modeling \
+  --title "Extensive use in Earth system modeling" \
+  --summary "<synthesis paragraph you write, having read the underlying findings>" \
+  --citing-ids W111,W222,W333
+```
+
+This is a pure write primitive — no LLM call. You (the agent) decide
+which works belong together and write the synthesis after reading their
+dossiers/classifications yourself; `wake` validates and persists that
+judgment, the same way `wake override` persists a relationship judgment
+without making one. Always overwrites (no `--force` needed — there's no
+expensive call to protect against re-doing).
+
+A theme carries **two independent verification tracks**, since it makes
+two different kinds of claim:
+
+- Each **cited work** keeps its own honest, existing status
+  (`[PROVISIONAL]` / `[PROPOSED]` / `[VERIFIED]`) — creating a theme never
+  upgrades a work's relationship status.
+- The **theme's synthesis itself** starts `draft` and can only be
+  promoted to `confirmed` via a human-approved sign-off:
+  ```bash
+  wake theme confirm <seed> earth-system-modeling
+  ```
+  Confirmation **refuses unless every cited work is already
+  human-verified** (via `wake override`) — a theme can never appear
+  settled while resting on unverified findings. Run by the agent on the
+  human's behalf, same as `wake override`.
+
+Works with no evidence dossier yet can still be included in a draft
+theme (mixed sourcing) — track outstanding work with:
+```bash
+wake theme queue <seed>
+```
+which lists, per theme, citing works still needing a `wake evidence`
+dossier, and works whose dossier has since appeared but hasn't been
+reviewed and re-asserted (re-run `wake theme create` with the same slug
+after reading the new dossier — its full-text finding may not actually
+support the thematic claim the way the abstract-only guess did).
 
 ### Inspecting what the model actually read
 

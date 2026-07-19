@@ -138,13 +138,88 @@ this pass** — still fully deferred, tracked here for the next session.
 
 ---
 
-## Theme C — Combined-Evidence / Thematic Documents
+## Theme C — Combined-Evidence / Thematic Documents — BUILT
 
-When several individual dossiers together support a broader claim (e.g.
-"extensive use in Earth system modeling"), generate
-`wake-out/<seed>/evidence/themes/<theme-slug>.md` — an OKF concept doc
-synthesizing multiple dossiers, linking out to them rather than duplicating
-content.
+When several individual citing works together support a broader claim
+(e.g. "extensive use in Earth system modeling"), a theme document
+synthesizes them into `wake-out/<seed>/evidence/themes/<slug>.md` — an
+OKF concept doc linking out to each work's own dossier rather than
+duplicating content.
+
+**Built as `wake/themes.py`**, a pure write-primitive with **no LLM
+call**: the agent (having already read the underlying dossiers/
+classifications) supplies the title, synthesis paragraph, and which
+citing works belong together; `wake` validates and persists that
+judgment — it never decides what's thematically related and never writes
+the synthesis prose itself. Same trust model as `wake override`.
+
+**Two independent verification tracks**, matching the codebase-wide rule
+that only a human promotes anything to a settled state — this was an
+explicit design correction mid-session (the first draft let the *agent's*
+act of creating/re-asserting a theme count as confirmation, which broke
+the invariant that only a human sign-off produces a "verified"/"settled"
+result):
+
+1. **Per-work relationship claims** — unchanged, existing lifecycle
+   (`provisional` → `proposed` → `verified` via classify/evidence/
+   override). `create_theme()` never alters a work's own status; every
+   cited work is displayed with its own honest, current tag. A work
+   verified via a plain `human-judgment` override (no dossier at all)
+   is correctly treated as meeting the bar — it is never flagged as
+   needing evidence just because it has no dossier file.
+2. **The theme's synthesis claim** — new: `theme_status: "draft"` →
+   `"confirmed"`. `create_theme()` **always** writes `"draft"` — an
+   agent's judgment can never itself produce a confirmed theme. Only
+   `confirm_theme()` (`wake theme confirm`, run by the agent on the
+   human's behalf, exactly like `wake override`) can promote to
+   `"confirmed"` — and it **refuses unless every cited work is already
+   `"verified"`**, re-resolving each work's status fresh at confirm time
+   (not trusting the theme's own possibly-stale JSON), so a work verified
+   after the theme was created still counts. A theme can never appear
+   settled while resting on unverified findings.
+
+**Mixed sourcing (v1, deliberately simple — flagged for revisit)**:
+`create_theme()` allows citing works with no evidence dossier yet
+(provisional, abstract-only) to be included, tracked in the theme's own
+`needs_evidence` JSON field. This speeds up drafting (a theme doesn't
+need every member fully verified before it can exist as a draft) but
+means the mechanism for keeping that list honest as dossiers appear
+independently needed real thought:
+
+- `list_theme_needs_evidence()` (`wake theme queue <seed>`) is the
+  surfacing mechanism — it scans every theme's JSON at *query time* and
+  reports two states: `needs-evidence` (still no dossier) and
+  `dossier-available-unreviewed` (a dossier has appeared since the theme
+  was last created/reviewed, but hasn't been re-asserted).
+- **Nothing is ever silently upgraded.** A dossier appearing for a
+  `needs_evidence` citing work via an unrelated `wake evidence` call does
+  **not** mutate the theme's JSON automatically — `evidence.py` has zero
+  coupling to `themes.py` for this. The agent must explicitly read the
+  new dossier and decide whether it still supports the thematic claim
+  (the full-text reading may contradict the abstract-only guess the
+  theme was built on), then re-run `wake theme create` with the same
+  slug to re-assert inclusion.
+- This is intentionally the simplest mechanism that preserves the
+  human-confirms invariant; a more automatic reconciliation (e.g.
+  `evidence.py` proactively flagging affected themes) was considered and
+  explicitly deferred until real usage shows whether the manual
+  `wake theme queue` + re-create loop is actually a friction point.
+
+**CLI surface**:
+```
+wake theme create  <seed> <slug> --title "..." --summary "..." --citing-ids ID,ID,ID
+wake theme confirm <seed> <slug>
+wake theme queue   <seed>
+```
+`create` always overwrites (no `--force`) — unlike every other write
+command in this codebase, there's no expensive LLM/network call to
+protect against re-doing, so there's nothing to cache-guard. No
+`wake show theme` — theme docs are plain markdown, read directly, same as
+individual dossiers.
+
+`evidence_wiki.py` gained `themes_index_path()` / `rebuild_themes_index()`
+(catalog grouped Confirmed/Draft), called from `themes.py` after every
+write — same pattern as `evidence.py` calling `rebuild_index()`.
 
 ---
 
@@ -168,8 +243,9 @@ wake-out/<seed>/
     log.md             — OKF chronological log: what was investigated, when
     <citing-id>.md      — Theme A2/B dossiers (OKF concept docs)
     themes/
-      index.md
-      <theme-slug>.md   — Theme C combined-evidence docs (not yet built)
+      index.md            — OKF catalog: theme docs, grouped Confirmed/Draft
+      <theme-slug>.md     — Theme C combined-evidence docs (built)
+      <theme-slug>.json   — same theme, structured (status, citing_works, needs_evidence)
   pdfs/
     <citing-id>.pdf     — locally-cached PDFs (Theme A)
 ```
