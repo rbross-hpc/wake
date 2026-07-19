@@ -46,6 +46,10 @@ def log_path(seed_id: str, base: Path | None = None) -> Path:
     return evidence_dir(seed_id, base) / "log.md"
 
 
+def themes_index_path(seed_id: str, base: Path | None = None) -> Path:
+    return evidence_dir(seed_id, base) / "themes" / "index.md"
+
+
 def _score(entry: dict[str, Any]) -> float:
     """Rank score for a dossier .json sidecar. Delegates to
     report.relationship_score() -- the single source of truth for this
@@ -233,3 +237,80 @@ def mark_verified(
             atomic_write_text(md_path, md_text)
 
     return True
+
+
+def _load_all_themes(seed_id: str, base: Path | None = None) -> list[dict[str, Any]]:
+    from .themes import themes_dir
+
+    d = themes_dir(seed_id, base)
+    if not d.exists():
+        return []
+    entries = []
+    for p in sorted(d.glob("*.json")):
+        try:
+            entries.append(json.loads(p.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError):
+            continue
+    return entries
+
+
+def rebuild_themes_index(seed_id: str, seed_title: str | None = None, base: Path | None = None) -> Path:
+    """Rescan every theme .json sidecar and regenerate themes/index.md
+    from scratch, grouped Confirmed / Draft. Safe to call anytime; if no
+    themes exist yet, does nothing and returns the (non-existent) path --
+    same pattern as rebuild_index() for the top-level evidence wiki.
+    """
+    themes = _load_all_themes(seed_id, base)
+    p = themes_index_path(seed_id, base)
+    if not themes:
+        return p
+
+    confirmed = [t for t in themes if t.get("theme_status") == "confirmed"]
+    draft = [t for t in themes if t.get("theme_status") != "confirmed"]
+    confirmed.sort(key=lambda t: t.get("slug", ""))
+    draft.sort(key=lambda t: t.get("slug", ""))
+
+    lines: list[str] = []
+    lines.append("---")
+    lines.append("type: index")
+    title = f"Themes: {seed_title}" if seed_title else "Themes"
+    lines.append(f'title: "{title}"')
+    lines.append(f"timestamp: {now_iso()}")
+    lines.append("---")
+    lines.append("")
+    lines.append(f"# {title}")
+    lines.append("")
+    lines.append(
+        "Catalog of combined-evidence thematic documents, each synthesizing "
+        "several citing works' dossiers/classifications. See each theme doc "
+        "for its own cited-works list and status."
+    )
+    lines.append("")
+
+    def _render_group(group: list[dict[str, Any]]) -> None:
+        for t in group:
+            slug = t.get("slug", "")
+            n = len(t.get("citing_works", []))
+            needs = len(t.get("needs_evidence", []))
+            needs_note = f", {needs} needing evidence" if needs else ""
+            lines.append(f"- [{t.get('title', slug)}]({slug}.md) — {n} citing work(s){needs_note}")
+        lines.append("")
+
+    lines.append(f"## Confirmed ({len(confirmed)})")
+    lines.append("")
+    if confirmed:
+        _render_group(confirmed)
+    else:
+        lines.append("*(none yet)*")
+        lines.append("")
+
+    lines.append(f"## Draft ({len(draft)})")
+    lines.append("")
+    if draft:
+        _render_group(draft)
+    else:
+        lines.append("*(none yet)*")
+        lines.append("")
+
+    atomic_write_text(p, "\n".join(lines))
+    return p

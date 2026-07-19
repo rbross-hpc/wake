@@ -274,7 +274,60 @@ work full-text; that defeats the purpose of the provisional/abstract-only
 tier existing at all. Reserve it for works where the narrative genuinely
 hinges on getting the relationship right.
 
-### 10. Refine
+### 10. (Optional) Synthesize a theme from related evidence
+
+When several citing works together support a broader claim (e.g.
+"extensive use in Earth system modeling"), write a combined-evidence
+theme instead of listing them separately in your summary to the human:
+
+```bash
+wake --json theme create "<seed>" earth-system-modeling \
+  --title "Extensive use in Earth system modeling" \
+  --summary "<your synthesis paragraph, written after reading the underlying dossiers/classifications>" \
+  --citing-ids W111,W222,W333
+```
+
+This makes no LLM call — **you** decide which works belong together and
+write the synthesis yourself, the same way you decide a relationship
+before recording it with `override`. `wake` validates the citing IDs and
+persists your judgment; it never does the clustering or writing for you.
+Always overwrites the same slug (no `--force` needed — nothing expensive
+to protect against re-doing), so feel free to iterate the summary/
+citing-ids with the human and re-run.
+
+**A theme is always written as a draft** — creating or re-asserting it is
+your judgment, not the human's, so it can never itself count as settled.
+Works with no evidence dossier yet can still be included (mixed
+sourcing); each is shown in the doc with its own honest status
+(`[PROVISIONAL]`/`[PROPOSED]`/`[VERIFIED]`) — theme creation never
+upgrades a work's own relationship status.
+
+To promote a theme to `confirmed`, get the human's explicit approval of
+the synthesis, then run the confirmation yourself — never ask the human
+to run the command:
+
+```bash
+wake --json theme confirm "<seed>" earth-system-modeling
+```
+
+This **refuses unless every cited work is already human-verified** (via
+`override`) — if some aren't, it tells you exactly which ones, and you'll
+need `wake evidence` + `override` on each before confirmation can
+succeed. A theme should never appear settled while resting on unverified
+findings.
+
+Check `wake --json theme queue "<seed>"` periodically for outstanding
+work across all themes: citing works still needing a `wake evidence`
+dossier, and — importantly — works whose dossier has appeared *since* the
+theme was last created (via an unrelated `wake evidence` call) but hasn't
+been reviewed and re-asserted. **Read that new dossier before reflexively
+re-running `wake theme create`** — the full-text finding may not actually
+support the thematic claim the abstract-only guess suggested it did.
+
+This step is optional — only synthesize themes that genuinely help tell
+the impact story; don't force citing works into artificial groupings.
+
+### 11. Refine
 
 If the human disagrees with a specific classification (with or without a
 `wake evidence` dossier backing it up):
@@ -323,3 +376,9 @@ classification and are marked `[VERIFIED via ...]` in the brief.
     badly (common with multi-column layouts). Read `extracted_text_path`
     yourself first — it's a plain cached JSON file, no re-run needed —
     before telling the human the model got something wrong.
+11. **A theme is your judgment until a human confirms it — and confirming
+    it requires every member work to already be verified.** Don't present
+    a draft theme as settled, and don't try to talk a human into
+    confirming one while some cited works are still only provisional or
+    proposed — `wake theme confirm` will refuse anyway, so get those
+    verified first.
