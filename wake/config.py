@@ -91,6 +91,10 @@ def pdf_extract_cfg() -> dict[str, Any]:
     return load().get("pdf_extract", {})
 
 
+def pdf_fetch_cfg() -> dict[str, Any]:
+    return load().get("pdf_fetch", {})
+
+
 def show() -> str:
     cfg = load()
     lc = _local_config()

@@ -54,13 +54,8 @@ def _clean_description(desc: str | None) -> str | None:
     return text or None
 
 
-def get_abstract_by_doi(doi: str) -> str | None:
-    """Return the OSTI 'description' field for *doi*, or None if unavailable.
-
-    Returns None (not an exception) for 404/no-match — this is a best-effort
-    backfill, not a required lookup. Raises on rate limiting or unexpected
-    errors so callers can back off.
-    """
+def _get_record_by_doi(doi: str) -> dict | None:
+    """Fetch the raw OSTI record dict for *doi*, or None if unavailable."""
     norm = _normalize_doi(doi)
     if not norm:
         return None
@@ -68,10 +63,43 @@ def get_abstract_by_doi(doi: str) -> str | None:
     if resp.status_code == 200:
         records = resp.json()
         if isinstance(records, list) and records:
-            return _clean_description(records[0].get("description"))
+            return records[0]
         return None
     if resp.status_code in (404, 410):
         return None
     raise_for_rate_limit(resp, SOURCE_NAME)
     resp.raise_for_status()
+    return None
+
+
+def get_abstract_by_doi(doi: str) -> str | None:
+    """Return the OSTI 'description' field for *doi*, or None if unavailable.
+
+    Returns None (not an exception) for 404/no-match — this is a best-effort
+    backfill, not a required lookup. Raises on rate limiting or unexpected
+    errors so callers can back off.
+    """
+    record = _get_record_by_doi(doi)
+    if not record:
+        return None
+    return _clean_description(record.get("description"))
+
+
+def get_fulltext_pdf_url_by_doi(doi: str) -> str | None:
+    """Return a direct, unauthenticated PDF URL for *doi* from OSTI's
+    'fulltext' link relation, or None if OSTI has no record or no fulltext
+    link for it.
+
+    OSTI serves fulltext PDFs directly (osti.gov/servlets/purl/<id>) for
+    DOE-funded work with no auth wall — the highest-precision, zero-cost
+    source in wake's PDF acquisition chain, but narrow (DOE-funded only).
+    """
+    record = _get_record_by_doi(doi)
+    if not record:
+        return None
+    for link in record.get("links", []) or []:
+        if isinstance(link, dict) and link.get("rel") == "fulltext":
+            href = link.get("href")
+            if href:
+                return href
     return None
