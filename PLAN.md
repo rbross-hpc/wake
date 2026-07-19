@@ -366,3 +366,114 @@ content.
     → available for the next classify run.
   - Full rendered `impact.md` inspected and judged genuinely useful even
     at low (1-2%) coverage.
+
+---
+
+# Phase 2 — Evidence, Narrative & Wiki (see BACKLOG.md)
+
+After a full live run (all 408 Parallel netCDF citing works classified,
+zero errors, real `impact.md` reviewed end-to-end — see BACKLOG.md intro),
+planning turned to a substantial follow-on: per-reference evidence
+dossiers, DOE-relevance signal extraction, an OKF-compliant knowledge wiki,
+author-overlap tagging, and (deferred) narrative-drafting/timeline/
+non-publication-evidence tools. Full theme breakdown, design decisions,
+and sequencing live in `BACKLOG.md`.
+
+## v0.3.0 — PDF Acquisition (`wake fetch-pdf`) — BACKLOG Theme A
+
+Standalone, reusable primitive for automatically acquiring a PDF for one
+citing work — not just an internal helper for the (not-yet-built) evidence
+dossier tool (BACKLOG Theme A2). Also directly usable to streamline
+`wake fill-abstract --from-pdf` (skip the manual-download step whenever
+the chain succeeds).
+
+Source chain, tried in order (config `pdf_fetch.sources`), all API-based —
+no scraping publisher landing pages, no sci-hub-style sources:
+
+1. **OSTI** (`sources/osti.py`, extended) — direct `fulltext` link
+   relation on the existing DOI-lookup record (DOE-funded work, no auth
+   wall, zero cost/rate-limit).
+2. **Semantic Scholar** (`sources/semanticscholar.py`, extended) —
+   `openAccessPdf.url` field, distinct from and complementary to
+   Unpaywall's OA discovery; frequently a repository/arXiv copy.
+3. **Unpaywall** (`sources/unpaywall.py`, new) — `best_oa_location`'s PDF
+   URL. No abstract capability (that problem was already solved via
+   OSTI/Semantic Scholar in Phase 1's `backfill.py`) — this module exists
+   solely for PDF location. Frequently points at publisher "author
+   manuscript" pages that reject bot downloads (confirmed live:
+   ScienceDirect 403 on the WIND Toolkit paper) — attempted anyway since
+   it sometimes succeeds, and the download validator (below) rejects the
+   failure cleanly rather than saving garbage.
+4. **arXiv** (`sources/arxiv_fetch.py`, new, adapted from ref-checker's
+   `sources/arxiv.py`) — title-search match via the arXiv Atom API
+   (`title_ratio` similarity, 0.90 threshold); arXiv PDFs are always
+   freely downloadable with no bot-blocking.
+5. **CORE.ac.uk** (`sources/core.py`, new) — optional, gated behind
+   `CORE_API_KEY` (silently returns None/skipped if unset, same pattern as
+   `SEMANTICSCHOLAR_API_KEY`). Not live-tested in this session (no API key
+   available) — request shape follows CORE API v3's documented
+   search-by-DOI convention; verify against a real key before relying on
+   it in production.
+
+Orchestrator (`pdf_fetch.py`): tries sources in order, validates each
+candidate download (`_download`: rejects non-200 responses, content not
+starting with `%PDF-` magic bytes, and files below
+`pdf_fetch.min_valid_pdf_bytes` — catches paywall/error HTML pages saved
+with a `.pdf` extension) before accepting it, falls through to the next
+source on any failure (bad URL, download validation failure, or an
+exception from the source lookup itself). Caches to
+`wake-out/<seed>/pdfs/<citing-id>.pdf`; a cache hit short-circuits before
+any network call unless `--force`.
+
+On total failure (every source exhausted or inapplicable), returns
+human-actionable links rather than giving up silently — per explicit user
+request, **always attempt automatically first**, and always include a
+Google Scholar search URL alongside Unpaywall's lookup page, the
+publisher's DOI link, and a CORE.ac.uk search URL.
+
+### Agent Skill restructuring
+
+`SKILL.md` had grown to 237 lines across this and prior sessions, mixing
+workflow guidance with reference material (full command list, output
+layout, environment variables, relationship-class table). Split following
+ref-checker's existing convention (`skills/reference-checking/references/
+schema.md`): `SKILL.md` now covers only the numbered workflow + agent
+principles (182 lines); `skills/impact-analysis/references/reference.md`
+(new) holds the command list, PDF-acquisition chain summary, output
+layout, environment variables, and relationship-class table. `SKILL.md`
+points to it once, at the top. `wake skill export` already used
+`shutil.copytree` on the whole skill directory, so the new `references/`
+subdirectory is included automatically — verified live.
+
+### Tests
+
++39 offline (163 total, up from 124): `test_pdf_sources.py` (21 —
+per-source unit tests: OSTI fulltext-link parsing, Semantic Scholar
+openAccessPdf, Unpaywall mailto-gating, arXiv title-similarity matching/
+threshold, CORE key-gating + an empty-`sourceFulltextUrls`-list regression
+guard) and `test_pdf_fetch.py` (18 — orchestrator: cache hit/bypass,
+first-hit-wins ordering, fall-through on non-PDF content and on a source
+raising an exception, all-sources-exhausted fallback-links shape,
+arXiv/CORE properly skipped when inapplicable, `_download`'s
+content-type/size/status validation).
+
+### Live verification
+
+- `wake fetch-pdf` on W2107546711 (FLASH architecture paper, no direct
+  fulltext OpenAlex link): resolved via Semantic Scholar's
+  `openAccessPdf` -> a real, valid 33-page arXiv-hosted PDF (366KB,
+  confirmed via `file`).
+- Direct `fetch_pdf()` call against a known OSTI DOI (10.2172/10129297,
+  the 1994 netCDF calculator technical report used in Phase 1's PDF-abstract
+  fixture research): resolved via OSTI's `fulltext` link, confirming OSTI
+  is correctly tried and hit first in the chain when available.
+- `wake fetch-pdf` on W326249748 (WIND Toolkit — already known from Phase
+  1 live testing to have no recoverable abstract from any automatic
+  source): Semantic Scholar and Unpaywall both returned the same
+  ScienceDirect "author manuscript" URL; the download validator correctly
+  rejected it (non-PDF content), the chain fell through all 4 applicable
+  sources (CORE skipped, no key configured), and returned the full
+  fallback-links set including a working Google Scholar search URL.
+- Cache-hit path confirmed: re-running `fetch-pdf` on the already-acquired
+  FLASH PDF returned instantly with `"source": "cache"`, no network calls.
+- `wake skill export` confirmed to include the new `references/` file.

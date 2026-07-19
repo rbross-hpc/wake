@@ -36,6 +36,28 @@ pdf_extract:
   max_pages: 3
   prompt_version: "pdf-abstract-1"
 
+# PDF acquisition chain (wake fetch-pdf): tried in order, all API-based
+# (no scraping publisher landing pages, no sci-hub-style sources). OSTI
+# first (DOE-funded work, direct PDF, no auth wall); Semantic Scholar and
+# Unpaywall next (broader OA aggregation, some URLs 403 bot downloads);
+# arXiv for preprints; CORE last and optional (needs CORE_API_KEY, silently
+# skipped if unset). On full failure, returns human-actionable links
+# instead (Unpaywall lookup page, Google Scholar search, publisher DOI,
+# CORE search).
+pdf_fetch:
+  sources: [osti, semanticscholar, unpaywall, arxiv, core]
+  rate_limit_s:
+    osti: 0.5
+    semanticscholar: 1.2
+    unpaywall: 0.5
+    arxiv: 3.0
+    core: 1.0
+  download_timeout_s: 30
+  # A downloaded file below this size is treated as a failed fetch (e.g. an
+  # HTML error/paywall page saved with a .pdf extension) rather than a
+  # genuine PDF.
+  min_valid_pdf_bytes: 2048
+
 classify:
   prompt_version: "classify-2"
   relationships:

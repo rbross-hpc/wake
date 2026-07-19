@@ -42,6 +42,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_classify_parser(sub)
     _build_gaps_parser(sub)
     _build_fill_abstract_parser(sub)
+    _build_fetch_pdf_parser(sub)
     _build_render_parser(sub)
     _build_override_parser(sub)
     _build_cost_parser(sub)
@@ -142,6 +143,18 @@ def _build_fill_abstract_parser(sub) -> None:
                            "default 3) and asks an LLM to locate the abstract within them.")
     src.add_argument("--text", metavar="TEXT",
                       help="The abstract text itself, supplied directly (no LLM call).")
+
+
+def _build_fetch_pdf_parser(sub) -> None:
+    p = sub.add_parser(
+        "fetch-pdf",
+        help="Try to automatically acquire a PDF for one citing work "
+             "(OSTI, Semantic Scholar, Unpaywall, arXiv, optional CORE). "
+             "Falls back to human-actionable links (incl. Google Scholar) on failure.",
+    )
+    p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    p.add_argument("citing_id", help="OpenAlex ID of the citing work to fetch a PDF for.")
+    p.add_argument("--force", action="store_true", help="Re-fetch even if already cached.")
 
 
 def _build_render_parser(sub) -> None:
@@ -469,6 +482,52 @@ def run_fill_abstract(args) -> None:
     emit("fill-abstract", entry, as_json=args.json_out, human=human)
 
 
+def _find_citing_work(seed_id: str, citing_id: str, base) -> dict | None:
+    from ..citing import load_citing
+    works = load_citing(seed_id, base) or []
+    for w in works:
+        if w.get("openalex_id") == citing_id:
+            return w
+    return None
+
+
+def run_fetch_pdf(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..pdf_fetch import fetch_pdf
+    base = _work_dir_base(args)
+    seed_id = work["openalex_id"]
+    quiet = is_quiet(args)
+
+    citing_work = _find_citing_work(seed_id, args.citing_id, base)
+    if citing_work is None:
+        emit_error("fetch-pdf", RuntimeError(
+            f"{args.citing_id} not found in cached citing works. "
+            f"Run `wake citing {args.seed}` first."
+        ), as_json=args.json_out)
+        sys.exit(1)
+
+    result = fetch_pdf(
+        seed_id, args.citing_id,
+        doi=citing_work.get("doi"),
+        title=citing_work.get("title"),
+        base=base,
+        force=args.force,
+        verbose=not quiet,
+    )
+
+    def human(d):
+        if d["ok"]:
+            print(f"PDF acquired via {d['source']}: {d['path']}")
+        else:
+            tried = ", ".join(d["tried"]) if d["tried"] else "(no applicable sources)"
+            print(f"Could not automatically acquire a PDF (tried: {tried}).")
+            print("Try one of these manually:")
+            for label, url in d["fallback_links"].items():
+                print(f"  {label}: {url}")
+
+    emit("fetch-pdf", result, as_json=args.json_out, human=human)
+
+
 def run_render(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
     from ..citing import load_citing
@@ -631,6 +690,8 @@ def main() -> None:
             run_gaps(args)
         elif args.command == "fill-abstract":
             run_fill_abstract(args)
+        elif args.command == "fetch-pdf":
+            run_fetch_pdf(args)
         elif args.command == "render":
             run_render(args)
         elif args.command == "override":

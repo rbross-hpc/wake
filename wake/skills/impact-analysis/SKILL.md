@@ -5,7 +5,7 @@
 `wake` is an analysis instrument you (the agent) wield on the human's behalf.
 It is **not** an autopilot — there is no single "do everything" command. You
 compose thin primitives (`resolve`, `citing`, `sample`, `classify`, `gaps`,
-`fill-abstract`, `render`, `status`, `cost`, `override`) into an
+`fetch-pdf`, `fill-abstract`, `render`, `status`, `cost`, `override`) into an
 **explore-first workflow**, pausing at natural decision points so the human
 can confirm the seed paper, review a sample of classifications, and approve
 spend before you scale up.
@@ -17,6 +17,11 @@ Every command supports `--json` and returns a stable envelope:
 Use `--json` for everything you parse programmatically. Errors use
 `"ok": false` with `{"error": {"type": ..., "message": ...}}` plus a non-zero
 exit code.
+
+For the full command list, output-file layout, environment variables, and
+the PDF-acquisition source chain, see `references/reference.md`. This file
+covers only the workflow — when to run what, and where to check in with
+the human.
 
 ## The Workflow
 
@@ -59,16 +64,9 @@ wake --json classify "<seed>" --limit 10 --sort cited-by
 
 Show the human the classification results and a couple of justifications.
 **Ask if the relationship categories make sense** before scaling up — this
-is the cheapest point to catch a systematically wrong assumption.
-
-Relationship classes (strongest signal of impact first):
-- `extends` — directly extends the method/framework/theory of the seed
-- `builds-on` — builds a new system/tool that depends on the seed
-- `uses-as-tool` — uses the seed's software/tool/dataset as-is
-- `benchmarks` — benchmarks against the seed as a baseline
-- `applies-to-domain` — applies the seed's approach to a new domain
-- `related-infrastructure` — complementary tooling in the same ecosystem, no direct dependency
-- `background-mention` — cites only as background/related work
+is the cheapest point to catch a systematically wrong assumption. (See
+`references/reference.md` for the full relationship-class list and what
+each one means.)
 
 Roughly 20% of citing works typically lack an OpenAlex abstract. `classify`
 transparently tries OSTI and Semantic Scholar to backfill these before
@@ -114,12 +112,26 @@ Check whether any are worth the extra effort:
 wake --json gaps "<seed>" --min-cited-by 50
 ```
 
-If the human has (or can get) a PDF for one of these, or already knows the
-paper well enough to state its abstract:
+Try to get a PDF automatically before asking the human for one:
 
 ```bash
-wake --json fill-abstract "<seed>" <citing-id> --from-pdf paper.pdf
-# or:
+wake --json fetch-pdf "<seed>" <citing-id>
+```
+
+This tries OSTI, Semantic Scholar, Unpaywall, arXiv, and (if configured)
+CORE.ac.uk in order, and caches the result. If it succeeds, feed the local
+path straight into `fill-abstract`:
+
+```bash
+wake --json fill-abstract "<seed>" <citing-id> --from-pdf wake-out/<seed>/pdfs/<citing-id>.pdf
+```
+
+If `fetch-pdf` fails, it returns a set of human-actionable links (Unpaywall
+lookup page, Google Scholar search, publisher DOI, CORE search) — present
+these to the human rather than giving up, or fall back to asking them to
+paste the abstract directly:
+
+```bash
 wake --json fill-abstract "<seed>" <citing-id> --text "..."
 
 wake --json classify "<seed>" --ids <citing-id> --force   # re-classify with the recovered abstract
@@ -149,57 +161,6 @@ wake --json override "<seed>" <citing-openalex-id> --relationship extends --just
 ```
 Then re-render (`wake --json render "<seed>"`) — overrides always win over
 the LLM classification and are marked "(human-reviewed)" in the brief.
-
-## Seed ID Formats
-
-| Format | Example |
-|--------|---------|
-| DOI | `10.1145/1048935.1050189` |
-| arXiv ID | `2301.04567` |
-| OpenAlex ID | `W2156077349` |
-| Paper title | `"Parallel netCDF: A High-Performance Scientific I/O Interface"` |
-
-## Other Commands
-
-```bash
-wake --json describe "<seed>"      # LLM contribution paragraph (independent of classify)
-wake --json cost "<seed>"          # cumulative estimated token/cost usage
-wake --json show brief "<seed>"    # re-print cached impact.md
-wake --json show metrics "<seed>"  # re-print cached impact.json
-wake --json show top "<seed>" -n N # top-evidence table only
-wake config show / validate / init
-```
-
-Note: `--json` must appear before the subcommand (global flag), e.g.
-`wake --json classify "<seed>"`, not `wake classify "<seed>" --json`.
-
-## Output Layout
-
-```
-wake-out/<OpenAlex-ID>/
-  seed.json               — resolved seed + LLM description
-  citing.json             — all citing works (paginated, cached)
-  classified.json         — per-citing-work relationship + evidence
-  impact.json             — aggregated metrics
-  impact.md               — the impact brief
-  .state.json             — stage cache keys
-  .classify/              — per-work classification sidecars (resumable)
-  .cost.jsonl             — per-LLM-call estimated token/cost log
-  .overrides.jsonl        — human-reviewed relationship overrides
-  .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
-```
-
-Use `--work-dir DIR` (or `WAKE_WORK_DIR` env var) to control where
-`wake-out/` is created — useful when running from a scratch directory.
-
-## Environment Variables
-
-| Variable | Purpose |
-|----------|---------|
-| `OPENAI_API_KEY` | LLM API key (required for describe/classify) |
-| `OPENAI_BASE_URL` | API endpoint (e.g. Argo) |
-| `OPENALEX_MAILTO` | Your email for OpenAlex polite pool (recommended) |
-| `WAKE_WORK_DIR` | Default root for `wake-out/` cache |
 
 ## Principles for Agents
 

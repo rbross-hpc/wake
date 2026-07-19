@@ -36,11 +36,9 @@ def _normalize_doi(doi: str | None) -> str | None:
     return doi.lower() or None
 
 
-def get_abstract_by_doi(doi: str) -> str | None:
-    """Return the Semantic Scholar abstract for *doi*, or None if unavailable.
-
-    Returns None (not an exception) for 404/no-match — this is a best-effort
-    backfill, not a required lookup. Raises on rate limiting (403/429) or
+def _get_paper_by_doi(doi: str, fields: str) -> dict | None:
+    """Fetch the raw Semantic Scholar paper dict for *doi*, requesting
+    *fields*, or None if unavailable. Raises on rate limiting (403/429) or
     unexpected errors so callers can back off.
     """
     norm = _normalize_doi(doi)
@@ -48,16 +46,13 @@ def get_abstract_by_doi(doi: str) -> str | None:
         return None
     resp = requests.get(
         f"{_BASE}/DOI:{norm}",
-        params={"fields": "abstract"},
+        params={"fields": fields},
         headers=_headers(),
         timeout=15,
     )
     if resp.status_code == 200:
         entry = resp.json()
-        if entry:
-            abstract = entry.get("abstract")
-            return abstract.strip() if abstract else None
-        return None
+        return entry or None
     if resp.status_code in (404, 410):
         return None
     raise_for_rate_limit(resp, SOURCE_NAME)
@@ -67,4 +62,36 @@ def get_abstract_by_doi(doi: str) -> str | None:
             "(auth failure, not rate limit)"
         )
     resp.raise_for_status()
+    return None
+
+
+def get_abstract_by_doi(doi: str) -> str | None:
+    """Return the Semantic Scholar abstract for *doi*, or None if unavailable.
+
+    Returns None (not an exception) for 404/no-match — this is a best-effort
+    backfill, not a required lookup. Raises on rate limiting (403/429) or
+    unexpected errors so callers can back off.
+    """
+    entry = _get_paper_by_doi(doi, fields="abstract")
+    if not entry:
+        return None
+    abstract = entry.get("abstract")
+    return abstract.strip() if abstract else None
+
+
+def get_open_access_pdf_url_by_doi(doi: str) -> str | None:
+    """Return Semantic Scholar's openAccessPdf.url for *doi*, or None.
+
+    This field is populated from Semantic Scholar's own OA discovery
+    (distinct from, and often complementary to, Unpaywall's) — frequently
+    points at a repository copy (e.g. arXiv) rather than the publisher.
+    """
+    entry = _get_paper_by_doi(doi, fields="openAccessPdf")
+    if not entry:
+        return None
+    oa_pdf = entry.get("openAccessPdf")
+    if isinstance(oa_pdf, dict):
+        url = oa_pdf.get("url")
+        if url:
+            return url
     return None

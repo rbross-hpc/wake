@@ -67,6 +67,7 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake classify <seed>` | LLM relationship classification (`--ids`, `--limit`, `--sort`, `--dry-run`, resumable) |
 | `wake gaps <seed>` | Surface high-value citing works with no recoverable abstract |
 | `wake fill-abstract <seed> <id>` | Manually resolve one via `--from-pdf` or `--text` |
+| `wake fetch-pdf <seed> <id>` | Try to automatically acquire a PDF (OSTI, Semantic Scholar, Unpaywall, arXiv, optional CORE) |
 | `wake render <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
 | `wake override <seed> <id>` | Record a human-reviewed relationship correction |
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |
@@ -102,6 +103,7 @@ wake-out/<OpenAlex-ID>/
   .cost.jsonl             — per-LLM-call estimated token/cost log
   .overrides.jsonl        — human-reviewed relationship overrides
   .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
+  pdfs/                   — locally-cached PDFs (wake fetch-pdf)
 ```
 
 ## Relationship Classes
@@ -143,6 +145,34 @@ Recovered abstracts are tagged with their source (`abstract_source`:
 `osti`, `semanticscholar`, `pdf-extract`, or `human-text`) and the count is
 shown in the brief's Reach section.
 
+## PDF Acquisition
+
+```bash
+wake fetch-pdf <seed> <citing-id>
+```
+
+Tries a chain of open-access sources, all API-based (no scraping publisher
+landing pages, no sci-hub-style sources), and saves the first valid PDF to
+`wake-out/<seed>/pdfs/<citing-id>.pdf`:
+
+1. **OSTI** — direct `fulltext` link (DOE-funded work, no auth wall)
+2. **Semantic Scholar** — `openAccessPdf.url` (often a repository/arXiv copy)
+3. **Unpaywall** — best-OA-location PDF URL (frequently blocked by
+   publisher sites — still worth attempting)
+4. **arXiv** — title-search match (always freely downloadable when found)
+5. **CORE.ac.uk** — optional, requires `CORE_API_KEY`, silently skipped if unset
+
+A downloaded file that isn't a valid PDF (e.g. a paywall HTML page saved
+with a `.pdf` extension) is rejected and the chain falls through to the
+next source. If every source fails, `fetch-pdf` returns human-actionable
+links instead of giving up silently: an Unpaywall lookup page, a Google
+Scholar search for the title, the publisher's DOI link, and a CORE.ac.uk
+search URL.
+
+Reusable on its own (e.g. before `wake fill-abstract --from-pdf`, to skip
+a manual download step) and cached — re-running is a no-op unless `--force`
+is passed.
+
 ## Cost Telemetry (estimate-only)
 
 `wake` does not depend on the LLM endpoint reporting token usage. Every
@@ -174,8 +204,10 @@ cost:
 |----------|---------|
 | `OPENAI_API_KEY` | LLM API key (required for describe/classify) |
 | `OPENAI_BASE_URL` | API endpoint URL |
-| `OPENALEX_MAILTO` | Email for OpenAlex polite pool (recommended) |
+| `OPENALEX_MAILTO` | Email for OpenAlex/Unpaywall polite pool (recommended) |
 | `WAKE_WORK_DIR` | Default root for `wake-out/` cache (default: cwd) |
+| `SEMANTICSCHOLAR_API_KEY` | Optional — raises Semantic Scholar's rate limit |
+| `CORE_API_KEY` | Optional — enables CORE.ac.uk as a `wake fetch-pdf` source (free key at core.ac.uk/services/api) |
 
 ## Tests
 
