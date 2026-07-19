@@ -204,6 +204,61 @@ def test_mark_verified_patches_json_and_markdown(tmp_path):
     assert "pending your review" not in md_text.lower()
 
 
+def test_mark_verified_same_relationship_does_not_mark_corrected(tmp_path):
+    """The dossier's own build_dossier() fixture proposes 'extends' — accepting
+    it as-is (relationship == proposed.relationship) should not trigger the
+    correction path or touch proposed.model_relationship."""
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    citing_id = SAMPLE_CITING_WORKS[0]["openalex_id"]
+    _build(tmp_path, citing_work=_classified_work(0))
+
+    ok = evidence_wiki.mark_verified(
+        seed_id, citing_id, justification="agreed", relationship="extends", base=tmp_path,
+    )
+    assert ok is True
+
+    loaded = evidence.load_dossier(seed_id, citing_id, base=tmp_path)
+    assert loaded["proposed"]["relationship"] == "extends"
+    assert "model_relationship" not in loaded["proposed"]
+    assert "corrected_from" not in loaded["human_verification"]
+
+
+def test_mark_verified_relationship_correction_updates_proposed_and_index(tmp_path):
+    """A human override that *disagrees* with the dossier's own proposed
+    finding (e.g. correcting a model reasoning miss after checking the raw
+    extraction directly) must update proposed.relationship so index.md/log.md
+    reflect the human-confirmed relationship, not the superseded model
+    conclusion -- otherwise the wiki silently drifts from what the impact
+    brief actually uses."""
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    citing_id = SAMPLE_CITING_WORKS[0]["openalex_id"]
+    _build(tmp_path, citing_work=_classified_work(0))  # dossier proposes "extends"
+
+    ok = evidence_wiki.mark_verified(
+        seed_id, citing_id,
+        justification="Full text actually shows plain adoption, not an extension.",
+        relationship="uses-as-tool",
+        base=tmp_path,
+    )
+    assert ok is True
+
+    loaded = evidence.load_dossier(seed_id, citing_id, base=tmp_path)
+    assert loaded["proposed"]["relationship"] == "uses-as-tool"
+    assert loaded["proposed"]["model_relationship"] == "extends"
+    assert loaded["proposed"]["model_justification"]
+    assert loaded["human_verification"]["corrected_from"] == "extends"
+
+    md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
+    assert "proposed:uses-as-tool" in md_text
+    assert "proposed:extends" not in md_text
+    assert "corrected the model's reading from *extends* to *uses-as-tool*" in md_text
+
+    index_p = evidence_wiki.rebuild_index(seed_id, base=tmp_path)
+    index_text = index_p.read_text()
+    assert "*uses-as-tool*" in index_text
+    assert "*extends*" not in index_text
+
+
 # --- add_override wiring --------------------------------------------------
 
 def test_add_override_evidence_dossier_marks_verified_and_logs(tmp_path):
