@@ -28,6 +28,7 @@ from . import backfill as backfill_mod
 from . import config, cost as cost_mod
 from .citing import sort_works
 from .errors import RateLimited
+from .gaps import apply_manual_abstracts, load_manual_abstracts
 from .io import atomic_write_json, now_iso, read_json
 from .llm.openai_client import chat_json
 from .seed import work_dir
@@ -223,6 +224,10 @@ def classify_all(
     seed_id = seed_work["openalex_id"]
     pv = _prompt_version()
     model = _model()
+
+    manual_abstracts = load_manual_abstracts(seed_id, base)
+    if manual_abstracts:
+        citing_works = apply_manual_abstracts(citing_works, manual_abstracts)
 
     selected = select_for_classification(citing_works, ids=ids, limit=limit, sort=sort)
     selected_ids = {w.get("openalex_id") for w in selected}
