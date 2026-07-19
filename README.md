@@ -200,14 +200,18 @@ cost:
 
 ## Environment Variables
 
-| Variable | Purpose |
-|----------|---------|
-| `OPENAI_API_KEY` | LLM API key (required for describe/classify) |
-| `OPENAI_BASE_URL` | API endpoint URL |
-| `OPENALEX_MAILTO` | Email for OpenAlex/Unpaywall polite pool (recommended) |
-| `WAKE_WORK_DIR` | Default root for `wake-out/` cache (default: cwd) |
-| `SEMANTICSCHOLAR_API_KEY` | Optional — raises Semantic Scholar's rate limit |
-| `CORE_API_KEY` | Optional — enables CORE.ac.uk as a `wake fetch-pdf` source (free key at core.ac.uk/services/api) |
+Run `wake config validate` (or `wake --json config validate` for
+structured output) to check these — required vars are blocking; missing
+recommended/optional vars are surfaced but never fail validation.
+
+| Tier | Variable | Purpose |
+|------|----------|---------|
+| Required | `OPENAI_API_KEY` | LLM API key (required for describe/classify) |
+| Required | `OPENAI_BASE_URL` | API endpoint URL |
+| Recommended | `OPENALEX_MAILTO` | Email for OpenAlex/Unpaywall/OSTI polite pool (faster, more reliable) |
+| Optional | `SEMANTICSCHOLAR_API_KEY` | Raises Semantic Scholar's unauthenticated rate limit (~100 req/5min without one) |
+| Optional | `CORE_API_KEY` | Enables CORE.ac.uk as a `wake fetch-pdf` source (free key at core.ac.uk/services/api) |
+| Optional | `WAKE_WORK_DIR` | Default root for `wake-out/` cache (else cwd, or per-call `--work-dir`) |
 
 ## Tests
 

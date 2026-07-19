@@ -477,3 +477,71 @@ content-type/size/status validation).
 - Cache-hit path confirmed: re-running `fetch-pdf` on the already-acquired
   FLASH PDF returned instantly with `"source": "cache"`, no network calls.
 - `wake skill export` confirmed to include the new `references/` file.
+
+## v0.3.1 — Setup Check (env-var registry + config JSON output)
+
+User request: develop questions to ask the human early in a session to
+catch missing env vars / set preferences, rather than discovering gaps
+mid-analysis. Landed as an extension of the existing `wake config`
+machinery (no new interactive wizard command) plus a documented "Step 0"
+in `SKILL.md` — consistent with wake's "thin CLI, agent orchestrates"
+philosophy.
+
+- `config.py`: env-var registry extended from two tiers to three
+  (`required`, `recommended`, `optional`). Confirmed via audit that
+  `SEMANTICSCHOLAR_API_KEY`, `CORE_API_KEY`, and `WAKE_WORK_DIR` were read
+  by the code (`sources/semanticscholar.py`, `sources/core.py`,
+  `seed.py`) but never surfaced by `config.show()`/`validate()` —
+  genuinely undocumented gaps, now in the `optional` tier.
+- New `config.env_status()` — structured set/unset + description per var,
+  grouped by tier; never leaks sensitive (`*KEY*`) values, only whether
+  they're set.
+- New `config.validate_report()` — `{"ok", "errors", "env": env_status()}`,
+  for `--json` consumers. `validate()` itself unchanged (required-only,
+  list of error strings) — recommended/optional gaps are never blocking.
+- `cli/main.py::run_config` rewritten to use `emit`/`emit_error` like
+  every other command — `wake config show/validate/init` now all honor
+  the global `--json` flag (previously all three ignored it unconditionally).
+- **Bug fix, found during the env-var audit**: three different hardcoded
+  model-name defaults were live in the codebase simultaneously —
+  `config.yaml` said `"Claude Sonnet 4.6"` (correct, fixed in v0.2.1's
+  streaming fix), but `config.init_local()`'s starter template and the
+  in-code fallback defaults in `classify.py`/`describe.py` still said the
+  stale `"Claude Sonnet 4.7"` (only `llm/openai_client.py`'s fallback had
+  been fixed). A user running `wake config init` today would get a
+  starter file with a model name that doesn't exist on the Argo endpoint.
+  Fixed all three to `"Claude Sonnet 4.6"`. Also fixed `classify.py`'s
+  `_prompt_version()` fallback (`"classify-1"` — stale from before the
+  classify-2 prompt-tightening fix in v0.2.1) to `"classify-2"`.
+- `SKILL.md`: new "Step 0: Setup check" before "1. Resolve and confirm" —
+  tells the agent to run `wake --json config validate` once per session
+  and how to react per tier: **required** missing -> stop, don't proceed;
+  **recommended** (`OPENALEX_MAILTO`) missing -> ask once, briefly, before
+  racking up unauthenticated API calls; **optional** vars -> never ask
+  upfront, only mention `SEMANTICSCHOLAR_API_KEY` if the analysis is
+  large-scale (step 4), `CORE_API_KEY` right before `fetch-pdf`/`gaps`
+  (step 7) as an FYI, and `WAKE_WORK_DIR`/`--work-dir` once before the
+  first cache write (step 2) if the human hasn't stated a preference.
+- `references/reference.md` and `README.md`: env-var tables restructured
+  by tier; added the `wake config validate --json` response shape as a
+  documented example.
+
+### Tests
+
++15 offline (178 total): `test_config.py` — three-tier registry shape,
+sensitive-value masking (API keys never leak into `env_status()`/`show()`
+output even when set), `validate()`'s required-only blocking behavior
+(recommended/optional gaps never fail validation), `validate_report()`
+shape for both pass/fail, and two regression guards: `show()`/
+`init_local()` must never emit the stale `"Claude Sonnet 4.7"` string.
+
+### Live verification
+
+- `wake --json config validate` confirmed to return the full 3-tier
+  structured breakdown with real env state.
+- `wake config show`/`config init` confirmed to display/write
+  `"Claude Sonnet 4.6"` consistently (previously would've shown 4.6 in
+  `show()`'s packaged-config dump but written 4.7 into a fresh
+  `wake.config.yaml` via `init`).
+- End-to-end `describe` call against the real Argo endpoint succeeded
+  with the corrected model defaults.
