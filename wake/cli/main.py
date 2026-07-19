@@ -661,6 +661,7 @@ def run_override(args) -> None:
         relationship=args.relationship,
         justification=args.justification,
         verification_source=args.verification_source,
+        seed_title=work.get("title"),
         base=base,
     )
     emit("override", entry, as_json=args.json_out,

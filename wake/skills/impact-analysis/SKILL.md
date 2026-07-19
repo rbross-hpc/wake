@@ -240,6 +240,16 @@ call `wake override`):
     --verification-source evidence-dossier
   ```
 
+When `--verification-source evidence-dossier` is used, `wake override`
+automatically updates the dossier itself (`pending-human-review` →
+`verified`) and the evidence wiki's `index.md`/`log.md` — no separate
+step needed. `evidence/index.md` is a standing catalog of every
+investigated citing work, grouped **Verified** / **Pending Review**; skim
+it if you want a sense of what's already been checked before spending
+another `wake evidence` call on a work you may have already covered.
+`evidence/log.md` is the full chronological record (built, rebuilt,
+failed, verified) if you need to reconstruct what happened and when.
+
 If `wake evidence` can't get a PDF, it returns the same human-actionable
 fallback links as `fetch-pdf` (Unpaywall, Google Scholar, publisher DOI,
 CORE) — offer those rather than giving up on verifying that work.
@@ -254,7 +264,10 @@ are a known source of garbled extraction, and a bad extraction produces a
 very different-looking problem than a bad inference once you've seen the
 raw text. `wake --json evidence "<seed>" <citing-id> --force` re-runs
 extraction too (not just the LLM verification call), so a garbled
-extraction can be retried without needing a fresh PDF.
+extraction can be retried without needing a fresh PDF. If the dossier had
+already been verified, `--force` resets it back to pending — the fresh
+read is a new finding, not a continuation of the old sign-off, so it
+needs a fresh look before you re-run `override`.
 
 This step is optional and selective — don't try to verify every citing
 work full-text; that defeats the purpose of the provisional/abstract-only

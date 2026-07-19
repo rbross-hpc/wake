@@ -142,6 +142,8 @@ wake-out/<OpenAlex-ID>/
   evidence/               — full-text verification dossiers (wake evidence)
     <citing-id>.md          — human/agent-readable OKF concept document
     <citing-id>.json        — same finding, structured
+    index.md                — OKF catalog: Verified / Pending Review, ranked
+    log.md                  — OKF chronological log of every investigation
 ```
 
 ## Relationship Classes
@@ -253,6 +255,28 @@ detection — multi-column academic layouts don't extract reliably enough
 for that); the LLM is asked to quote the full containing paragraph
 verbatim around any passage it relies on. Requires the `pdf` extra
 (`pip install 'wake[pdf]'`), same as `fill-abstract --from-pdf`.
+
+### The evidence wiki (`index.md` / `log.md`)
+
+Every dossier is also a node in a small OKF-style wiki, maintained
+automatically — no separate command to run. `wake-out/<seed>/evidence/index.md`
+is a standing catalog of every investigated citing work, grouped
+**Verified** / **Pending Review** and ranked within each group by the same
+relationship-strength × reach score the brief uses for "Strongest
+Evidence." `evidence/log.md` is the full chronological history: every
+dossier built or rebuilt, every failed investigation (no PDF found,
+extraction produced no text), and every human verification, newest at
+the bottom.
+
+Both regenerate as a side effect of `wake evidence` (fresh build or
+`--force` rebuild — never on a cache hit) and `wake override
+--verification-source evidence-dossier` (which also flips the matching
+dossier from `pending-human-review` to `verified` in place). A plain
+`--verification-source human-judgment` override has no dossier behind it
+and leaves the wiki untouched. Re-running `wake evidence --force` on an
+already-verified dossier resets it back to `pending-human-review` — a
+fresh full-text read is a new finding, not a continuation of the old
+sign-off.
 
 ### Inspecting what the model actually read
 

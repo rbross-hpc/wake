@@ -156,6 +156,14 @@ def test_build_dossier_end_to_end_with_real_fixture_pdf(tmp_path):
     assert result["extracted_text_path"] == str(extracted_text_path)
     assert extracted_text_path.name in md_text
 
+    # Dossier JSON sidecar carries what the evidence wiki (BACKLOG Theme D)
+    # needs to index/score this dossier without re-loading classified.json.
+    loaded = evidence.load_dossier(
+        PARALLEL_NETCDF_WORK["openalex_id"], CLASSIFIED_CITING_WORK["openalex_id"], base=tmp_path,
+    )
+    assert loaded["citing_cited_by_count"] == CLASSIFIED_CITING_WORK["cited_by_count"]
+    assert loaded["verification_status"] == "pending-human-review"
+
 
 def test_build_dossier_caches_on_second_call(tmp_path):
     pdf_copy = _copy_fixture_pdf(tmp_path)
