@@ -33,7 +33,7 @@ from .io import atomic_write_json, atomic_write_text, now_iso, read_json
 from .llm.openai_client import chat_json
 from .pdf_fetch import fetch_pdf
 from .seed import work_dir
-from .sources.pdf_fulltext import extract_full_text
+from .sources.pdf_fulltext import extract_full_text_from_pages, extract_pages_cached, extracted_text_path
 
 _STAGE = "evidence"
 
@@ -215,6 +215,7 @@ def _render_dossier_markdown(
     *,
     pdf_path: Path | None,
     pdf_source: str | None,
+    extracted_text_path_str: str | None = None,
 ) -> str:
     """Render the evidence dossier as an OKF concept document."""
     citing_id = citing_work.get("openalex_id", "")
@@ -315,6 +316,12 @@ def _render_dossier_markdown(
         lines.append("## Source")
         lines.append("")
         lines.append(f"- Local PDF: `{pdf_path}`" + (f" (via {pdf_source})" if pdf_source else ""))
+        if extracted_text_path_str:
+            lines.append(
+                f"- Raw extracted text (what the model actually read): `{extracted_text_path_str}` — "
+                "open this if a finding looks wrong, to check whether the extraction was "
+                "garbled before assuming the reasoning was."
+            )
         lines.append("")
 
     return "\n".join(lines)
@@ -345,6 +352,16 @@ def build_dossier(
     returns the cached finding without re-running the LLM verification
     pass (the PDF itself is still resolved via fetch_pdf's own cache, so
     this is effectively free — one dict-merge, no network calls).
+
+    force=True re-runs both the LLM verification pass AND the PDF text
+    extraction (see sources/pdf_fulltext.py's extract_pages_cached) — so a
+    bad/garbled extraction can be fixed by re-running with --force even
+    when the underlying PDF file hasn't changed. The extracted text
+    itself is always cached next to the PDF
+    (wake-out/<seed>/pdfs/<citing-id>.json) regardless of force, so anyone
+    diagnosing a surprising finding — a human directly, or an agent
+    checking on the human's behalf before assuming the model reasoned
+    poorly — can open that file and see exactly what text the LLM saw.
     """
     seed_id = seed_work["openalex_id"]
     citing_id = citing_work["openalex_id"]
@@ -360,6 +377,7 @@ def build_dossier(
                 "dossier_json_path": str(dossier_json_path(seed_id, citing_id, base)),
                 "pdf_path": cached.get("pdf_path"),
                 "pdf_source": cached.get("pdf_source"),
+                "extracted_text_path": cached.get("extracted_text_path"),
                 "provisional": cached.get("provisional"),
                 "proposed": cached.get("proposed"),
                 "quotes": cached.get("quotes"),
@@ -377,15 +395,18 @@ def build_dossier(
 
     pdf_path_str = fetch_result["path"]
     pdf_source = fetch_result.get("source")
+    extracted_text_path_str = str(extracted_text_path(Path(pdf_path_str)))
 
     if verbose:
         print(f"[wake] Extracting full text from {pdf_path_str}...", file=sys.stderr)
-    full_text = extract_full_text(pdf_path_str)
+    pages = extract_pages_cached(pdf_path_str, force=force)
+    full_text = extract_full_text_from_pages(pages)
     if not full_text.strip():
         return {
             "ok": False,
             "reason": "extraction_failed",
             "pdf_path": pdf_path_str,
+            "extracted_text_path": extracted_text_path_str,
             "message": "Could not extract any text from the PDF (possibly scanned with no text layer).",
         }
 
@@ -399,6 +420,7 @@ def build_dossier(
     md_text = _render_dossier_markdown(
         seed_work, citing_work, finding,
         pdf_path=Path(pdf_path_str), pdf_source=pdf_source,
+        extracted_text_path_str=extracted_text_path_str,
     )
 
     wd = evidence_dir(seed_id, base)
@@ -416,6 +438,7 @@ def build_dossier(
         "model": _model(),
         "pdf_path": pdf_path_str,
         "pdf_source": pdf_source,
+        "extracted_text_path": extracted_text_path_str,
         **finding,
     }
     atomic_write_json(json_path, json_payload)
@@ -429,6 +452,7 @@ def build_dossier(
         "dossier_json_path": str(json_path),
         "pdf_path": pdf_path_str,
         "pdf_source": pdf_source,
+        "extracted_text_path": extracted_text_path_str,
         **finding,
     }
 

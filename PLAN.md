@@ -689,3 +689,91 @@ pass.
   did not fabricate a supporting passage. This is what surfaced the
   prefixed-prose JSON bug (fixed above), so the fix is validated by the
   same live run that motivated it.
+
+## v0.3.3 — Cached PDF Text Extraction
+
+User question: is extracted PDF text saved consistently, in case a
+`wake evidence` finding needs debugging or a re-run needs auditing?
+Previously, no — `evidence.py::build_dossier()` re-extracted text fresh
+on every call and discarded it once the LLM verification pass consumed
+it. Only the dossier's *quoted excerpts* (the LLM's selective output) were
+persisted, not the actual text the model was given as input — no way to
+tell "bogus extraction" from "bad reasoning" without re-running anything.
+
+- `sources/pdf_fulltext.py`: new `extract_pages_cached(pdf_path, force=)`
+  + `extracted_text_path(pdf_path)`. Cache file is always a sibling of the
+  PDF (`wake-out/<seed>/pdfs/<citing-id>.pdf` ->
+  `wake-out/<seed>/pdfs/<citing-id>.json`) — deliberately co-located with
+  the PDF rather than under `evidence/`, since extraction is a property
+  of the PDF file, not of any particular dossier; a future consumer (e.g.
+  a DOE-signals reader, or re-verification under a different prompt)
+  can reuse it without depending on wake evidence's output layout.
+  Keyed by the PDF file's sha256 (via `io.sha256_bytes`, previously
+  unused in the codebase) — a changed PDF (e.g. after `fetch-pdf --force`
+  swaps in a different file) is detected automatically and triggers
+  silent re-extraction, no separate invalidation flag needed.
+  `force=True` always re-extracts regardless of the hash match, so a
+  bad/garbled extraction can be fixed even when the underlying PDF hasn't
+  changed. Cache file also records which extractor actually produced the
+  result (`"pypdf"` or `"pdfplumber"`) and a timestamp. The existing pure
+  `extract_pages()`/`extract_full_text()` functions are untouched (still
+  independently testable); a new `extract_full_text_from_pages()` helper
+  joins an already-extracted pages list with `[page N]` markers, shared
+  by both the cached and uncached paths.
+- `evidence.py::build_dossier()`: extraction call site swapped to the
+  cached variant, with `force` threaded through so `wake evidence --force`
+  bypasses both the dossier cache *and* the extraction cache. The dossier
+  (both `.md` and `.json`) now records `extracted_text_path`, and the
+  rendered dossier's "Source" section links to it directly.
+
+### Actor clarity in docs/prompts
+
+Mid-design clarification: "you can open the file" was ambiguous between
+the human and the agent. Resolved by writing each doc in the voice of its
+actual reader rather than a generic "you": code docstrings use third
+person ("a human or agent can inspect..."); `SKILL.md` (agent-facing)
+uses "you" to mean the agent explicitly, with a new numbered principle
+("before blaming the model's reasoning, check the extraction") and an
+addition to step 9's workflow text; `README.md` (human-facing) uses "you"
+to mean the person reading the README.
+
+### Tests
+
++10 offline (226 total): `test_pdf_fulltext.py` (+8) — cache-file shape,
+cache-hit skips re-extraction entirely (asserted via mocking the
+extractors and confirming zero calls), sha256-mismatch triggers automatic
+re-extraction, `force=True` bypasses a valid cache, corrupt cache file
+falls back to fresh extraction rather than crashing, plus two new tests
+for the extracted `extract_full_text_from_pages()` join helper.
+`test_evidence.py` (+2) — end-to-end dossier build asserts the extraction
+cache file exists and `extracted_text_path` is correctly threaded through
+the result and into the rendered markdown; a dedicated test confirms
+`--force` re-invokes extraction (not just the LLM call) even with no PDF
+change.
+
+**Test-hygiene fix found along the way**: several existing `test_evidence.py`
+tests mocked `fetch_pdf` to return the path to the *committed, shared*
+fixture PDF directly (`tests/fixtures/osti_1343551_netcdf_bigdata.pdf`)
+rather than a per-test copy. Since `extract_pages_cached()` now writes a
+`.json` cache file next to whatever PDF path it's given, running these
+tests was silently writing a generated cache file into the committed
+fixtures directory on every test run — confirmed by finding a stray
+`osti_1343551_netcdf_bigdata.json` after the first test run with the new
+code. Fixed by adding a `_copy_fixture_pdf(tmp_path)` helper and updating
+every `build_dossier`-exercising test to use a `tmp_path` copy of the
+fixture instead of the shared file in place.
+
+### Live verification
+
+- `wake evidence` on a real citing work (W2107546711, FLASH architecture
+  paper) confirmed `extracted_text_path` correctly points at
+  `wake-out/<seed>/pdfs/W2107546711.json`, sibling to the PDF; the cache
+  file contains all 33 real pages, a real sha256, `extractor: "pypdf"`,
+  and a timestamp; the rendered dossier's "Source" section links to it.
+- Re-running the same `wake evidence` call (no `--force`) returned in
+  ~0.5s vs. ~10.7s for the first run — confirmed the dossier-level cache
+  short-circuits before extraction is ever touched.
+- `wake evidence ... --force` re-ran extraction even with the PDF file
+  unchanged (cache file mtime updated, ~7s taken for a real re-extraction
+  + re-verification), confirming `force` propagates through both caches
+  as designed.

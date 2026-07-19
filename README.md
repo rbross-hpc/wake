@@ -105,6 +105,8 @@ wake-out/<OpenAlex-ID>/
   .overrides.jsonl        — human-reviewed relationship overrides
   .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
   pdfs/                   — locally-cached PDFs (wake fetch-pdf / wake evidence)
+    <citing-id>.pdf         — the PDF itself
+    <citing-id>.json        — its extracted text, cached (see below)
   evidence/               — full-text verification dossiers (wake evidence)
     <citing-id>.md          — human/agent-readable OKF concept document
     <citing-id>.json        — same finding, structured
@@ -219,6 +221,20 @@ detection — multi-column academic layouts don't extract reliably enough
 for that); the LLM is asked to quote the full containing paragraph
 verbatim around any passage it relies on. Requires the `pdf` extra
 (`pip install 'wake[pdf]'`), same as `fill-abstract --from-pdf`.
+
+### Inspecting what the model actually read
+
+Every extraction is cached next to the PDF it came from:
+`wake-out/<seed>/pdfs/<citing-id>.json` (a sibling of `<citing-id>.pdf`),
+keyed by the PDF file's sha256 so a re-fetched PDF invalidates it
+automatically. If a `wake evidence` finding looks wrong, you can open
+this file directly — no need to re-run anything — and check whether the
+extraction itself was garbled (a common failure mode with multi-column
+academic layouts) before concluding the model's *reasoning* was at
+fault. The dossier's "Source" section always links to this file. `wake
+evidence --force` re-runs extraction too (not just the LLM verification
+pass), so a bad extraction can be retried even when the PDF itself
+hasn't changed.
 
 ## Cost Telemetry (estimate-only)
 

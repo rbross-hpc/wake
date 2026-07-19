@@ -103,6 +103,17 @@ Interactive, single-reference tool by design: you decide which leads to
 follow, not a batch "process everything" command. Cached — a second call
 for the same citing work is a no-op (no LLM call) unless `--force`.
 
+**Extracted text is itself cached** (added in a follow-up pass, prompted
+by the user asking whether extraction is saved consistently enough to
+debug a surprising finding): `extract_pages_cached()` writes
+`wake-out/<seed>/pdfs/<citing-id>.json`, a sibling of the PDF, keyed by
+the PDF's sha256 (auto-invalidates on a re-fetched PDF) with an
+`extractor` field (`pypdf`/`pdfplumber`) and a timestamp. `wake evidence
+--force` re-runs extraction too, not just the LLM call. Lets a human or
+an agent debugging a finding on the human's behalf distinguish "the
+extraction was garbled" from "the model reasoned poorly" by reading the
+cache file directly — no re-run required.
+
 Author-email discovery (originally scoped as part of the dossier body)
 was **not built** in this pass — deferred, still an open item below.
 
