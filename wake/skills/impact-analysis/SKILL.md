@@ -5,7 +5,7 @@
 `wake` is an analysis instrument you (the agent) wield on the human's behalf.
 It is **not** an autopilot — there is no single "do everything" command. You
 compose thin primitives (`resolve`, `citing`, `sample`, `classify`, `gaps`,
-`fetch-pdf`, `fill-abstract`, `evidence`, `render`, `status`, `cost`,
+`fetch-pdf`, `fill-abstract`, `evidence`, `bake`, `status`, `cost`,
 `override`) into an **explore-first workflow**, pausing at natural decision
 points so the human can confirm the seed paper, review a sample of
 classifications, and approve spend before you scale up.
@@ -132,7 +132,7 @@ This reports `pending_classify` and `estimated_remaining_classify_cost`
 estimate to the human and ask how to proceed**:
 - Classify everything (`wake classify "<seed>"`, no `--limit`)
 - Cap at the top-N most-cited (`wake classify "<seed>" --limit N --sort cited-by`)
-- Stop here and render a partial brief
+- Stop here and bake a partial brief
 
 You can always dry-run first to preview without spending:
 ```bash
@@ -190,10 +190,10 @@ not a full-document summarization. This step is optional and should only
 be offered for works that are clearly consequential (high citation count);
 don't suggest it for background-mention-tier works.
 
-### 8. Render and present the brief
+### 8. Bake and present the brief
 
 ```bash
-wake --json render "<seed>"
+wake --json bake "<seed>"
 ```
 
 Works on partial data — if not everything is classified, the brief notes
@@ -283,8 +283,8 @@ wake --json override "<seed>" <citing-openalex-id> --relationship extends --just
 ```
 `--verification-source` defaults to `human-judgment`; pass
 `--verification-source evidence-dossier` when the override follows a
-`wake evidence` finding the human accepted (step 9). Then re-render
-(`wake --json render "<seed>"`) — overrides always win over the LLM
+`wake evidence` finding the human accepted (step 9). Then re-bake
+(`wake --json bake "<seed>"`) — overrides always win over the LLM
 classification and are marked `[VERIFIED via ...]` in the brief.
 
 ## Principles for Agents
@@ -293,10 +293,10 @@ classification and are marked `[VERIFIED via ...]` in the brief.
    the human, then scale.
 2. **Report cost estimates before spending** at scale (`wake status`).
    Estimates are heuristic (char-count based), not metered — say so.
-3. **Trust the cache.** Re-running `citing`/`classify`/`render` is cheap and
+3. **Trust the cache.** Re-running `citing`/`classify`/`bake` is cheap and
    safe; it skips completed work. Only use `--force` when the human asks for
    a fresh pull or the prompt/model changed.
-4. **Partial briefs are valid.** `render` works on however much is
+4. **Partial briefs are valid.** `bake` works on however much is
    classified and says so — you don't need 100% coverage to show something
    useful.
 5. **Overrides are how the human corrects you.** If they push back on a

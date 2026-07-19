@@ -4,7 +4,7 @@ Captures the roadmap discussed after the first full live run (Parallel netCDF,
 408 citing works classified, complete impact.md reviewed). This is a
 substantial expansion beyond wake's citation-classification core: an
 evidence-digging, DOE-relevance-signal, and narrative-drafting layer, built
-as an OKF-compliant knowledge wiki alongside the existing classify/render
+as an OKF-compliant knowledge wiki alongside the existing classify/bake
 pipeline.
 
 Sequencing: **A + B first (foundation), then D (organization), then E
@@ -216,7 +216,7 @@ by rescanning `evidence/*.json`):
 
 `index.md`/`log.md` only spring into existence on the first real event —
 no empty scaffolding created at `resolve`/`citing` time, consistent with
-`impact.md` not existing until `wake render` and `.overrides.jsonl` not
+`impact.md` not existing until `wake bake` and `.overrides.jsonl` not
 existing until the first override.
 
 No new CLI surface: both files are plain markdown, read directly (same as

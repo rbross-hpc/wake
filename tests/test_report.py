@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import pytest
-from wake.report import build_metrics, render_markdown, _score, _venue_type_or_fallback
+from wake.report import build_metrics, bake_markdown, _score, _venue_type_or_fallback
 from wake.classify import RELATIONSHIP_STRENGTH
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
@@ -78,14 +78,14 @@ def test_top_evidence_sorted():
     assert scores == sorted(scores, reverse=True)
 
 
-def test_render_markdown_contains_sections():
+def test_bake_markdown_contains_sections():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
         ["extends", "uses-as-tool", "background-mention"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "This paper contributes PnetCDF."}
     metrics = build_metrics(seed, classified)
-    md = render_markdown(seed, metrics)
+    md = bake_markdown(seed, metrics)
     assert "# Impact Brief" in md
     assert "## The Contribution" in md
     assert "## Reach" in md
@@ -126,7 +126,7 @@ def test_build_metrics_partial_coverage():
     assert sum(metrics["by_relationship"].values()) == 1
 
 
-def test_render_markdown_notes_partial_coverage():
+def test_bake_markdown_notes_partial_coverage():
     classified_first = {
         **SAMPLE_CITING_WORKS[0],
         "relationship": "extends",
@@ -139,18 +139,18 @@ def test_render_markdown_notes_partial_coverage():
     mixed = [classified_first, SAMPLE_CITING_WORKS[1], SAMPLE_CITING_WORKS[2]]
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, mixed)
-    md = render_markdown(seed, metrics)
+    md = bake_markdown(seed, metrics)
     assert "Partial analysis" in md
 
 
-def test_render_markdown_full_coverage_no_partial_note():
+def test_bake_markdown_full_coverage_no_partial_note():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
         ["extends", "uses-as-tool", "background-mention"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
-    md = render_markdown(seed, metrics)
+    md = bake_markdown(seed, metrics)
     assert "Partial analysis" not in md
 
 
@@ -278,19 +278,19 @@ def test_top_evidence_carries_author_overlap_fields():
     assert all(e["overlapping_authors"] == [] for e in non_overlap_entries)
 
 
-def test_render_markdown_shows_provisional_tag_by_default():
+def test_bake_markdown_shows_provisional_tag_by_default():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
         ["extends", "uses-as-tool", "background-mention"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
-    md = render_markdown(seed, metrics)
+    md = bake_markdown(seed, metrics)
     assert "[PROVISIONAL" in md
     assert "provisional" in md.lower()
 
 
-def test_render_markdown_shows_verified_via_evidence_dossier():
+def test_bake_markdown_shows_verified_via_evidence_dossier():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
         ["extends", "uses-as-tool", "background-mention"],
@@ -299,11 +299,11 @@ def test_render_markdown_shows_verified_via_evidence_dossier():
     classified[0]["verification_source"] = "evidence-dossier"
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
-    md = render_markdown(seed, metrics)
+    md = bake_markdown(seed, metrics)
     assert "[VERIFIED via full-text reading]" in md
 
 
-def test_render_markdown_shows_verified_via_human_judgment():
+def test_bake_markdown_shows_verified_via_human_judgment():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
         ["extends", "uses-as-tool", "background-mention"],
@@ -312,11 +312,11 @@ def test_render_markdown_shows_verified_via_human_judgment():
     classified[0]["verification_source"] = "human-judgment"
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
-    md = render_markdown(seed, metrics)
+    md = bake_markdown(seed, metrics)
     assert "[VERIFIED via human judgment]" in md
 
 
-def test_render_markdown_shows_self_extension_tag():
+def test_bake_markdown_shows_self_extension_tag():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
         ["extends", "uses-as-tool", "background-mention"],
@@ -325,24 +325,24 @@ def test_render_markdown_shows_self_extension_tag():
     classified[0]["overlapping_authors"] = ["Jianwei Li"]
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
-    md = render_markdown(seed, metrics)
+    md = bake_markdown(seed, metrics)
     assert "[SELF-EXTENSION — seed's own team]" in md
     assert "own team publishing a follow-on" in md
 
 
-def test_render_markdown_omits_self_extension_summary_when_none():
+def test_bake_markdown_omits_self_extension_summary_when_none():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
         ["extends", "uses-as-tool", "background-mention"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
-    md = render_markdown(seed, metrics)
+    md = bake_markdown(seed, metrics)
     assert "own team publishing a follow-on" not in md
     assert "[SELF-EXTENSION" not in md
 
 
-def test_render_markdown_nature_of_impact_summary_counts():
+def test_bake_markdown_nature_of_impact_summary_counts():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
         ["extends", "uses-as-tool", "background-mention"],
@@ -351,7 +351,7 @@ def test_render_markdown_nature_of_impact_summary_counts():
     classified[0]["verification_source"] = "evidence-dossier"
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
-    md = render_markdown(seed, metrics)
+    md = bake_markdown(seed, metrics)
     assert "2 classification(s) are **provisional**" in md
     assert "1 have been **verified**" in md
 

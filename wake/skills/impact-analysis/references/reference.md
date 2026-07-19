@@ -25,7 +25,7 @@ wake --json gaps "<seed>" [--min-cited-by N] [--no-auto-backfill-check]
 wake --json fetch-pdf "<seed>" <citing-id> [--force]
 wake --json fill-abstract "<seed>" <citing-id> --from-pdf PATH | --text TEXT
 wake --json evidence "<seed>" <citing-id> [--force]
-wake --json render "<seed>"
+wake --json bake "<seed>"
 wake --json override "<seed>" <citing-id> --relationship <class> --justification "..." [--verification-source human-judgment|evidence-dossier]
 
 # Standalone
