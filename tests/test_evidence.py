@@ -79,6 +79,26 @@ def test_verify_full_text_returns_structured_finding():
     assert finding["quotes"][0]["page"] == 2
 
 
+def test_verify_full_text_tags_author_overlap_false_by_default():
+    # Fixture works have no author_ids -- must not spuriously overlap.
+    with patch("wake.evidence.chat_json", return_value=_fake_verification_response()):
+        finding = evidence.verify_full_text(
+            PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, "some full text here",
+            record_cost=False,
+        )
+    assert finding["author_overlap"] is False
+    assert finding["overlapping_authors"] == []
+
+
+def test_verify_full_text_tags_author_overlap_true_when_shared_author_id():
+    seed = {**PARALLEL_NETCDF_WORK, "author_ids": ["A1"]}
+    citing = {**CLASSIFIED_CITING_WORK, "authors": ["Jianwei Li"], "author_ids": ["A1"]}
+    with patch("wake.evidence.chat_json", return_value=_fake_verification_response()):
+        finding = evidence.verify_full_text(seed, citing, "some full text here", record_cost=False)
+    assert finding["author_overlap"] is True
+    assert finding["overlapping_authors"] == ["Jianwei Li"]
+
+
 def test_verify_full_text_rejects_invalid_relationship_label():
     with patch("wake.evidence.chat_json", return_value=_fake_verification_response(relationship="not-a-real-label")):
         finding = evidence.verify_full_text(
@@ -163,6 +183,30 @@ def test_build_dossier_end_to_end_with_real_fixture_pdf(tmp_path):
     )
     assert loaded["citing_cited_by_count"] == CLASSIFIED_CITING_WORK["cited_by_count"]
     assert loaded["verification_status"] == "pending-human-review"
+    assert loaded["author_overlap"] is False
+
+
+def test_build_dossier_flags_author_overlap_in_markdown_and_json(tmp_path):
+    seed = {**PARALLEL_NETCDF_WORK, "author_ids": ["A1"]}
+    citing = {**CLASSIFIED_CITING_WORK, "authors": ["Jianwei Li"], "author_ids": ["A1"]}
+    pdf_copy = _copy_fixture_pdf(tmp_path)
+    with patch("wake.evidence.fetch_pdf", return_value={
+        "ok": True, "path": str(pdf_copy), "source": "osti",
+    }), patch("wake.evidence.chat_json", return_value=_fake_verification_response()):
+        result = evidence.build_dossier(seed, citing, base=tmp_path, verbose=False)
+
+    assert result["author_overlap"] is True
+    assert result["overlapping_authors"] == ["Jianwei Li"]
+
+    md_text = Path(result["dossier_path"]).read_text()
+    assert "author-overlap:true" in md_text
+    assert "Author overlap with seed:" in md_text
+    assert "Jianwei Li" in md_text
+    assert "original team's own follow-on work" in md_text
+
+    loaded = evidence.load_dossier(seed["openalex_id"], citing["openalex_id"], base=tmp_path)
+    assert loaded["author_overlap"] is True
+    assert loaded["overlapping_authors"] == ["Jianwei Li"]
 
 
 def test_build_dossier_caches_on_second_call(tmp_path):

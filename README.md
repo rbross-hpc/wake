@@ -158,6 +158,17 @@ wake-out/<OpenAlex-ID>/
 | `related-infrastructure` | Complementary tooling in the same ecosystem, no direct dependency |
 | `background-mention` | Cites as background/related work |
 
+Every classification also carries an orthogonal `author_overlap` tag
+(`true`/`false`, plus `overlapping_authors`): whether the citing work
+shares an OpenAlex author ID with the seed — i.e. the original team
+publishing a follow-on paper, not independent third-party adoption. This
+is not a relationship class of its own; `extends` + `author_overlap:
+true` and `extends` + `author_overlap: false` are both `extends`, just
+different stories. Computed deterministically (ID-set intersection, no
+LLM call) and surfaced in the brief as a `[SELF-EXTENSION — seed's own
+team]` tag in "Strongest Evidence" plus a `self_extension_count` summary
+line in "Nature of Impact."
+
 ## Abstract Recovery
 
 ~20% of citing works typically lack an OpenAlex abstract, forcing lower-

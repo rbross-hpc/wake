@@ -163,6 +163,9 @@ def classify_one(
     if relationship not in RELATIONSHIPS:
         relationship = "background-mention"
 
+    from .author_overlap import compute_overlap
+    overlap = compute_overlap(seed_work, citing_work)
+
     return {
         "relationship": relationship,
         "confidence": float(result.get("confidence", 0.5)),
@@ -176,6 +179,12 @@ def classify_one(
         # sign-off through wake override. See report.add_override() and
         # BACKLOG.md's provisional -> proposed -> verified lifecycle.
         "verification_status": "provisional",
+        # Orthogonal to relationship (BACKLOG Theme E): is this the seed's
+        # own team publishing a follow-on, or an independent third party?
+        # Not a new relationship label -- "extends" + author_overlap=True
+        # is a different story than "extends" + author_overlap=False, but
+        # both are still "extends".
+        **overlap,
     }
 
 

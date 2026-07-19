@@ -58,6 +58,19 @@ Ordered by strength, strongest first:
 | `related-infrastructure` | Complementary tooling in the same ecosystem, no direct dependency |
 | `background-mention` | Cites only as background/related work (including unclear/indirect relationships) |
 
+### Author-Overlap Tag (orthogonal to relationship)
+
+Every `classify` and `evidence` result also carries `author_overlap`
+(bool) + `overlapping_authors` (list of names) — computed deterministically
+by intersecting OpenAlex author IDs between the seed and citing work, no
+LLM call. Not a relationship class of its own: `extends` +
+`author_overlap: true` (the original team's own follow-on paper) and
+`extends` + `author_overlap: false` (an independent third-party
+extension) are both still `extends`, just different stories for a
+narrative. Surfaced in the brief as a `[SELF-EXTENSION — seed's own
+team]` tag in "Strongest Evidence" and a `self_extension_count` summary
+line in "Nature of Impact" (`impact.json`).
+
 ## PDF Acquisition Chain (`wake fetch-pdf`)
 
 Tried in order, all API-based (no scraping publisher landing pages, no
@@ -116,6 +129,15 @@ Promotion to `verified` always requires an explicit `wake override` call
 `--verification-source evidence-dossier` to record that the override
 followed a dossier rather than an unaided human judgment.
 
+When `--verification-source evidence-dossier` is used, `wake override`
+also patches the matching dossier (`pending-human-review` → `verified`,
+in both its `.md` and `.json`) and regenerates `evidence/index.md`/
+`log.md` — no separate step needed. A plain `--verification-source
+human-judgment` override (no dossier behind it) leaves the wiki
+untouched. Re-running `wake evidence --force` on an already-verified
+dossier resets it back to `pending-human-review` — a fresh full-text read
+is a new finding, not a continuation of the old sign-off.
+
 ### Diagnosing a surprising finding: check the extraction first
 
 `extracted_text_path` (also linked from the dossier's "Source" section)
@@ -153,6 +175,10 @@ wake-out/<OpenAlex-ID>/
   evidence/                — full-text verification dossiers (wake evidence)
     <citing-id>.md          — OKF concept document (human/agent-readable)
     <citing-id>.json        — same finding, structured (for programmatic reuse)
+    index.md                — OKF catalog: Verified / Pending Review, ranked
+                               by score; regenerated automatically, no command
+    log.md                  — OKF chronological log of every investigation
+                               (built, rebuilt, failed, verified); append-only
 ```
 
 Use `--work-dir DIR` (or `WAKE_WORK_DIR` env var) to control where

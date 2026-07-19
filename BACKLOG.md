@@ -228,7 +228,7 @@ doesn't need a separate step.
 
 ---
 
-## Theme E — Author-Overlap Tag
+## Theme E — Author-Overlap Tag — BUILT
 
 Answers: *"is 'enhanced by' one of the predicates we look for?"* — No, and
 it shouldn't be a new relationship predicate. `extends` already captures
@@ -239,11 +239,36 @@ orthogonal tag:
   follow-on/enhancement paper
 - `extends` + `author_overlap: false` = independent third-party extension
 
-Build: preserve `authorships[].author.id` in `sources/openalex.py`'s
-`_summarize_work()` (currently discarded, display-name-only) — compute
-ID-set intersection between seed and citing work — surface as
-`author_overlap: true/false` + overlapping names on classified works and
-Theme A2 dossiers. Small, high-value; sequenced right after D.
+**Built as `wake/author_overlap.py`**, a small, pure, deterministic module
+(no LLM call): `compute_overlap(seed_work, citing_work)` returns
+`{"author_overlap": bool, "overlapping_authors": [name, ...]}` by
+intersecting OpenAlex author-ID sets. ID-based, not name-based — display
+names collide and OpenAlex formats the same author's name inconsistently
+across papers. Two works both lacking author IDs are never treated as
+"the same team" just because both sides are empty.
+
+`sources/openalex.py::_summarize_work()` now preserves `author_ids`
+alongside `authors` (previously discarded, display-name-only) —
+index-aligned with `authors`, `""` for an authorship entry with no
+OpenAlex author id. No new API field needed: `authorships[].author.id` is
+already returned by the existing `authorships` `select` field.
+
+Wired into both places BACKLOG originally called for:
+- `classify.py::classify_one()` — every classified work gets
+  `author_overlap`/`overlapping_authors` alongside its relationship,
+  orthogonal to (not a replacement for) the relationship label itself.
+- `evidence.py::verify_full_text()` — every dossier gets the same tag;
+  `_render_dossier_markdown()` surfaces it as an `author-overlap:true`
+  frontmatter tag plus an inline note under the citing work's byline when
+  true ("this appears to be the original team's own follow-on work").
+
+`report.py` aggregates it too: `build_metrics()` adds a
+`self_extension_count` (works with `author_overlap: true` among the
+classified set), surfaced in the brief's "Nature of Impact" section as a
+one-line callout, and every `top_evidence` entry carries
+`author_overlap`/`overlapping_authors` — rendered as a `[SELF-EXTENSION —
+seed's own team]` tag alongside the existing provisional/verified tag in
+"Strongest Evidence".
 
 Powers the Theme F1 differentiator narrative (the tool's own evolution by
 its creators is a different story thread than third-party adoption).
