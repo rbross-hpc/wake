@@ -119,12 +119,32 @@ def apply_overrides(
     return result
 
 
-def _score(work: dict) -> float:
-    """Rank score: relationship strength × log(1 + downstream cited_by_count)."""
+def relationship_score(relationship: str, cited_by_count: int | None, *, strength: int | None = None) -> float:
+    """Single source of truth for the ranking formula used both for the
+    impact brief's "Strongest Evidence" (this module) and the evidence
+    wiki's index.md ranking (evidence_wiki.py) -- relationship strength x
+    log(1 + downstream cited_by_count).
+
+    *strength* lets a caller that already has a precomputed strength
+    (classified works carry a "strength" field) skip the RELATIONSHIP_STRENGTH
+    lookup; callers working from a relationship label alone (e.g. an
+    evidence dossier, which has no "strength" field of its own) omit it.
+    """
     import math
-    strength = work.get("strength", 1)
-    downstream = work.get("cited_by_count", 0) or 0
+    if strength is None:
+        strength = RELATIONSHIP_STRENGTH.get(relationship, 1)
+    downstream = cited_by_count or 0
     return strength * math.log1p(downstream)
+
+
+def _score(work: dict) -> float:
+    """Rank score for a classified citing work dict (has "strength" and
+    "cited_by_count" fields). See relationship_score() for the formula."""
+    return relationship_score(
+        work.get("relationship", "background-mention"),
+        work.get("cited_by_count", 0),
+        strength=work.get("strength", 1),
+    )
 
 
 _OPENALEX_TYPE_TO_VENUE_TYPE = {
