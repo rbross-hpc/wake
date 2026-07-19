@@ -193,7 +193,7 @@ def build_metrics(
     evidence) are computed only over the subset that has been classified
     (i.e. has a 'relationship' key) — callers building a brief on partial
     data will see an accurate `coverage` fraction and a note in the
-    rendered brief.
+    baked brief.
     """
     rpt_cfg = config.report_cfg()
     top_n = rpt_cfg.get("top_evidence_n", 20)
@@ -288,11 +288,11 @@ def build_metrics(
     }
 
 
-def render_markdown(
+def bake_markdown(
     seed_work: dict[str, Any],
     metrics: dict[str, Any],
 ) -> str:
-    """Render the impact brief as a Markdown string."""
+    """Bake the impact brief into a Markdown string."""
     lines: list[str] = []
     title = seed_work.get("title") or "Unknown Paper"
     oid = seed_work.get("openalex_id", "")
@@ -455,7 +455,7 @@ def render_markdown(
     return "\n".join(lines)
 
 
-def render_and_save(
+def bake_and_save(
     seed_work: dict[str, Any],
     citing_works: list[dict[str, Any]],
     *,
@@ -463,7 +463,7 @@ def render_and_save(
     verbose: bool = True,
     apply_human_overrides: bool = True,
 ) -> tuple[Path, Path]:
-    """Build metrics, render markdown, write impact.json + impact.md.
+    """Build metrics, bake markdown, write impact.json + impact.md.
 
     *citing_works* may be the full set (some possibly unclassified — the
     brief will note partial coverage) or a pre-filtered subset. Human
@@ -484,7 +484,7 @@ def render_and_save(
         works = apply_overrides(works, overrides)
 
     metrics = build_metrics(seed_work, works)
-    md_text = render_markdown(seed_work, metrics)
+    md_text = bake_markdown(seed_work, metrics)
 
     json_path = wd / "impact.json"
     md_path = wd / "impact.md"

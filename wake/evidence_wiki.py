@@ -19,7 +19,7 @@ written by build_dossier() — there is no separate index/log data store,
 so a corrupted or hand-edited index.md can always be regenerated from
 scratch via rebuild_index(). Neither file exists until the first real
 event (a dossier build, or a human verifying one via `wake override`) —
-consistent with impact.md not existing until `wake render` and
+consistent with impact.md not existing until `wake bake` and
 .overrides.jsonl not existing until the first override.
 """
 from __future__ import annotations

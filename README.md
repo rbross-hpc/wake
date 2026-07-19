@@ -10,12 +10,12 @@ Given a seed paper (DOI, arXiv ID, OpenAlex ID, or title), `wake`:
 2. Fetches every work that cites the seed (via `filter=cites:<id>`).
 3. Generates a one-paragraph LLM description of the seed's contribution.
 4. LLM-classifies each citing work's relationship to the seed.
-5. Renders a Markdown impact brief with reach metrics, citation trends, and ranked evidence.
+5. Bakes a Markdown impact brief with reach metrics, citation trends, and ranked evidence.
 
 ## Where this is headed
 
 The impact brief isn't the end product — it's the first thing you can
-render from the evidence `wake` accumulates. Every `wake evidence` call
+generate from the evidence `wake` accumulates. Every `wake evidence` call
 writes one OKF-style concept document into a growing packet under
 `wake-out/<seed>/evidence/`, and that packet keeps growing (and staying
 put) across sessions rather than being scratch cache for a single brief.
@@ -31,7 +31,7 @@ where they're headed.
 
 There is no single "run everything" command. `wake` provides thin,
 JSON-emitting primitives — `resolve`, `citing`, `sample`, `describe`,
-`classify`, `render`, `status`, `cost`, `override` — that an agent composes
+`classify`, `bake`, `status`, `cost`, `override` — that an agent composes
 into a workflow: resolve and confirm the seed, sample a handful of citing
 works, classify the sample and check with the human, review the estimated
 cost to finish, then scale up. See
@@ -69,7 +69,7 @@ wake --json fetch-pdf "10.1145/1048935.1050189" <citing-id>
 wake --json fill-abstract "10.1145/1048935.1050189" <citing-id> --from-pdf wake-out/.../pdfs/<citing-id>.pdf
 wake --json classify "10.1145/1048935.1050189" --ids <citing-id> --force
 
-wake --json render "10.1145/1048935.1050189"
+wake --json bake "10.1145/1048935.1050189"
 
 # Optional: full-text-verify a specific finding, then record the human's call
 wake --json evidence "10.1145/1048935.1050189" <citing-id>
@@ -98,7 +98,7 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake fill-abstract <seed> <id>` | Manually resolve one via `--from-pdf` or `--text` |
 | `wake fetch-pdf <seed> <id>` | Try to automatically acquire a PDF (OSTI, Semantic Scholar, Unpaywall, arXiv, optional CORE) |
 | `wake evidence <seed> <id>` | Full-text verification: reads the whole PDF, proposes a relationship with quoted, page-cited passages |
-| `wake render <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
+| `wake bake <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
 | `wake override <seed> <id>` | Record a human-reviewed relationship correction (`--verification-source human-judgment\|evidence-dossier`) |
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |
 | `wake show brief <seed>` | Print cached impact.md |
@@ -250,7 +250,7 @@ wake override <seed> <citing-id> --relationship extends \
   --justification "<quoted evidence>" --verification-source evidence-dossier
 ```
 
-The rendered brief tags every entry accordingly:
+The baked brief tags every entry accordingly:
 `[PROVISIONAL — abstract-only, not yet checked against full text]`,
 `[VERIFIED via full-text reading]`, or `[VERIFIED via human judgment]`
 (a plain override with no dossier behind it), plus a one-line

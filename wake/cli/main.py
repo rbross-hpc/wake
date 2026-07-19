@@ -5,7 +5,7 @@
 Designed to be driven by an agent as much as by a human: every command
 supports --json for machine-readable output, and the primitives are
 intentionally thin (resolve / citing / sample / describe / classify /
-render / override / cost / status) so an agent can compose an
+bake / override / cost / status) so an agent can compose an
 explore-first workflow instead of running one opaque pipeline command.
 See wake/skills/impact-analysis/SKILL.md for the recommended workflow.
 """
@@ -44,7 +44,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_fill_abstract_parser(sub)
     _build_fetch_pdf_parser(sub)
     _build_evidence_parser(sub)
-    _build_render_parser(sub)
+    _build_bake_parser(sub)
     _build_override_parser(sub)
     _build_cost_parser(sub)
     _build_show_parser(sub)
@@ -175,9 +175,9 @@ def _build_evidence_parser(sub) -> None:
                         "separately to force a fresh PDF download).")
 
 
-def _build_render_parser(sub) -> None:
+def _build_bake_parser(sub) -> None:
     p = sub.add_parser(
-        "render",
+        "bake",
         help="Assemble impact.md + impact.json from whatever has been classified so far. "
              "Works on partial data (marks coverage) or a fully classified set.",
     )
@@ -188,7 +188,7 @@ def _build_override_parser(sub) -> None:
     p = sub.add_parser(
         "override",
         help="Record a human-reviewed relationship override for one citing work. "
-             "Wins over the LLM classification in the next render. Always run by "
+             "Wins over the LLM classification in the next bake. Always run by "
              "the agent on the human's behalf -- never ask the human to run this "
              "command themselves (see SKILL.md).",
     )
@@ -627,17 +627,17 @@ def run_evidence(args) -> None:
     emit("evidence", result, as_json=args.json_out, human=human)
 
 
-def run_render(args) -> None:
+def run_bake(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
     from ..citing import load_citing
     from ..classify import load_classified
-    from ..report import render_and_save
+    from ..report import bake_and_save
     base = _work_dir_base(args)
     quiet = is_quiet(args)
 
     citing = load_citing(work["openalex_id"], base)
     if citing is None:
-        emit_error("render", RuntimeError(
+        emit_error("bake", RuntimeError(
             "No citing works cached. Run `wake citing` first."
         ), as_json=args.json_out)
         sys.exit(1)
@@ -645,10 +645,10 @@ def run_render(args) -> None:
     classified = load_classified(work["openalex_id"], base)
     works = classified if classified is not None else citing
 
-    json_path, md_path = render_and_save(work, works, base=base, verbose=not quiet)
+    json_path, md_path = bake_and_save(work, works, base=base, verbose=not quiet)
 
     data = {"impact_json": str(json_path), "impact_md": str(md_path)}
-    emit("render", data, as_json=args.json_out,
+    emit("bake", data, as_json=args.json_out,
          human=lambda d: print(f"Report written:\n  {d['impact_md']}\n  {d['impact_json']}"))
 
 
@@ -705,7 +705,7 @@ def run_show(args) -> None:
         md_path = wd / "impact.md"
         if not md_path.exists():
             emit_error("show", RuntimeError(
-                f"No impact.md found at {md_path}. Run: wake citing / classify / render {args.seed}"
+                f"No impact.md found at {md_path}. Run: wake citing / classify / bake {args.seed}"
             ), as_json=args.json_out)
             sys.exit(1)
         text = md_path.read_text(encoding="utf-8")
@@ -715,7 +715,7 @@ def run_show(args) -> None:
         json_path = wd / "impact.json"
         if not json_path.exists():
             emit_error("show", RuntimeError(
-                f"No impact.json found. Run: wake citing / classify / render {args.seed}"
+                f"No impact.json found. Run: wake citing / classify / bake {args.seed}"
             ), as_json=args.json_out)
             sys.exit(1)
         from ..io import read_json
@@ -726,7 +726,7 @@ def run_show(args) -> None:
         json_path = wd / "impact.json"
         if not json_path.exists():
             emit_error("show", RuntimeError(
-                f"No impact.json found. Run: wake citing / classify / render {args.seed}"
+                f"No impact.json found. Run: wake citing / classify / bake {args.seed}"
             ), as_json=args.json_out)
             sys.exit(1)
         from ..io import read_json
@@ -809,8 +809,8 @@ def main() -> None:
             run_fetch_pdf(args)
         elif args.command == "evidence":
             run_evidence(args)
-        elif args.command == "render":
-            run_render(args)
+        elif args.command == "bake":
+            run_bake(args)
         elif args.command == "override":
             run_override(args)
         elif args.command == "cost":
