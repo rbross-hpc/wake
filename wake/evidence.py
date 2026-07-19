@@ -316,6 +316,11 @@ def _render_dossier_markdown(
         )
         lines.append("")
 
+    # Marked with HTML comments (invisible when rendered) rather than
+    # matched by literal prose, so evidence_wiki.py::mark_verified() can
+    # replace this whole block without depending on the exact wording
+    # above staying byte-for-byte identical forever.
+    lines.append("<!-- status-section:start -->")
     lines.append("## Status: pending your review")
     lines.append("")
     lines.append(
@@ -324,6 +329,7 @@ def _render_dossier_markdown(
         "`wake override` on their behalf once the human accepts or adjusts "
         "the reading — see SKILL.md."
     )
+    lines.append("<!-- status-section:end -->")
     lines.append("")
 
     if pdf_path is not None:

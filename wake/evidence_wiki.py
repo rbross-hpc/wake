@@ -25,12 +25,17 @@ consistent with impact.md not existing until `wake render` and
 from __future__ import annotations
 
 import json
-import math
+import re
 from pathlib import Path
 from typing import Any
 
 from .evidence import evidence_dir, dossier_path
 from .io import atomic_write_text, now_iso
+
+_STATUS_SECTION_RE = re.compile(
+    r"<!-- status-section:start -->.*?<!-- status-section:end -->",
+    re.DOTALL,
+)
 
 
 def index_path(seed_id: str, base: Path | None = None) -> Path:
@@ -42,14 +47,15 @@ def log_path(seed_id: str, base: Path | None = None) -> Path:
 
 
 def _score(entry: dict[str, Any]) -> float:
-    """Same ranking formula as report.py's _score(): relationship
-    strength x log(1 + downstream cited_by_count)."""
-    from .classify import RELATIONSHIP_STRENGTH
+    """Rank score for a dossier .json sidecar. Delegates to
+    report.relationship_score() -- the single source of truth for this
+    formula -- so the impact brief's "Strongest Evidence" ranking and this
+    wiki's Verified/Pending Review ranking can never silently drift apart.
+    """
+    from .report import relationship_score
 
     relationship = entry.get("proposed", {}).get("relationship", "background-mention")
-    strength = RELATIONSHIP_STRENGTH.get(relationship, 1)
-    downstream = entry.get("citing_cited_by_count", 0) or 0
-    return strength * math.log1p(downstream)
+    return relationship_score(relationship, entry.get("citing_cited_by_count", 0))
 
 
 def _load_all_dossiers(seed_id: str, base: Path | None = None) -> list[dict[str, Any]]:
@@ -210,20 +216,20 @@ def mark_verified(
         md_text = md_path.read_text(encoding="utf-8")
         md_text = md_text.replace("status:pending-human-review", "status:verified")
 
-        old_status_block = (
-            "## Status: pending your review\n\n"
-            "This finding has not been applied to the impact brief. An agent "
-            "should present the passages above to a human, then run "
-            "`wake override` on their behalf once the human accepts or adjusts "
-            "the reading — see SKILL.md.\n"
-        )
+        # Structural replace via the <!-- status-section:... --> markers
+        # _render_dossier_markdown() wraps this block in -- not a literal
+        # match on the surrounding prose, so this keeps working even if
+        # that prose is edited later (see evidence.py for the markers).
         new_status_block = (
+            "<!-- status-section:start -->\n"
             "## Status: verified\n\n"
             f"Verified by a human on {verified_at}"
             + (f" — {justification}" if justification else "")
             + ".\n"
+            "<!-- status-section:end -->"
         )
-        md_text = md_text.replace(old_status_block, new_status_block)
-        atomic_write_text(md_path, md_text)
+        if _STATUS_SECTION_RE.search(md_text):
+            md_text = _STATUS_SECTION_RE.sub(new_status_block, md_text, count=1)
+            atomic_write_text(md_path, md_text)
 
     return True
