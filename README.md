@@ -12,6 +12,21 @@ Given a seed paper (DOI, arXiv ID, OpenAlex ID, or title), `wake`:
 4. LLM-classifies each citing work's relationship to the seed.
 5. Renders a Markdown impact brief with reach metrics, citation trends, and ranked evidence.
 
+## Where this is headed
+
+The impact brief isn't the end product — it's the first thing you can
+render from the evidence `wake` accumulates. Every `wake evidence` call
+writes one OKF-style concept document into a growing packet under
+`wake-out/<seed>/evidence/`, and that packet keeps growing (and staying
+put) across sessions rather than being scratch cache for a single brief.
+
+It's shaped that way on purpose: a durable, quote-backed, page-cited
+evidence base is the substrate a later generation pass — a one-paragraph
+pitch, a slide/timeline of adoption, a fully-cited narrative for a tech
+editor — can read *from*, instead of needing its own research pass. None
+of those generators exist yet; see `BACKLOG.md` (Themes C, D, F, G) for
+where they're headed.
+
 ## Design: explore-first, not autopilot
 
 There is no single "run everything" command. `wake` provides thin,
@@ -40,13 +55,27 @@ export OPENAI_API_KEY=your-key
 export OPENAI_BASE_URL=https://apps-stage.inside.anl.gov/argoapi/v1
 export OPENALEX_MAILTO=you@example.com
 
-wake --json resolve "10.1145/1048935.1050189"          # confirm the seed
+wake --json config validate                             # setup check — run once per session
+wake --json resolve "10.1145/1048935.1050189"           # confirm the seed
 wake --json citing "10.1145/1048935.1050189" --sort cited-by
-wake --json sample "10.1145/1048935.1050189" -n 10     # free — no LLM calls
+wake --json sample "10.1145/1048935.1050189" -n 10      # free — no LLM calls
 wake --json classify "10.1145/1048935.1050189" --limit 10 --sort cited-by
-wake --json status "10.1145/1048935.1050189"           # check cost before scaling
-wake --json classify "10.1145/1048935.1050189"         # classify everything
+wake --json status "10.1145/1048935.1050189"            # check cost before scaling
+wake --json classify "10.1145/1048935.1050189"          # classify everything
+
+# Optional: escalate high-value citing works with no recoverable abstract
+wake --json gaps "10.1145/1048935.1050189" --min-cited-by 50
+wake --json fetch-pdf "10.1145/1048935.1050189" <citing-id>
+wake --json fill-abstract "10.1145/1048935.1050189" <citing-id> --from-pdf wake-out/.../pdfs/<citing-id>.pdf
+wake --json classify "10.1145/1048935.1050189" --ids <citing-id> --force
+
 wake --json render "10.1145/1048935.1050189"
+
+# Optional: full-text-verify a specific finding, then record the human's call
+wake --json evidence "10.1145/1048935.1050189" <citing-id>
+wake --json override "10.1145/1048935.1050189" <citing-id> \
+  --relationship extends --justification "<quoted evidence>" \
+  --verification-source evidence-dossier
 
 # Output: wake-out/W2156077349/impact.md
 ```
@@ -65,7 +94,7 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake sample <seed>` | Representative slice of citing works for review (free, no LLM) |
 | `wake describe <seed>` | LLM one-paragraph contribution description |
 | `wake classify <seed>` | LLM relationship classification (`--ids`, `--limit`, `--sort`, `--dry-run`, resumable) |
-| `wake gaps <seed>` | Surface high-value citing works with no recoverable abstract |
+| `wake gaps <seed>` | Surface high-value citing works with no recoverable abstract (`--min-cited-by`, `-n/--limit`, `--no-auto-backfill-check`) |
 | `wake fill-abstract <seed> <id>` | Manually resolve one via `--from-pdf` or `--text` |
 | `wake fetch-pdf <seed> <id>` | Try to automatically acquire a PDF (OSTI, Semantic Scholar, Unpaywall, arXiv, optional CORE) |
 | `wake evidence <seed> <id>` | Full-text verification: reads the whole PDF, proposes a relationship with quoted, page-cited passages |
@@ -74,9 +103,12 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |
 | `wake show brief <seed>` | Print cached impact.md |
 | `wake show metrics <seed>` | Print cached impact.json |
-| `wake show top <seed>` | Top-evidence table |
+| `wake show top <seed>` | Top-evidence table (`-n`, default 10) |
 | `wake config show/validate/init` | Configuration plumbing |
-| `wake skill show/export` | Bundled Agent Skill |
+| `wake skill show` | Print the bundled SKILL.md |
+| `wake skill export <path>` | Copy the skill directory to `path` (`--force` to overwrite non-empty) |
+
+Most commands that write cache accept `--force` to bypass it and re-run.
 
 Global flags: `--json`, `--work-dir DIR` (or `WAKE_WORK_DIR` env var),
 `--verbose` (keep progress banners under `--json`).
@@ -252,6 +284,8 @@ Create `wake.config.yaml` in your working directory (or run `wake config init`):
 models:
   describe: "Claude Sonnet 4.6"
   classify: "Claude Sonnet 4.6"
+  pdf_abstract_extract: "Claude Sonnet 4.6"
+  evidence: "Claude Sonnet 4.6"
 
 openalex:
   rate_limit_s: 1.0
@@ -260,6 +294,10 @@ cost:
   rates_per_1k_usd:
     "Claude Sonnet 4.6": {in: 0.003, out: 0.015}
 ```
+
+Run `wake config show` to see the full resolved configuration, including
+sections not shown above (`abstract_backfill`, `gaps`, `pdf_extract`,
+`pdf_fetch`, `evidence`, `classify`, `report`).
 
 ## Environment Variables
 
