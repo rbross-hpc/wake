@@ -97,6 +97,40 @@ def _score(work: dict) -> float:
     return strength * math.log1p(downstream)
 
 
+_OPENALEX_TYPE_TO_VENUE_TYPE = {
+    "conference-paper": "conference",
+    "article": "journal",
+    "book-chapter": "book series",
+    "book": "book series",
+    "preprint": "repository",
+    "dissertation": "thesis",
+    "report": "report",
+    "peer-review": "journal",
+    "conference-abstract": "conference",
+    "reference-entry": "reference work",
+    "software-paper": "journal",
+    "other": "unknown",
+}
+
+
+def _venue_type_or_fallback(work: dict) -> str:
+    """Return the work's venue_type, falling back to a mapping from
+    OpenAlex's own 'type' field when venue_type is unset.
+
+    OpenAlex's primary_location.source.type (our venue_type) is missing
+    for roughly half of works in practice — most commonly conference
+    papers, whose venue metadata OpenAlex often doesn't fully populate.
+    Its top-level 'type' field is far more reliably populated, so we use
+    it as a fallback rather than lumping these into an uninformative
+    'unknown' bucket.
+    """
+    vt = work.get("venue_type")
+    if vt:
+        return vt
+    oa_type = work.get("type")
+    return _OPENALEX_TYPE_TO_VENUE_TYPE.get(oa_type, "unknown")
+
+
 def build_metrics(
     seed_work: dict[str, Any],
     citing_works: list[dict[str, Any]],
@@ -130,7 +164,7 @@ def build_metrics(
         yr = w.get("year")
         if yr:
             by_year[int(yr)] += 1
-        vt = w.get("venue_type") or "unknown"
+        vt = _venue_type_or_fallback(w)
         by_venue_type[vt] += 1
         for field in w.get("topics", []):
             by_field[field] += 1
