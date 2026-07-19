@@ -100,11 +100,11 @@ Classify the relationship.\
 
 
 def _prompt_version() -> str:
-    return config.classify_cfg().get("prompt_version", "classify-1")
+    return config.classify_cfg().get("prompt_version", "classify-2")
 
 
 def _model() -> str:
-    return config.models().get("classify", "Claude Sonnet 4.7")
+    return config.models().get("classify", "Claude Sonnet 4.6")
 
 
 def _sidecar_dir(openalex_id: str, base: Path | None = None) -> Path:

@@ -18,14 +18,38 @@ load_dotenv()
 _PACKAGED_CONFIG = files("wake") / "config.yaml"
 _LOCAL_CONFIG_NAME = "wake.config.yaml"
 
+# Three tiers, in descending order of urgency. This registry backs both
+# `wake config show`/`validate` and the "Setup Check" step an agent runs
+# before starting an analysis (see skills/impact-analysis/SKILL.md).
+#
+# required    — nothing works without these; validate() fails without them.
+# recommended — things work, but degrade (slower/less reliable); worth
+#               asking the human about once, early.
+# optional    — pure feature-gates (an extra PDF source, a higher rate
+#               limit, a cache-location preference); never worth asking
+#               about unless the specific feature is about to matter.
 _REQUIRED_ENVS = {
     "OPENAI_API_KEY": "LLM API key (set in .env or environment)",
     "OPENAI_BASE_URL": "OpenAI-compatible API endpoint URL",
 }
 
 _RECOMMENDED_ENVS = {
-    "OPENALEX_MAILTO": "Your email for OpenAlex polite pool (faster, more reliable)",
+    "OPENALEX_MAILTO": "Your email for OpenAlex/Unpaywall/OSTI polite pool (faster, more reliable)",
 }
+
+_OPTIONAL_ENVS = {
+    "SEMANTICSCHOLAR_API_KEY": "Raises Semantic Scholar's unauthenticated rate limit (~100 req/5min without one)",
+    "CORE_API_KEY": "Enables CORE.ac.uk as a `wake fetch-pdf` source (free key at core.ac.uk/services/api)",
+    "WAKE_WORK_DIR": "Default root for wake-out/ cache (else cwd, or per-call --work-dir)",
+}
+
+_ALL_ENV_TIERS: dict[str, dict[str, str]] = {
+    "required": _REQUIRED_ENVS,
+    "recommended": _RECOMMENDED_ENVS,
+    "optional": _OPTIONAL_ENVS,
+}
+
+_SENSITIVE_ENV_SUBSTRINGS = ("KEY",)
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -95,6 +119,30 @@ def pdf_fetch_cfg() -> dict[str, Any]:
     return load().get("pdf_fetch", {})
 
 
+def _is_sensitive(var: str) -> bool:
+    return any(s in var for s in _SENSITIVE_ENV_SUBSTRINGS)
+
+
+def env_status() -> dict[str, dict[str, dict[str, Any]]]:
+    """Return the set/unset status of every registered env var, grouped by
+    tier. Values for sensitive vars (API keys) are never included — only
+    whether they're set. Shape:
+
+        {"required": {"OPENAI_API_KEY": {"set": true, "value": None, "description": "..."}}, ...}
+    """
+    result: dict[str, dict[str, dict[str, Any]]] = {}
+    for tier, envs in _ALL_ENV_TIERS.items():
+        result[tier] = {}
+        for var, desc in envs.items():
+            val = os.environ.get(var, "")
+            result[tier][var] = {
+                "set": bool(val),
+                "value": None if (_is_sensitive(var) or not val) else val,
+                "description": desc,
+            }
+    return result
+
+
 def show() -> str:
     cfg = load()
     lc = _local_config()
@@ -122,20 +170,36 @@ def show() -> str:
     _render(cfg)
 
     lines.append("\nEnvironment:")
-    for var, desc in {**_REQUIRED_ENVS, **_RECOMMENDED_ENVS}.items():
-        val = os.environ.get(var, "")
-        display = "<set>" if val and "KEY" in var else (val or "NOT SET")
-        lines.append(f"  {var}: {display}  ({desc})")
+    for tier_label, tier_key in (("Required", "required"), ("Recommended", "recommended"), ("Optional", "optional")):
+        lines.append(f"  {tier_label}:")
+        for var, info in env_status()[tier_key].items():
+            display = "<set>" if info["set"] and _is_sensitive(var) else (info["value"] or ("<set>" if info["set"] else "NOT SET"))
+            lines.append(f"    {var}: {display}  ({info['description']})")
 
     return "\n".join(lines)
 
 
 def validate() -> list[str]:
+    """Return a list of blocking errors (missing required env vars only).
+    Recommended/optional gaps are never validation failures — surface those
+    via env_status() instead."""
     errors: list[str] = []
     for env, desc in _REQUIRED_ENVS.items():
         if not os.environ.get(env):
             errors.append(f"Missing required env var {env}: {desc}")
     return errors
+
+
+def validate_report() -> dict[str, Any]:
+    """Structured validation result for --json consumers: pass/fail plus
+    the full env_status() breakdown, so an agent can decide what to ask
+    the human about without re-implementing the tier logic."""
+    errors = validate()
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "env": env_status(),
+    }
 
 
 def init_local() -> tuple[Path, bool]:
@@ -148,8 +212,8 @@ def init_local() -> tuple[Path, bool]:
         "# Values here override the packaged defaults.\n"
         "# See: wake config show\n\n"
         "models:\n"
-        "  describe: \"Claude Sonnet 4.7\"\n"
-        "  classify: \"Claude Sonnet 4.7\"\n\n"
+        "  describe: \"Claude Sonnet 4.6\"\n"
+        "  classify: \"Claude Sonnet 4.6\"\n\n"
         "openalex:\n"
         "  rate_limit_s: 1.0\n"
     )

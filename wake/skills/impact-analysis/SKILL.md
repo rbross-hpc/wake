@@ -28,6 +28,40 @@ the human.
 Follow this sequence. **Do not skip straight to classifying everything** —
 the whole point of this tool is that you explore before you spend.
 
+### 0. Setup check (once per session, before the first `resolve`)
+
+```bash
+wake --json config validate
+```
+
+Read the structured result rather than just the pass/fail:
+
+- **`ok: false`** (a required var is missing) — **stop**. Tell the human
+  exactly which of `OPENAI_API_KEY`/`OPENAI_BASE_URL` is unset and why
+  it's blocking (nothing in wake works without an LLM endpoint). Don't
+  proceed to `resolve`.
+- **`env.recommended.OPENALEX_MAILTO.set: false`** — ask the human for an
+  email address once, briefly: *"I don't have an email set for the
+  OpenAlex/Unpaywall/OSTI polite pool — faster and more reliable with one.
+  What should I use?"* Not blocking; proceed either way, but ask before
+  you start racking up unauthenticated API calls.
+- **`env.optional.*`** (`SEMANTICSCHOLAR_API_KEY`, `CORE_API_KEY`,
+  `WAKE_WORK_DIR`) — **do not ask about these upfront.** They're pure
+  feature-gates for specific commands later in the workflow:
+  - Only mention `SEMANTICSCHOLAR_API_KEY` if the analysis looks
+    large-scale (hundreds of citing works) and abstract backfill speed
+    will actually matter (step 4).
+  - Only mention `CORE_API_KEY` right before `fetch-pdf`/`gaps` (step 7),
+    and only as an FYI ("CORE.ac.uk isn't configured — I'll skip it as a
+    PDF source unless you have a key") — never block on it.
+  - Only ask about `WAKE_WORK_DIR`/`--work-dir` once, if the human hasn't
+    indicated a preference and you're about to write the first cache file
+    (step 2) — cwd is a fine default otherwise, don't make a big deal of it.
+
+This check costs nothing (no network calls, no LLM spend) — always run it
+first, but keep the human-facing part of it brief. Most of the time
+there's nothing to report beyond "looks good."
+
 ### 1. Resolve and confirm
 
 ```bash

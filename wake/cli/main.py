@@ -645,23 +645,37 @@ def run_show(args) -> None:
 
 def run_config(args) -> None:
     from .. import config
+
     if args.config_action == "show":
-        print(config.show())
+        text = config.show()
+        emit("config", {"text": text, "env": config.env_status()},
+             as_json=args.json_out, human=lambda d: print(d["text"]))
+
     elif args.config_action == "validate":
-        errors = config.validate()
-        if not errors:
-            print("[wake] Configuration OK.")
-        else:
-            for e in errors:
-                print(f"  ERROR: {e}", file=sys.stderr)
+        report = config.validate_report()
+
+        def human(d):
+            if d["ok"]:
+                print("[wake] Configuration OK.")
+            else:
+                for e in d["errors"]:
+                    print(f"  ERROR: {e}", file=sys.stderr)
+
+        emit("config", report, as_json=args.json_out, human=human)
+        if not report["ok"]:
             sys.exit(1)
+
     elif args.config_action == "init":
-        from .. import config as cfg
-        path, created = cfg.init_local()
-        if created:
-            print(f"[wake] Created {path}")
-        else:
-            print(f"[wake] Already exists: {path}")
+        path, created = config.init_local()
+        data = {"path": str(path), "created": created}
+
+        def human(d):
+            if d["created"]:
+                print(f"[wake] Created {d['path']}")
+            else:
+                print(f"[wake] Already exists: {d['path']}")
+
+        emit("config", data, as_json=args.json_out, human=human)
 
 
 def run_skill(args) -> None:

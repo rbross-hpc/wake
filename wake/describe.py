@@ -41,7 +41,7 @@ def _prompt_version() -> str:
 
 
 def _model() -> str:
-    return config.models().get("describe", "Claude Sonnet 4.7")
+    return config.models().get("describe", "Claude Sonnet 4.6")
 
 
 def describe_seed(
