@@ -545,3 +545,147 @@ shape for both pass/fail, and two regression guards: `show()`/
   `wake.config.yaml` via `init`).
 - End-to-end `describe` call against the real Argo endpoint succeeded
   with the corrected model defaults.
+
+## v0.3.2 — Full-Text Verification (`wake evidence`) — BACKLOG Theme A2
+
+Every classification `classify.py` produces is an abstract-only guess —
+it never reads the citing paper itself. This was previously presented in
+the brief with an ordinary confidence score, indistinguishable from a
+real finding. `wake evidence` closes that gap: it reads a citing work's
+*entire* PDF and proposes an independently-judged relationship backed by
+quoted, page-cited passages, without ever silently overwriting the
+record — only a human-approved `wake override` call can do that.
+
+### Lifecycle: provisional → proposed → verified
+
+Reframed mid-design at the user's explicit direction: the abstract-only
+classification is not a baseline that full-text reading either confirms
+or contradicts — it's inherently weak evidence from the start, and the
+full-text reading is the substantive assessment, pending human sign-off.
+
+- `classify.py`: every result now carries `"verification_status":
+  "provisional"`, unconditionally — this is true for *all* classified
+  works, not just ones that later get a dossier. No back-compat shim (per
+  user instruction): old cached `classified.json`/test fixtures were
+  hand-corrected to include the field rather than defaulting a missing one.
+- `report.py::add_override()`: gains `verification_status: "verified"` +
+  `verification_source` (`"human-judgment"` default, or
+  `"evidence-dossier"` when the override follows a `wake evidence`
+  finding the human accepted). This is the *only* path to `"verified"`.
+- `render_markdown()`: every "Strongest Evidence" entry is tagged inline
+  — `[PROVISIONAL — abstract-only, not yet checked against full text]`,
+  `[VERIFIED via full-text reading]`, or `[VERIFIED via human judgment]`.
+  "Nature of Impact" gains a one-line provisional/verified count summary.
+
+### `wake evidence <seed> <citing-id>` pipeline
+
+1. `fetch-pdf` (reused as-is, including its negative-result... actually
+   its existing cache-then-chain behavior) acquires a local PDF.
+2. `sources/pdf_fulltext.py` (new) extracts the *entire* document,
+   page-tagged — not just the first few pages like `pdf_abstract.py`.
+   Deliberately page-level only: multi-column academic PDF layouts
+   interleave text unreliably at extraction time (confirmed live on the
+   existing OSTI test fixture — both pypdf and pdfplumber merge column
+   text into a jumbled per-page stream), so mechanical paragraph-boundary
+   detection isn't reliable. Per user's explicit requirement ("I want the
+   human to see the literal text supporting the claim, in context"), the
+   LLM prompt instead asks for the full containing paragraph verbatim
+   around any supporting passage — the model handles minor reading-order
+   jumbling far better than a mechanical splitter would, while wake still
+   attaches a real page number.
+3. `evidence.py::verify_full_text()` — one LLM call given the seed, the
+   provisional guess (explicitly framed as unverified), and the full
+   text; asked to form an independent judgment, quoting complete
+   paragraphs with page numbers for every claim, and to say honestly if
+   the seed isn't discussed in the text at all rather than fabricating
+   a passage.
+4. Renders an OKF concept document (`wake-out/<seed>/evidence/<citing-id>.md`
+   + a `.json` sidecar for programmatic reuse) with the provisional guess,
+   the proposed full-text reading, and the quotes — explicitly framed as
+   "pending your review," not a correction.
+5. Cached: a second `build_dossier()` call for the same citing work is a
+   no-op (no LLM call) unless `--force`.
+
+**Never auto-applies.** `wake evidence` only ever proposes; a human must
+review it and an agent must run `wake override` (now accepting
+`--verification-source evidence-dossier`) to promote a finding to
+`verified`. Per explicit user direction, the human is never asked to run
+that command themselves — SKILL.md step 9 spells out two agent-driven
+paths (human reviews independently and reports back; or the agent walks
+them through it) that both end with the agent invoking `override`. In the
+second path, the agent must paste the literal quoted paragraph(s) from
+the `quotes` field into the conversation verbatim, in context — not a
+paraphrase — so the human judges the paper's actual words.
+
+### Robustness fix (shared, not evidence-specific)
+
+Live testing surfaced a real bug in the shared LLM client: `chat_json`
+occasionally received a response with reasoning prose *before* the JSON
+object (e.g. "Looking at the text, I find no mention of X... {...}"),
+despite explicit "respond with ONLY JSON" instructions — observed with
+`evidence`'s long full-text prompt specifically, but the failure mode is
+generic. Fixed centrally in `llm/openai_client.py`: a new
+`_extract_json_object()` (string-aware, brace-depth-counting scan for the
+first balanced `{...}` span) is tried as a fallback whenever the initial
+`json.loads()` fails, rather than failing outright. Also tightened the
+`evidence` prompt itself to explicitly forbid preamble/commentary.
+
+### DOE-relevance signals (BACKLOG Theme B) — explicitly deferred
+
+Raised and resolved as a separate design discussion mid-session: Theme A2
+(this work) is general-purpose and contains zero domain-specific logic.
+Theme B (author affiliations, DOE compute-resource acknowledgments,
+funding language, OSTI cross-check) was explicitly scoped by the user as
+something *they* want but a general wake user might not — it will be a
+separate, off-by-default module (e.g. `signals_doe.py`, gated by a config
+flag + a `wake evidence --with-doe-signals` override), not built in this
+pass.
+
+### Tests
+
++37 offline (216 total):
+- `test_pdf_fulltext.py` (6) — real extraction against the committed OSTI
+  fixture: page count, content, `[page N]` markers and ordering.
+- `test_evidence.py` (12) — `verify_full_text()`'s label validation/empty-
+  quote filtering, `build_dossier()`'s no-PDF failure path, end-to-end
+  dossier generation against the real fixture PDF (LLM mocked), dossier
+  caching + `--force` bypass, and a verbatim-full-paragraph-quote
+  assertion. Plus 1 live (`@pytest.mark.network`) test.
+- `test_openai_client.py` (9, new file — no prior direct test coverage of
+  this shared module) — `_extract_json_object()` unit tests (balanced
+  braces, braces inside quoted strings, no-object passthrough, trailing
+  text after the object) and a `chat_json` regression test pinning the
+  prefixed-prose recovery behavior found live.
+- `test_classify.py` (+2), `test_report.py` (+9), `test_overrides.py`
+  (+1 assertion) — provisional-by-default on every `classify_one`/
+  `classify_all` result; `verified_count` in `build_metrics`; per-entry
+  `verification_status`/`verification_source` in `top_evidence`;
+  `render_markdown`'s three status tags and summary line;
+  `add_override()`'s new fields and both `verification_source` values.
+
+### Live verification
+
+- Full lifecycle exercised end-to-end against real citing works of
+  Parallel netCDF (W2156077349): classified the FLASH architecture paper
+  (W2107546711) — provisional `uses-as-tool` (confidence 0.6, abstract-only)
+  — then ran `wake evidence`, which fetched the same real 33-page arXiv
+  PDF from the earlier `fetch-pdf` session, read the entire document, and
+  proposed `uses-as-tool` (confidence 0.85, agrees with provisional) with
+  a real page-21 quote: *"FLASH is one of the relatively few applications
+  codes that have support for multiple IO libraries, such as HDF5 and
+  parallel netCDF, where all processors can write data to a single shared
+  file."* Ran `wake override ... --verification-source evidence-dossier`
+  and confirmed `wake render` shows `[VERIFIED via full-text reading]`
+  with confidence bumped to 1.0, and the Nature-of-Impact summary line
+  correctly reads "9 classification(s) are provisional ... 1 have been
+  verified."
+- Separately confirmed honest non-fabrication behavior: ran full-text
+  verification against the *other* committed test fixture (the
+  Devarakonda/Daymet OSTI paper, chosen for the abstract-extraction tests
+  and never a real citing work of Parallel netCDF) with a deliberately
+  implausible provisional guess (`extends`) — the model correctly
+  determined the seed paper is not discussed anywhere in the text or
+  reference list, returned `background-mention` with `quotes: []`, and
+  did not fabricate a supporting passage. This is what surfaced the
+  prefixed-prose JSON bug (fixed above), so the fix is validated by the
+  same live run that motivated it.

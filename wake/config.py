@@ -119,6 +119,10 @@ def pdf_fetch_cfg() -> dict[str, Any]:
     return load().get("pdf_fetch", {})
 
 
+def evidence_cfg() -> dict[str, Any]:
+    return load().get("evidence", {})
+
+
 def _is_sensitive(var: str) -> bool:
     return any(s in var for s in _SENSITIVE_ENV_SUBSTRINGS)
 

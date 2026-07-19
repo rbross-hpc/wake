@@ -28,6 +28,8 @@ def test_add_and_load_override(tmp_path):
     )
     assert entry["relationship"] == "extends"
     assert entry["human_reviewed"] is True
+    assert entry["verification_status"] == "verified"
+    assert entry["verification_source"] == "human-judgment"
 
     overrides = load_overrides(seed_id, base=tmp_path)
     assert citing_id in overrides

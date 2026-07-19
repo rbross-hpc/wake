@@ -68,8 +68,9 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake gaps <seed>` | Surface high-value citing works with no recoverable abstract |
 | `wake fill-abstract <seed> <id>` | Manually resolve one via `--from-pdf` or `--text` |
 | `wake fetch-pdf <seed> <id>` | Try to automatically acquire a PDF (OSTI, Semantic Scholar, Unpaywall, arXiv, optional CORE) |
+| `wake evidence <seed> <id>` | Full-text verification: reads the whole PDF, proposes a relationship with quoted, page-cited passages |
 | `wake render <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
-| `wake override <seed> <id>` | Record a human-reviewed relationship correction |
+| `wake override <seed> <id>` | Record a human-reviewed relationship correction (`--verification-source human-judgment\|evidence-dossier`) |
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |
 | `wake show brief <seed>` | Print cached impact.md |
 | `wake show metrics <seed>` | Print cached impact.json |
@@ -103,7 +104,10 @@ wake-out/<OpenAlex-ID>/
   .cost.jsonl             — per-LLM-call estimated token/cost log
   .overrides.jsonl        — human-reviewed relationship overrides
   .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
-  pdfs/                   — locally-cached PDFs (wake fetch-pdf)
+  pdfs/                   — locally-cached PDFs (wake fetch-pdf / wake evidence)
+  evidence/               — full-text verification dossiers (wake evidence)
+    <citing-id>.md          — human/agent-readable OKF concept document
+    <citing-id>.json        — same finding, structured
 ```
 
 ## Relationship Classes
@@ -172,6 +176,49 @@ search URL.
 Reusable on its own (e.g. before `wake fill-abstract --from-pdf`, to skip
 a manual download step) and cached — re-running is a no-op unless `--force`
 is passed.
+
+## Verification Lifecycle (provisional → proposed → verified)
+
+`classify` only ever reads a citing work's title/abstract/venue — never
+the actual paper — so every classification it produces is labeled
+`"verification_status": "provisional"`: a placeholder guess, not a
+finding, regardless of how high its confidence score looks.
+
+```bash
+wake evidence <seed> <citing-id>
+```
+
+`wake evidence` fetches a PDF (same chain as `fetch-pdf`), reads the
+*entire* document, and independently judges the relationship — quoting
+full paragraphs verbatim, with page numbers, for every claim it makes. It
+never fabricates a passage: if the seed paper isn't actually discussed in
+the text, it says so and returns an empty quote list rather than
+inventing evidence. The result is a `"proposed"` finding, written to an
+OKF-style dossier (`wake-out/<seed>/evidence/<citing-id>.md`) — but it is
+**never auto-applied**. Only a human-approved `wake override` call
+promotes a finding to `"verified"`:
+
+```bash
+wake override <seed> <citing-id> --relationship extends \
+  --justification "<quoted evidence>" --verification-source evidence-dossier
+```
+
+The rendered brief tags every entry accordingly:
+`[PROVISIONAL — abstract-only, not yet checked against full text]`,
+`[VERIFIED via full-text reading]`, or `[VERIFIED via human judgment]`
+(a plain override with no dossier behind it), plus a one-line
+provisional/verified count summary in "Nature of Impact."
+
+This tool never asks a human to run a CLI command themselves — an agent
+using `wake` always presents a `wake evidence` finding (pasting the
+literal quoted passages, in context) and runs the resulting `override`
+call on the human's behalf. See `SKILL.md` for the full workflow.
+
+Full-text extraction is page-level only (no MinerU, no paragraph-boundary
+detection — multi-column academic layouts don't extract reliably enough
+for that); the LLM is asked to quote the full containing paragraph
+verbatim around any passage it relies on. Requires the `pdf` extra
+(`pip install 'wake[pdf]'`), same as `fill-abstract --from-pdf`.
 
 ## Cost Telemetry (estimate-only)
 
