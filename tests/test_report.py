@@ -103,3 +103,49 @@ def test_score_higher_for_more_cited():
     w_cited = {"cited_by_count": 1000, "strength": 4}
     w_few = {"cited_by_count": 1, "strength": 4}
     assert _score(w_cited) > _score(w_few)
+
+
+def test_build_metrics_partial_coverage():
+    """Reach metrics use the full citing set; relationship stats only the classified subset."""
+    classified_first = {
+        **SAMPLE_CITING_WORKS[0],
+        "relationship": "extends",
+        "confidence": 0.9,
+        "justification": "Test",
+        "has_abstract": True,
+        "strength": RELATIONSHIP_STRENGTH["extends"],
+    }
+    mixed = [classified_first, SAMPLE_CITING_WORKS[1], SAMPLE_CITING_WORKS[2]]
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, mixed)
+
+    assert metrics["total_citing_works"] == 3
+    assert metrics["classified_count"] == 1
+    assert metrics["coverage"] == pytest.approx(1 / 3, abs=1e-3)
+    assert sum(metrics["by_relationship"].values()) == 1
+
+
+def test_render_markdown_notes_partial_coverage():
+    classified_first = {
+        **SAMPLE_CITING_WORKS[0],
+        "relationship": "extends",
+        "confidence": 0.9,
+        "justification": "Test",
+        "has_abstract": True,
+        "strength": RELATIONSHIP_STRENGTH["extends"],
+    }
+    mixed = [classified_first, SAMPLE_CITING_WORKS[1], SAMPLE_CITING_WORKS[2]]
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, mixed)
+    md = render_markdown(seed, metrics)
+    assert "Partial analysis" in md
+
+
+def test_render_markdown_full_coverage_no_partial_note():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    md = render_markdown(seed, metrics)
+    assert "Partial analysis" not in md

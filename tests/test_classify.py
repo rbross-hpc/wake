@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import pytest
 from pathlib import Path
+from unittest.mock import patch
 
 from wake.classify import (
     RELATIONSHIPS,
@@ -13,6 +14,8 @@ from wake.classify import (
     _sidecar_path,
     _write_sidecar,
     _load_sidecar,
+    classify_all,
+    select_for_classification,
 )
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
@@ -51,3 +54,58 @@ def test_sidecar_path_structure(tmp_path):
     assert p.name == "W1000000001.json"
     assert p.parent.name == ".classify"
     assert p.parent.parent.name == "W2156077349"
+
+
+def test_select_for_classification_limit():
+    selected = select_for_classification(SAMPLE_CITING_WORKS, limit=2, sort="cited-by")
+    assert len(selected) == 2
+    assert selected[0]["cited_by_count"] >= selected[1]["cited_by_count"]
+
+
+def test_select_for_classification_ids():
+    target_id = SAMPLE_CITING_WORKS[1]["openalex_id"]
+    selected = select_for_classification(SAMPLE_CITING_WORKS, ids=[target_id])
+    assert len(selected) == 1
+    assert selected[0]["openalex_id"] == target_id
+
+
+def _fake_chat_json(system, user, model_role="classify", model=None, temperature=0, cost_sink=None):
+    return {"relationship": "uses-as-tool", "confidence": 0.8, "justification": "fake"}
+
+
+def test_classify_all_dry_run_makes_no_calls(tmp_path):
+    with patch("wake.classify.chat_json") as mock_chat:
+        result = classify_all(
+            PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS,
+            base=tmp_path, dry_run=True, inter_call_delay=0, verbose=False,
+        )
+        mock_chat.assert_not_called()
+    assert all(not w.get("relationship") for w in result)
+
+
+def test_classify_all_scoped_run_preserves_prior_classifications(tmp_path):
+    """Regression test: a scoped classify_all (--limit/--ids) must not drop
+    classifications made in a previous, differently-scoped run."""
+    with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
+        # First run: classify only the first work.
+        first_id = SAMPLE_CITING_WORKS[0]["openalex_id"]
+        result1 = classify_all(
+            PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS,
+            base=tmp_path, ids=[first_id], inter_call_delay=0, verbose=False,
+        )
+        classified1 = [w for w in result1 if w.get("relationship")]
+        assert len(classified1) == 1
+        assert classified1[0]["openalex_id"] == first_id
+
+        # Second run: classify a *different* work only.
+        second_id = SAMPLE_CITING_WORKS[1]["openalex_id"]
+        result2 = classify_all(
+            PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS,
+            base=tmp_path, ids=[second_id], inter_call_delay=0, verbose=False,
+        )
+        classified2 = [w for w in result2 if w.get("relationship")]
+        # Both the first (from the earlier run) and second work must show as classified.
+        classified_ids = {w["openalex_id"] for w in classified2}
+        assert first_id in classified_ids, "prior classification must be preserved"
+        assert second_id in classified_ids
+        assert len(classified2) == 2

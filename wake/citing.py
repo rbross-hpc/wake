@@ -100,16 +100,55 @@ def fetch_and_cache(
     return works
 
 
+_SORT_KEYS = {
+    "cited-by": lambda w: -(w.get("cited_by_count") or 0),
+    "recent": lambda w: -(w.get("year") or 0),
+    "oldest": lambda w: (w.get("year") or 0),
+}
+
+
+def sort_works(works: list[dict], sort: str = "cited-by") -> list[dict]:
+    """Sort works by the given key. 'random' shuffles deterministically-seeded
+    per-call (not reproducible across calls; use for exploratory sampling only).
+    """
+    if sort == "random":
+        import random
+        shuffled = list(works)
+        random.shuffle(shuffled)
+        return shuffled
+    key = _SORT_KEYS.get(sort, _SORT_KEYS["cited-by"])
+    return sorted(works, key=key)
+
+
 def filter_works(
     works: list[dict],
     *,
     min_year: int | None = None,
     limit: int | None = None,
+    sort: str | None = None,
 ) -> list[dict]:
-    """Apply post-hoc filters to a list of works."""
+    """Apply post-hoc filters (and optional sort) to a list of works."""
     result = works
     if min_year is not None:
         result = [w for w in result if (w.get("year") or 0) >= min_year]
+    if sort is not None:
+        result = sort_works(result, sort)
     if limit is not None:
         result = result[:limit]
     return result
+
+
+def sample_works(
+    works: list[dict],
+    *,
+    n: int = 10,
+    sort: str = "cited-by",
+) -> list[dict]:
+    """Pick a representative slice of *n* works for human review.
+
+    This is the explore-first primitive: before spending on classification,
+    the agent shows the human a sample (by default the most-cited-first,
+    since those are usually the most consequential citing works).
+    """
+    sorted_works = sort_works(works, sort)
+    return sorted_works[:n]

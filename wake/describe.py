@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import config
+from . import config, cost as cost_mod
 from .io import atomic_write_json, now_iso, read_json
 from .llm.openai_client import chat_text
 from .seed import work_dir
@@ -44,7 +44,12 @@ def _model() -> str:
     return config.models().get("describe", "Claude Sonnet 4.7")
 
 
-def describe_seed(seed_work: dict[str, Any]) -> str:
+def describe_seed(
+    seed_work: dict[str, Any],
+    *,
+    base: Path | None = None,
+    record_cost: bool = True,
+) -> str:
     """Call the LLM to produce a contribution paragraph for the seed paper."""
     authors = seed_work.get("authors", [])
     author_str = ", ".join(authors[:5]) + (" et al." if len(authors) > 5 else "")
@@ -56,7 +61,18 @@ def describe_seed(seed_work: dict[str, Any]) -> str:
         venue=seed_work.get("venue") or "Unknown",
         abstract=seed_work.get("abstract") or "(abstract not available)",
     )
-    return chat_text(_SYSTEM, user_msg, model_role="describe")
+
+    cost_sink = None
+    if record_cost:
+        seed_id = seed_work.get("openalex_id")
+        if seed_id:
+            def cost_sink(model: str, system: str, user: str, response_text: str) -> None:
+                cost_mod.record_call(
+                    seed_id, stage="describe", model=model,
+                    system=system, user=user, response_text=response_text, base=base,
+                )
+
+    return chat_text(_SYSTEM, user_msg, model_role="describe", cost_sink=cost_sink)
 
 
 def describe_and_cache(
@@ -64,6 +80,7 @@ def describe_and_cache(
     *,
     base: Path | None = None,
     force: bool = False,
+    verbose: bool = True,
 ) -> str:
     """Generate and cache the contribution description for a seed paper."""
     oid = seed_work["openalex_id"]
@@ -79,8 +96,9 @@ def describe_and_cache(
             if cached.get("description"):
                 return cached["description"]
 
-    print(f"[wake] Generating contribution description (model={model})...", file=sys.stderr)
-    description = describe_seed(seed_work)
+    if verbose:
+        print(f"[wake] Generating contribution description (model={model})...", file=sys.stderr)
+    description = describe_seed(seed_work, base=base)
 
     updated = {**seed_work, "description": description, "described_at": now_iso()}
     wd.mkdir(parents=True, exist_ok=True)

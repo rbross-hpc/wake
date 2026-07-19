@@ -3,6 +3,7 @@
 """Resolve a seed identifier (DOI, arXiv ID, OpenAlex ID, or title) to a canonical work."""
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -77,8 +78,17 @@ def resolve(seed: str) -> dict[str, Any]:
 
 
 def work_dir(openalex_id: str, base: Path | None = None) -> Path:
-    """Return the cache directory for a given seed OpenAlex ID."""
-    root = base or Path.cwd()
+    """Return the cache directory for a given seed OpenAlex ID.
+
+    Resolution order for the root: explicit *base* argument, then
+    the WAKE_WORK_DIR environment variable, then the current directory.
+    In all cases the seed's artifacts live under <root>/wake-out/<id>/.
+    """
+    if base is not None:
+        root = base
+    else:
+        env_root = os.environ.get("WAKE_WORK_DIR", "").strip()
+        root = Path(env_root) if env_root else Path.cwd()
     return root / "wake-out" / openalex_id
 
 

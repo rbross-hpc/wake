@@ -23,3 +23,9 @@ describe:
 report:
   top_evidence_n: 20
   high_cited_threshold: 50
+
+# Estimate-only cost telemetry. Rates are $/1K tokens; models without an
+# entry here report cost_usd_est=0.0 and are flagged unpriced=true rather
+# than silently guessing. Add real rates here as they become known.
+cost:
+  rates_per_1k_usd: {}
