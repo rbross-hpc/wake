@@ -91,7 +91,10 @@ def add_override(
 
     if verification_source == "evidence-dossier":
         from .evidence_wiki import append_log_entry, mark_verified, rebuild_index
-        if mark_verified(seed_id, citing_id, justification=justification, base=base):
+        if mark_verified(
+            seed_id, citing_id, justification=justification,
+            relationship=relationship, base=base,
+        ):
             append_log_entry(
                 seed_id, event="verified_by_human", citing_id=citing_id,
                 detail=f"-> {relationship}", seed_title=seed_title, base=base,

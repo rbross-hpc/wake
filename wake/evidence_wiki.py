@@ -191,10 +191,22 @@ def mark_verified(
     citing_id: str,
     *,
     justification: str = "",
+    relationship: str | None = None,
     base: Path | None = None,
 ) -> bool:
     """Patch an existing dossier (.json + .md) from pending-human-review
     to verified, recording the human's justification and timestamp.
+
+    *relationship* is the human-confirmed relationship from the `wake
+    override` call. When it differs from the dossier's own
+    `proposed.relationship` (the human corrected the model's reading,
+    rather than simply accepting it), the dossier's `proposed` field is
+    updated to match — otherwise index.md/log.md would keep displaying
+    the model's superseded conclusion forever, even though the override
+    that actually governs the impact brief disagrees with it. The
+    dossier's original `proposed.confidence` and `proposed.justification`
+    are preserved in `proposed.model_relationship`/`model_justification`
+    so the original (superseded) reading stays visible for audit.
 
     Returns False (no-op) if no dossier exists for this citing work —
     e.g. a plain human-judgment override with no `wake evidence` behind
@@ -213,23 +225,43 @@ def mark_verified(
         "justification": justification,
         "verified_at": verified_at,
     }
+
+    proposed = payload.setdefault("proposed", {})
+    model_relationship = proposed.get("relationship")
+    corrected = relationship is not None and relationship != model_relationship
+    if corrected:
+        proposed["model_relationship"] = model_relationship
+        proposed["model_justification"] = proposed.get("justification")
+        proposed["relationship"] = relationship
+        payload["human_verification"]["corrected_from"] = model_relationship
+
     atomic_write_text(json_path, json.dumps(payload, indent=2, default=str))
 
     md_path = dossier_path(seed_id, citing_id, base)
     if md_path.exists():
         md_text = md_path.read_text(encoding="utf-8")
         md_text = md_text.replace("status:pending-human-review", "status:verified")
+        if corrected:
+            md_text = md_text.replace(
+                f"proposed:{model_relationship}", f"proposed:{relationship}"
+            )
 
         # Structural replace via the <!-- status-section:... --> markers
         # _render_dossier_markdown() wraps this block in -- not a literal
         # match on the surrounding prose, so this keeps working even if
         # that prose is edited later (see evidence.py for the markers).
+        status_note = f"Verified by a human on {verified_at}"
+        if corrected:
+            status_note += (
+                f" — human corrected the model's reading from "
+                f"*{model_relationship}* to *{relationship}*"
+            )
+        if justification:
+            status_note += f" — {justification}"
         new_status_block = (
             "<!-- status-section:start -->\n"
             "## Status: verified\n\n"
-            f"Verified by a human on {verified_at}"
-            + (f" — {justification}" if justification else "")
-            + ".\n"
+            f"{status_note}.\n"
             "<!-- status-section:end -->"
         )
         if _STATUS_SECTION_RE.search(md_text):
