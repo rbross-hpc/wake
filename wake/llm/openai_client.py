@@ -5,12 +5,15 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .. import config
+
+CostSink = Callable[[str, str, str, str], None]
+"""Callback invoked as sink(model, system, user, response_text) after each call."""
 
 
 def _client() -> OpenAI:
@@ -44,6 +47,7 @@ def chat_json(
     model_role: str = "classify",
     model: str | None = None,
     temperature: float = 0,
+    cost_sink: CostSink | None = None,
 ) -> Any:
     client = _client()
     resolved = model if model is not None else _model(model_role)
@@ -56,6 +60,8 @@ def chat_json(
         temperature=temperature,
     )
     raw = (response.choices[0].message.content or "").strip()
+    if cost_sink is not None:
+        cost_sink(resolved, system, user, raw)
     raw = _strip_markdown_fence(raw)
     return json.loads(raw)
 
@@ -67,6 +73,7 @@ def chat_text(
     model_role: str = "describe",
     model: str | None = None,
     temperature: float = 0,
+    cost_sink: CostSink | None = None,
 ) -> str:
     client = _client()
     resolved = model if model is not None else _model(model_role)
@@ -78,4 +85,7 @@ def chat_text(
         ],
         temperature=temperature,
     )
-    return (response.choices[0].message.content or "").strip()
+    text = (response.choices[0].message.content or "").strip()
+    if cost_sink is not None:
+        cost_sink(resolved, system, user, text)
+    return text
