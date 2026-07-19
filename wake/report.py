@@ -54,6 +54,7 @@ def add_override(
     justification: str = "",
     base: Path | None = None,
     verification_source: str = "human-judgment",
+    seed_title: str | None = None,
 ) -> dict[str, Any]:
     """Append a human-reviewed override for a citing work's relationship.
 
@@ -65,6 +66,12 @@ def add_override(
       - "human-judgment": a plain manual correction, no wake evidence dossier
       - "evidence-dossier": the human accepted a full-text reading proposed
         by `wake evidence` (quoted, page-cited passages)
+
+    When *verification_source* is "evidence-dossier", also patches the
+    matching evidence dossier (pending-human-review -> verified) and
+    updates the evidence wiki's index.md/log.md (BACKLOG Theme D). A
+    plain "human-judgment" override has no dossier behind it and leaves
+    the evidence wiki untouched.
     """
     entry = {
         "citing_id": citing_id,
@@ -81,6 +88,16 @@ def add_override(
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, default=str) + "\n")
+
+    if verification_source == "evidence-dossier":
+        from .evidence_wiki import append_log_entry, mark_verified, rebuild_index
+        if mark_verified(seed_id, citing_id, justification=justification, base=base):
+            append_log_entry(
+                seed_id, event="verified_by_human", citing_id=citing_id,
+                detail=f"-> {relationship}", seed_title=seed_title, base=base,
+            )
+            rebuild_index(seed_id, seed_title=seed_title, base=base)
+
     return entry
 
 

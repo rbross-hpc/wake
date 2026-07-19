@@ -391,6 +391,11 @@ def build_dossier(
         verbose=verbose,
     )
     if not fetch_result.get("ok"):
+        _log_investigation(
+            seed_work, citing_id, base,
+            event="investigation_failed",
+            detail="no PDF found (tried: " + ", ".join(fetch_result.get("tried", [])) + ")",
+        )
         return {"ok": False, "reason": "no_pdf", "fetch_result": fetch_result}
 
     pdf_path_str = fetch_result["path"]
@@ -402,6 +407,11 @@ def build_dossier(
     pages = extract_pages_cached(pdf_path_str, force=force)
     full_text = extract_full_text_from_pages(pages)
     if not full_text.strip():
+        _log_investigation(
+            seed_work, citing_id, base,
+            event="investigation_failed",
+            detail="PDF text extraction produced no text (possibly scanned, no text layer)",
+        )
         return {
             "ok": False,
             "reason": "extraction_failed",
@@ -439,12 +449,23 @@ def build_dossier(
         "pdf_path": pdf_path_str,
         "pdf_source": pdf_source,
         "extracted_text_path": extracted_text_path_str,
+        "citing_cited_by_count": citing_work.get("cited_by_count", 0),
+        "verification_status": "pending-human-review",
         **finding,
     }
     atomic_write_json(json_path, json_payload)
 
     if verbose:
         print(f"[wake] Dossier written: {md_path}", file=sys.stderr)
+
+    from .evidence_wiki import append_log_entry, rebuild_index
+    event = "dossier_rebuilt" if force else "dossier_built"
+    append_log_entry(
+        seed_id, event=event, citing_id=citing_id,
+        detail=f"proposed: {finding['proposed']['relationship']} ({len(finding['quotes'])} quotes)",
+        seed_title=seed_work.get("title"), base=base,
+    )
+    rebuild_index(seed_id, seed_title=seed_work.get("title"), base=base)
 
     return {
         "ok": True,
@@ -455,6 +476,21 @@ def build_dossier(
         "extracted_text_path": extracted_text_path_str,
         **finding,
     }
+
+
+def _log_investigation(
+    seed_work: dict[str, Any],
+    citing_id: str,
+    base: Path | None,
+    *,
+    event: str,
+    detail: str,
+) -> None:
+    from .evidence_wiki import append_log_entry
+    append_log_entry(
+        seed_work["openalex_id"], event=event, citing_id=citing_id,
+        detail=detail, seed_title=seed_work.get("title"), base=base,
+    )
 
 
 def load_dossier(seed_id: str, citing_id: str, base: Path | None = None) -> dict[str, Any] | None:

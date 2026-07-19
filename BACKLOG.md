@@ -148,7 +148,7 @@ content.
 
 ---
 
-## Theme D — OKF Evidence Wiki (organization layer)
+## Theme D — OKF Evidence Wiki (organization layer) — BUILT
 
 Google's **Open Knowledge Format** (OKF v0.1, June 2026) — a formalization
 of Karpathy's "LLM Wiki" pattern: a directory of markdown "concept"
@@ -169,13 +169,62 @@ wake-out/<seed>/
     <citing-id>.md      — Theme A2/B dossiers (OKF concept docs)
     themes/
       index.md
-      <theme-slug>.md   — Theme C combined-evidence docs
+      <theme-slug>.md   — Theme C combined-evidence docs (not yet built)
   pdfs/
     <citing-id>.pdf     — locally-cached PDFs (Theme A)
 ```
 
-`SKILL.md` plays the role of Karpathy's/OKF's "schema file" — extend it
-with evidence-wiki conventions once A2/D are built.
+**Built as `wake/evidence_wiki.py`**, a new leaf module derived entirely
+from the existing dossier `.json` sidecars (no separate index/log data
+store — `rebuild_index()` can always regenerate `index.md` from scratch
+by rescanning `evidence/*.json`):
+
+- `rebuild_index()` — groups dossiers **Verified** / **Pending Review**,
+  sorted within each group by the same score `report.py` uses for
+  "Strongest Evidence" (`RELATIONSHIP_STRENGTH[relationship] x
+  log1p(cited_by_count)`). Two new dossier JSON fields support this
+  without re-loading `classified.json`: `citing_cited_by_count` and an
+  explicit `verification_status` (previously only implicit in the
+  markdown frontmatter's `status:` tag).
+- `append_log_entry()` — one line per real event, newest at the bottom:
+  `dossier_built`, `dossier_rebuilt` (a `--force` re-run),
+  `investigation_failed` (no PDF found, or extraction produced no text),
+  and `verified_by_human`. A cache-hit `wake evidence` call (dossier
+  already exists, `force=False`) is a true no-op — nothing logged,
+  nothing rebuilt.
+- `mark_verified()` — patches a dossier's `.json` (`verification_status`
+  → `"verified"`, adds a `human_verification: {justification,
+  verified_at}` block) and its `.md` (frontmatter `status:` tag +
+  "Status" section body) in place.
+
+**Wiring** (both call sites fire only on real work, never on a cache hit):
+- `evidence.py::build_dossier()` calls `append_log_entry` +
+  `rebuild_index` after every fresh build or `--force` rebuild, and logs
+  the two failure paths (`no_pdf`, `extraction_failed`) too.
+- `report.py::add_override()` calls `mark_verified` + `append_log_entry`
+  + `rebuild_index` **only** when `verification_source ==
+  "evidence-dossier"` — a plain `"human-judgment"` override (no dossier
+  behind it) leaves the evidence wiki untouched. If no dossier exists for
+  the citing ID (override without a prior `wake evidence` call),
+  `mark_verified` is a silent no-op.
+- **`--force` always resets a previously-verified dossier back to
+  `pending-human-review`** — a fresh extraction + LLM read is a new
+  finding, not a continuation of the old human sign-off; it reappears in
+  `index.md`'s Pending Review section until re-confirmed. The prior
+  `human_verification` record is overwritten, not preserved as history
+  (the full history lives in `log.md` instead).
+
+`index.md`/`log.md` only spring into existence on the first real event —
+no empty scaffolding created at `resolve`/`citing` time, consistent with
+`impact.md` not existing until `wake render` and `.overrides.jsonl` not
+existing until the first override.
+
+No new CLI surface: both files are plain markdown, read directly (same as
+individual dossiers today — there's no `wake show dossier` either).
+
+`SKILL.md` plays the role of Karpathy's/OKF's "schema file" — extended
+with a note that `wake override` auto-updates the wiki, so the agent
+doesn't need a separate step.
 
 ---
 
