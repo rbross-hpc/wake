@@ -244,6 +244,18 @@ If `wake evidence` can't get a PDF, it returns the same human-actionable
 fallback links as `fetch-pdf` (Unpaywall, Google Scholar, publisher DOI,
 CORE) — offer those rather than giving up on verifying that work.
 
+**If a `proposed` finding looks wrong or implausible, check the extraction
+before doubting the reasoning.** The `extracted_text_path` field in the
+response (also linked from the dossier's "Source" section) points at the
+raw page-tagged text the model was actually given, cached at
+`wake-out/<seed>/pdfs/<citing-id>.json`. Read it yourself before telling
+the human "the model got this wrong" — multi-column academic PDF layouts
+are a known source of garbled extraction, and a bad extraction produces a
+very different-looking problem than a bad inference once you've seen the
+raw text. `wake --json evidence "<seed>" <citing-id> --force` re-runs
+extraction too (not just the LLM verification call), so a garbled
+extraction can be retried without needing a fresh PDF.
+
 This step is optional and selective — don't try to verify every citing
 work full-text; that defeats the purpose of the provisional/abstract-only
 tier existing at all. Reserve it for works where the narrative genuinely
@@ -293,3 +305,8 @@ classification and are marked `[VERIFIED via ...]` in the brief.
    `classify`-only relationship with confidence 0.9 is still just an
    abstract-only guess. Don't describe provisional classifications to the
    human as settled findings — reserve that language for `verified` ones.
+10. **Before blaming the model's reasoning, check the extraction.** A
+    surprising `wake evidence` finding may just mean the PDF extracted
+    badly (common with multi-column layouts). Read `extracted_text_path`
+    yourself first — it's a plain cached JSON file, no re-run needed —
+    before telling the human the model got something wrong.

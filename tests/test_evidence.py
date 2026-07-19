@@ -6,9 +6,17 @@ Uses the same committed OSTI fixture as test_pdf_abstract.py for real PDF
 extraction, with the LLM verification call mocked (offline-safe). A
 @pytest.mark.network test at the bottom runs the full pipeline live
 against the real Argo endpoint.
+
+Tests that exercise build_dossier() copy the fixture into tmp_path rather
+than pointing fetch_pdf's mock at the fixture in place: build_dossier's
+extraction cache (wake.sources.pdf_fulltext.extract_pages_cached) writes
+a .json sidecar next to whatever PDF path it's given, and the committed
+fixture directory must never accumulate generated cache files from test
+runs.
 """
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,6 +26,13 @@ from wake import evidence
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
+
+
+def _copy_fixture_pdf(tmp_path: Path) -> Path:
+    dest = tmp_path / "pdfs" / "citing.pdf"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(_FIXTURE, dest)
+    return dest
 
 CLASSIFIED_CITING_WORK = {
     **SAMPLE_CITING_WORKS[0],
@@ -110,11 +125,12 @@ def test_build_dossier_no_pdf_available(tmp_path):
 
 
 def test_build_dossier_end_to_end_with_real_fixture_pdf(tmp_path):
-    """Full pipeline against the real committed fixture PDF, with only the
-    LLM verification call mocked -- exercises real fetch_pdf caching +
-    real pdf_fulltext extraction end to end."""
+    """Full pipeline against the real committed fixture PDF (copied into
+    tmp_path), with only the LLM verification call mocked -- exercises
+    real fetch_pdf caching + real pdf_fulltext extraction end to end."""
+    pdf_copy = _copy_fixture_pdf(tmp_path)
     with patch("wake.evidence.fetch_pdf", return_value={
-        "ok": True, "path": str(_FIXTURE), "source": "osti",
+        "ok": True, "path": str(pdf_copy), "source": "osti",
     }), patch("wake.evidence.chat_json", return_value=_fake_verification_response()):
         result = evidence.build_dossier(
             PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, verbose=False,
@@ -132,8 +148,17 @@ def test_build_dossier_end_to_end_with_real_fixture_pdf(tmp_path):
     assert "We directly extend the subfiling scheme" in md_text  # quote appears verbatim
     assert "pending your review" in md_text.lower()
 
+    # The extraction cache must be written next to the PDF, and the
+    # dossier must point at it (so a human/agent can inspect what the
+    # model actually read).
+    extracted_text_path = pdf_copy.with_suffix(".json")
+    assert extracted_text_path.exists()
+    assert result["extracted_text_path"] == str(extracted_text_path)
+    assert extracted_text_path.name in md_text
+
 
 def test_build_dossier_caches_on_second_call(tmp_path):
+    pdf_copy = _copy_fixture_pdf(tmp_path)
     call_count = {"n": 0}
 
     def _counting_chat_json(*args, **kwargs):
@@ -141,7 +166,7 @@ def test_build_dossier_caches_on_second_call(tmp_path):
         return _fake_verification_response()
 
     with patch("wake.evidence.fetch_pdf", return_value={
-        "ok": True, "path": str(_FIXTURE), "source": "osti",
+        "ok": True, "path": str(pdf_copy), "source": "osti",
     }), patch("wake.evidence.chat_json", side_effect=_counting_chat_json):
         evidence.build_dossier(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, verbose=False)
         result2 = evidence.build_dossier(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, verbose=False)
@@ -152,6 +177,7 @@ def test_build_dossier_caches_on_second_call(tmp_path):
 
 
 def test_build_dossier_force_bypasses_cache(tmp_path):
+    pdf_copy = _copy_fixture_pdf(tmp_path)
     call_count = {"n": 0}
 
     def _counting_chat_json(*args, **kwargs):
@@ -159,7 +185,7 @@ def test_build_dossier_force_bypasses_cache(tmp_path):
         return _fake_verification_response()
 
     with patch("wake.evidence.fetch_pdf", return_value={
-        "ok": True, "path": str(_FIXTURE), "source": "osti",
+        "ok": True, "path": str(pdf_copy), "source": "osti",
     }), patch("wake.evidence.chat_json", side_effect=_counting_chat_json):
         evidence.build_dossier(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, verbose=False)
         evidence.build_dossier(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, force=True, verbose=False)
@@ -167,19 +193,37 @@ def test_build_dossier_force_bypasses_cache(tmp_path):
     assert call_count["n"] == 2
 
 
+def test_build_dossier_force_reextracts_text_too(tmp_path):
+    """--force must bypass not just the dossier cache but also the PDF
+    text-extraction cache, so a bad/garbled extraction can be fixed by
+    re-running even when the underlying PDF file hasn't changed."""
+    pdf_copy = _copy_fixture_pdf(tmp_path)
+
+    with patch("wake.evidence.fetch_pdf", return_value={
+        "ok": True, "path": str(pdf_copy), "source": "osti",
+    }), patch("wake.evidence.chat_json", return_value=_fake_verification_response()), \
+         patch("wake.evidence.extract_pages_cached", return_value=["some text"]) as mock_extract:
+        evidence.build_dossier(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, force=True, verbose=False)
+
+    mock_extract.assert_called_once()
+    assert mock_extract.call_args.kwargs.get("force") is True
+
+
 def test_load_dossier_missing_returns_none(tmp_path):
     assert evidence.load_dossier("W999", "W888", base=tmp_path) is None
 
 
 def test_load_dossier_after_build(tmp_path):
+    pdf_copy = _copy_fixture_pdf(tmp_path)
     with patch("wake.evidence.fetch_pdf", return_value={
-        "ok": True, "path": str(_FIXTURE), "source": "osti",
+        "ok": True, "path": str(pdf_copy), "source": "osti",
     }), patch("wake.evidence.chat_json", return_value=_fake_verification_response()):
         evidence.build_dossier(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, verbose=False)
 
     loaded = evidence.load_dossier(PARALLEL_NETCDF_WORK["openalex_id"], CLASSIFIED_CITING_WORK["openalex_id"], base=tmp_path)
     assert loaded is not None
     assert loaded["proposed"]["relationship"] == "extends"
+    assert loaded["extracted_text_path"] == str(pdf_copy.with_suffix(".json"))
 
 
 def test_dossier_markdown_quotes_full_paragraph_verbatim(tmp_path):
@@ -192,8 +236,9 @@ def test_dossier_markdown_quotes_full_paragraph_verbatim(tmp_path):
         "modifies the underlying collective I/O scheduler to add support for "
         "asynchronous, non-blocking writes, which the original library did not provide."
     )
+    pdf_copy = _copy_fixture_pdf(tmp_path)
     with patch("wake.evidence.fetch_pdf", return_value={
-        "ok": True, "path": str(_FIXTURE), "source": "osti",
+        "ok": True, "path": str(pdf_copy), "source": "osti",
     }), patch("wake.evidence.chat_json", return_value=_fake_verification_response(
         quotes=[{"page": 3, "text": long_quote, "note": "Describes the extension mechanism"}]
     )):

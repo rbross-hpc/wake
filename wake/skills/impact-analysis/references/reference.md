@@ -93,6 +93,7 @@ Scholar search for the title, publisher DOI link, CORE.ac.uk search URL.
     "dossier_json_path": "wake-out/<seed>/evidence/<citing-id>.json",
     "pdf_path": "wake-out/<seed>/pdfs/<citing-id>.pdf",
     "pdf_source": "semanticscholar",
+    "extracted_text_path": "wake-out/<seed>/pdfs/<citing-id>.json",
     "provisional": {"relationship": "uses-as-tool", "confidence": 0.4, "justification": "..."},
     "proposed": {
       "relationship": "extends",
@@ -115,6 +116,19 @@ Promotion to `verified` always requires an explicit `wake override` call
 `--verification-source evidence-dossier` to record that the override
 followed a dossier rather than an unaided human judgment.
 
+### Diagnosing a surprising finding: check the extraction first
+
+`extracted_text_path` (also linked from the dossier's "Source" section)
+points at the raw page-tagged text the LLM was actually given — cached
+next to the PDF (`wake-out/<seed>/pdfs/<citing-id>.json`), keyed by the
+PDF's sha256 so a re-fetched PDF invalidates it automatically. If a
+`proposed` finding looks implausible, read this file **before** concluding
+the model reasoned poorly — multi-column academic layouts are a known
+source of garbled extraction (see PDF Acquisition notes above), and a bad
+extraction looks very different from a bad inference once you see the raw
+text. `wake evidence --force` re-runs extraction too, not just the LLM
+call, so a garbled extraction can be retried without needing a fresh PDF.
+
 ## Output Layout
 
 ```
@@ -133,6 +147,9 @@ wake-out/<OpenAlex-ID>/
                              (verification_status: "verified")
   .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
   pdfs/                   — locally-cached PDFs (wake fetch-pdf / wake evidence)
+    <citing-id>.pdf         — the PDF itself
+    <citing-id>.json        — its extracted text, cached (pdf_sha256-keyed;
+                               see Diagnosing a surprising finding, above)
   evidence/                — full-text verification dossiers (wake evidence)
     <citing-id>.md          — OKF concept document (human/agent-readable)
     <citing-id>.json        — same finding, structured (for programmatic reuse)
