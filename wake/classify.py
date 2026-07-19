@@ -169,6 +169,13 @@ def classify_one(
         "justification": result.get("justification", ""),
         "has_abstract": bool(citing_work.get("abstract")),
         "strength": RELATIONSHIP_STRENGTH.get(relationship, 1),
+        # Always "provisional": classify_one only ever sees title/abstract/
+        # venue, never the citing paper's actual text. This is a weak,
+        # unverified guess — not a finding. It can only be promoted to
+        # "verified" via wake evidence (full-text reading) + a human
+        # sign-off through wake override. See report.add_override() and
+        # BACKLOG.md's provisional -> proposed -> verified lifecycle.
+        "verification_status": "provisional",
     }
 
 

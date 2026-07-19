@@ -40,6 +40,42 @@ def _strip_markdown_fence(text: str) -> str:
     return text
 
 
+def _extract_json_object(text: str) -> str:
+    """Best-effort recovery when a model prefixes its JSON response with
+    prose (despite instructions not to) — e.g. "Looking at the text, I
+    find... {...}". Finds the first '{' and its matching closing '}'
+    (brace-depth counting, string-aware so braces inside quoted strings
+    don't confuse it) and returns just that span. Returns *text* unchanged
+    if no balanced object is found, so the caller's json.loads still
+    raises a clear error rather than silently returning something wrong.
+    """
+    start = text.find("{")
+    if start == -1:
+        return text
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return text
+
+
 def _stream_completion(
     client: OpenAI,
     model: str,
@@ -89,7 +125,14 @@ def chat_json(
     if cost_sink is not None:
         cost_sink(resolved, system, user, raw)
     raw = _strip_markdown_fence(raw)
-    return json.loads(raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Some models occasionally prefix the JSON with reasoning prose
+        # despite explicit instructions not to (observed live with the
+        # 'evidence' role's long full-text prompt). Try to recover just
+        # the JSON object before giving up.
+        return json.loads(_extract_json_object(raw))
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=20))

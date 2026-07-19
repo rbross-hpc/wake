@@ -9,7 +9,7 @@ from wake.classify import RELATIONSHIP_STRENGTH
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 
-def _make_classified(works, relationships):
+def _make_classified(works, relationships, verification_status="provisional"):
     result = []
     for w, rel in zip(works, relationships):
         result.append({
@@ -19,6 +19,7 @@ def _make_classified(works, relationships):
             "justification": "Test",
             "has_abstract": bool(w.get("abstract")),
             "strength": RELATIONSHIP_STRENGTH.get(rel, 1),
+            "verification_status": verification_status,
         })
     return result
 
@@ -114,6 +115,7 @@ def test_build_metrics_partial_coverage():
         "justification": "Test",
         "has_abstract": True,
         "strength": RELATIONSHIP_STRENGTH["extends"],
+        "verification_status": "provisional",
     }
     mixed = [classified_first, SAMPLE_CITING_WORKS[1], SAMPLE_CITING_WORKS[2]]
     metrics = build_metrics(PARALLEL_NETCDF_WORK, mixed)
@@ -132,6 +134,7 @@ def test_render_markdown_notes_partial_coverage():
         "justification": "Test",
         "has_abstract": True,
         "strength": RELATIONSHIP_STRENGTH["extends"],
+        "verification_status": "provisional",
     }
     mixed = [classified_first, SAMPLE_CITING_WORKS[1], SAMPLE_CITING_WORKS[2]]
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
@@ -191,3 +194,123 @@ def test_build_metrics_venue_type_fallback_reduces_unknown_bucket():
     assert by_vt.get("conference") == 1
     assert by_vt.get("journal") == 1
     assert by_vt.get("unknown") == 1
+
+
+# ---- Verification lifecycle: provisional -> proposed -> verified ----
+
+def test_build_metrics_all_provisional_by_default():
+    """classify.py always stamps verification_status='provisional' -- this
+    is the default state for every classification, not just ones that
+    later go through wake evidence."""
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    assert metrics["verified_count"] == 0
+    assert metrics["classified_count"] == 3
+
+
+def test_build_metrics_counts_verified_works():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    # Promote one work to verified, as add_override() would.
+    classified[0]["verification_status"] = "verified"
+    classified[0]["verification_source"] = "evidence-dossier"
+
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    assert metrics["verified_count"] == 1
+
+
+def test_top_evidence_carries_verification_fields():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    classified[0]["verification_status"] = "verified"
+    classified[0]["verification_source"] = "evidence-dossier"
+
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    top = metrics["top_evidence"]
+    verified_entries = [e for e in top if e["verification_status"] == "verified"]
+    assert len(verified_entries) == 1
+    assert verified_entries[0]["verification_source"] == "evidence-dossier"
+
+
+def test_render_markdown_shows_provisional_tag_by_default():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    md = render_markdown(seed, metrics)
+    assert "[PROVISIONAL" in md
+    assert "provisional" in md.lower()
+
+
+def test_render_markdown_shows_verified_via_evidence_dossier():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    classified[0]["verification_status"] = "verified"
+    classified[0]["verification_source"] = "evidence-dossier"
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    md = render_markdown(seed, metrics)
+    assert "[VERIFIED via full-text reading]" in md
+
+
+def test_render_markdown_shows_verified_via_human_judgment():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    classified[0]["verification_status"] = "verified"
+    classified[0]["verification_source"] = "human-judgment"
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    md = render_markdown(seed, metrics)
+    assert "[VERIFIED via human judgment]" in md
+
+
+def test_render_markdown_nature_of_impact_summary_counts():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    classified[0]["verification_status"] = "verified"
+    classified[0]["verification_source"] = "evidence-dossier"
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    md = render_markdown(seed, metrics)
+    assert "2 classification(s) are **provisional**" in md
+    assert "1 have been **verified**" in md
+
+
+def test_add_override_defaults_to_human_judgment_source():
+    from wake.report import add_override
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        entry = add_override(
+            "W123", "W456", relationship="extends", justification="test", base=Path(tmp),
+        )
+    assert entry["verification_status"] == "verified"
+    assert entry["verification_source"] == "human-judgment"
+
+
+def test_add_override_accepts_evidence_dossier_source():
+    from wake.report import add_override
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as tmp:
+        entry = add_override(
+            "W123", "W456", relationship="extends", justification="quoted text",
+            verification_source="evidence-dossier", base=Path(tmp),
+        )
+    assert entry["verification_status"] == "verified"
+    assert entry["verification_source"] == "evidence-dossier"

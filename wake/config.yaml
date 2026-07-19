@@ -2,6 +2,7 @@ models:
   describe: "Claude Sonnet 4.6"
   classify: "Claude Sonnet 4.6"
   pdf_abstract_extract: "Claude Sonnet 4.6"
+  evidence: "Claude Sonnet 4.6"
 
 openalex:
   rate_limit_s: 1.0
@@ -57,6 +58,16 @@ pdf_fetch:
   # HTML error/paywall page saved with a .pdf extension) rather than a
   # genuine PDF.
   min_valid_pdf_bytes: 2048
+
+# Full-text verification (wake evidence): reads the citing work's entire
+# PDF and asks an LLM to independently judge the relationship, quoting
+# full-paragraph supporting passages with page numbers. Produces a
+# "proposed" finding -- never auto-applied; an agent presents it to the
+# human and runs `wake override` on their behalf once accepted. See
+# BACKLOG.md's provisional -> proposed -> verified lifecycle.
+evidence:
+  prompt_version: "evidence-1"
+  max_fulltext_chars: 40000
 
 classify:
   prompt_version: "classify-2"

@@ -15,6 +15,7 @@ from wake.classify import (
     _write_sidecar,
     _load_sidecar,
     classify_all,
+    classify_one,
     select_for_classification,
 )
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
@@ -71,6 +72,27 @@ def test_select_for_classification_ids():
 
 def _fake_chat_json(system, user, model_role="classify", model=None, temperature=0, cost_sink=None):
     return {"relationship": "uses-as-tool", "confidence": 0.8, "justification": "fake"}
+
+
+def test_classify_one_always_marks_provisional(tmp_path):
+    """classify_one only ever sees title/abstract/venue -- it can never
+    verify against the citing work's actual text, so every result it
+    produces must be stamped 'provisional', with no way to opt out.
+    Promotion to 'verified' only happens via wake evidence + wake override."""
+    with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
+        result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
+    assert result["verification_status"] == "provisional"
+
+
+def test_classify_all_results_are_provisional(tmp_path):
+    with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
+        result = classify_all(
+            PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS,
+            base=tmp_path, inter_call_delay=0, verbose=False,
+        )
+    classified = [w for w in result if w.get("relationship")]
+    assert len(classified) == len(SAMPLE_CITING_WORKS)
+    assert all(w["verification_status"] == "provisional" for w in classified)
 
 
 def test_classify_all_dry_run_makes_no_calls(tmp_path):

@@ -5,10 +5,23 @@
 `wake` is an analysis instrument you (the agent) wield on the human's behalf.
 It is **not** an autopilot — there is no single "do everything" command. You
 compose thin primitives (`resolve`, `citing`, `sample`, `classify`, `gaps`,
-`fetch-pdf`, `fill-abstract`, `render`, `status`, `cost`, `override`) into an
-**explore-first workflow**, pausing at natural decision points so the human
-can confirm the seed paper, review a sample of classifications, and approve
-spend before you scale up.
+`fetch-pdf`, `fill-abstract`, `evidence`, `render`, `status`, `cost`,
+`override`) into an **explore-first workflow**, pausing at natural decision
+points so the human can confirm the seed paper, review a sample of
+classifications, and approve spend before you scale up.
+
+**Every classification starts out unverified.** `classify` only ever reads
+a citing work's title/abstract/venue — never the paper itself — so its
+output is always labeled `"verification_status": "provisional"`: a
+placeholder guess, not a finding. `wake evidence` reads a citing work's
+*actual full text* and proposes a real, quote-backed relationship
+(`"proposed"`). Only after a human reviews that proposal does it become
+`"verified"` — and **you** (the agent) are the one who runs `wake override`
+to record that, never the human. See step 9 below; this lifecycle
+(provisional → proposed → verified) is the core epistemic model of the
+whole brief, so keep it in mind throughout — a `[PROVISIONAL]`-tagged
+relationship in the brief is not settled, no matter how high its
+confidence score looks.
 
 Every command supports `--json` and returns a stable envelope:
 ```json
@@ -187,14 +200,67 @@ Works on partial data — if not everything is classified, the brief notes
 coverage (e.g. "based on 50 of 408 citing works"). Read `impact.md` and
 summarize it for the human; don't just dump the raw file unless asked.
 
-### 9. Refine
+### 9. (Optional) Deep-dive verification of a specific finding
 
-If the human disagrees with a specific classification:
+Every classification in the brief is `[PROVISIONAL]` by default — an
+abstract-only guess, not a checked fact. For works that matter to the
+narrative (usually the top few in "Strongest Evidence," or ones the human
+specifically asks about), you can verify the actual relationship by
+reading the full paper:
+
+```bash
+wake --json evidence "<seed>" <citing-id>
+```
+
+This automatically fetches a PDF (same chain as `fetch-pdf`), reads the
+*entire* document (not just the abstract), and proposes a relationship
+backed by quoted, page-cited passages — an independent judgment, not a
+rubber-stamp of the provisional guess. It never modifies the brief itself;
+it writes a dossier (`wake-out/<seed>/evidence/<citing-id>.md`) and returns
+a structured `proposed` finding + `quotes` for you to act on.
+
+**You always run the promotion step yourself — never ask the human to run
+a command.** Two ways to close the loop, both ending the same way (you
+call `wake override`):
+
+- **Human reviews independently**: point them at the dossier file or the
+  local PDF; they tell you what they accept; you translate that into an
+  `override` call.
+- **You walk them through it**: present the finding conversationally, but
+  **paste the actual quoted passage(s) from the `quotes` field verbatim,
+  in a blockquote, with the page number** — not a paraphrase or a summary
+  of what the quote says. The human needs to read the real sentences in
+  context to judge the claim themselves, exactly as they would if they'd
+  found the passage on their own. Then ask a plain yes/adjust/no, and act
+  on the answer yourself:
+  ```bash
+  wake --json override "<seed>" <citing-id> \
+    --relationship <the-agreed-relationship> \
+    --justification "<the quoted evidence, or the human's own reasoning>" \
+    --verification-source evidence-dossier
+  ```
+
+If `wake evidence` can't get a PDF, it returns the same human-actionable
+fallback links as `fetch-pdf` (Unpaywall, Google Scholar, publisher DOI,
+CORE) — offer those rather than giving up on verifying that work.
+
+This step is optional and selective — don't try to verify every citing
+work full-text; that defeats the purpose of the provisional/abstract-only
+tier existing at all. Reserve it for works where the narrative genuinely
+hinges on getting the relationship right.
+
+### 10. Refine
+
+If the human disagrees with a specific classification (with or without a
+`wake evidence` dossier backing it up):
 ```bash
 wake --json override "<seed>" <citing-openalex-id> --relationship extends --justification "..."
 ```
-Then re-render (`wake --json render "<seed>"`) — overrides always win over
-the LLM classification and are marked "(human-reviewed)" in the brief.
+`--verification-source` defaults to `human-judgment`; pass
+`--verification-source evidence-dossier` when the override follows a
+`wake evidence` finding the human accepted (step 9). Then re-render
+(`wake --json render "<seed>"`) — overrides always win over the LLM
+classification and are marked `[VERIFIED via ...]` in the brief.
 
 ## Principles for Agents
 
@@ -214,3 +280,16 @@ the LLM classification and are marked "(human-reviewed)" in the brief.
    the small number of high-value, highly-cited works where a better
    abstract meaningfully changes the evidence — not a general cleanup pass
    over all no-abstract works.
+7. **You run `wake override`, never the human.** Whether the human reviewed
+   a `wake evidence` dossier on their own or you walked them through it,
+   *you* translate their decision into the `override` call. Don't hand a
+   human a CLI command to type themselves.
+8. **When presenting evidence, quote it — don't paraphrase it.** `wake
+   evidence`'s `quotes` field contains full-paragraph passages exactly as
+   they appear in the source. Paste that text verbatim (as a blockquote,
+   with the page number) so the human is judging the paper's actual words,
+   not your summary of them.
+9. **Provisional is not verified, no matter the confidence score.** A
+   `classify`-only relationship with confidence 0.9 is still just an
+   abstract-only guess. Don't describe provisional classifications to the
+   human as settled findings — reserve that language for `verified` ones.

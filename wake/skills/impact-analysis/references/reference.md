@@ -24,8 +24,9 @@ wake --json classify "<seed>" [--ids ID,ID,...] [--limit N] [--sort ...] [--dry-
 wake --json gaps "<seed>" [--min-cited-by N] [--no-auto-backfill-check]
 wake --json fetch-pdf "<seed>" <citing-id> [--force]
 wake --json fill-abstract "<seed>" <citing-id> --from-pdf PATH | --text TEXT
+wake --json evidence "<seed>" <citing-id> [--force]
 wake --json render "<seed>"
-wake --json override "<seed>" <citing-id> --relationship <class> --justification "..."
+wake --json override "<seed>" <citing-id> --relationship <class> --justification "..." [--verification-source human-judgment|evidence-dossier]
 
 # Standalone
 wake --json describe "<seed>"      # LLM contribution paragraph (independent of classify)
@@ -74,6 +75,46 @@ with a `.pdf` extension) is rejected and the chain falls through. On total
 failure, returns human-actionable links: Unpaywall lookup page, Google
 Scholar search for the title, publisher DOI link, CORE.ac.uk search URL.
 
+## Verification Lifecycle (provisional → proposed → verified)
+
+| Status | Set by | Meaning |
+|---|---|---|
+| `provisional` | `classify` (always, unconditionally) | Abstract/title-only guess — a placeholder, not a finding |
+| `proposed` | `wake evidence` (full-text LLM read) | What the paper's actual text shows, with quoted passages — not yet human-approved |
+| `verified` | `wake override` (agent-run, after human sign-off) | Settled — a human reviewed and accepted it |
+
+`wake evidence "<seed>" <citing-id>` response shape:
+```json
+{
+  "ok": true,
+  "data": {
+    "ok": true,
+    "dossier_path": "wake-out/<seed>/evidence/<citing-id>.md",
+    "dossier_json_path": "wake-out/<seed>/evidence/<citing-id>.json",
+    "pdf_path": "wake-out/<seed>/pdfs/<citing-id>.pdf",
+    "pdf_source": "semanticscholar",
+    "provisional": {"relationship": "uses-as-tool", "confidence": 0.4, "justification": "..."},
+    "proposed": {
+      "relationship": "extends",
+      "confidence": 0.9,
+      "justification": "...",
+      "agrees_with_provisional": false
+    },
+    "quotes": [
+      {"page": 4, "text": "<full paragraph, verbatim>", "note": "<what this shows>"}
+    ]
+  }
+}
+```
+On failure to acquire a PDF: `{"ok": false, "reason": "no_pdf", "fetch_result": {...}}`
+(same shape as `fetch-pdf`'s failure — includes `fallback_links`).
+
+`wake evidence` never calls `wake override` itself — it only proposes.
+Promotion to `verified` always requires an explicit `wake override` call
+(run by the agent, per SKILL.md step 9-10), optionally tagged
+`--verification-source evidence-dossier` to record that the override
+followed a dossier rather than an unaided human judgment.
+
 ## Output Layout
 
 ```
@@ -81,14 +122,20 @@ wake-out/<OpenAlex-ID>/
   seed.json               — resolved seed + LLM description
   citing.json             — all citing works (paginated, cached)
   classified.json         — per-citing-work relationship + evidence
-  impact.json             — aggregated metrics
-  impact.md               — the impact brief (notes coverage if partial)
+                             (verification_status: "provisional" by default)
+  impact.json             — aggregated metrics (includes verified_count)
+  impact.md               — the impact brief (notes coverage if partial;
+                             per-entry [PROVISIONAL]/[VERIFIED via ...] tags)
   .state.json             — stage cache keys
   .classify/              — per-work classification sidecars (resumable)
   .cost.jsonl             — per-LLM-call estimated token/cost log
   .overrides.jsonl        — human-reviewed relationship overrides
+                             (verification_status: "verified")
   .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
-  pdfs/                   — locally-cached PDFs (wake fetch-pdf)
+  pdfs/                   — locally-cached PDFs (wake fetch-pdf / wake evidence)
+  evidence/                — full-text verification dossiers (wake evidence)
+    <citing-id>.md          — OKF concept document (human/agent-readable)
+    <citing-id>.json        — same finding, structured (for programmatic reuse)
 ```
 
 Use `--work-dir DIR` (or `WAKE_WORK_DIR` env var) to control where

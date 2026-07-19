@@ -53,14 +53,27 @@ def add_override(
     relationship: str,
     justification: str = "",
     base: Path | None = None,
+    verification_source: str = "human-judgment",
 ) -> dict[str, Any]:
-    """Append a human-reviewed override for a citing work's relationship."""
+    """Append a human-reviewed override for a citing work's relationship.
+
+    This is the only path by which a classification is promoted to
+    "verified" — an agent calls this on the human's behalf after the human
+    has reviewed and accepted a relationship (see BACKLOG.md's provisional
+    -> proposed -> verified lifecycle). *verification_source* distinguishes
+    how the human arrived at their judgment:
+      - "human-judgment": a plain manual correction, no wake evidence dossier
+      - "evidence-dossier": the human accepted a full-text reading proposed
+        by `wake evidence` (quoted, page-cited passages)
+    """
     entry = {
         "citing_id": citing_id,
         "relationship": relationship,
         "justification": justification,
         "confidence": 1.0,
         "human_reviewed": True,
+        "verification_status": "verified",
+        "verification_source": verification_source,
         "strength": RELATIONSHIP_STRENGTH.get(relationship, 1),
         "overridden_at": now_iso(),
     }
@@ -176,9 +189,12 @@ def build_metrics(
             backfilled_abstract += 1
 
     by_relationship: dict[str, int] = Counter()
+    verified_count = 0
     for w in classified:
         rel = w.get("relationship", "background-mention")
         by_relationship[rel] += 1
+        if w.get("verification_status") == "verified":
+            verified_count += 1
 
     sorted_works = sorted(classified, key=_score, reverse=True)
     top_evidence = sorted_works[:top_n]
@@ -195,6 +211,7 @@ def build_metrics(
         "seed_title": seed_work.get("title"),
         "total_citing_works": total,
         "classified_count": classified_count,
+        "verified_count": verified_count,
         "coverage": round(coverage, 4),
         "highly_cited_citing": highly_cited,
         "no_abstract_count": no_abstract,
@@ -219,6 +236,8 @@ def build_metrics(
                 "confidence": w.get("confidence"),
                 "justification": w.get("justification"),
                 "human_reviewed": bool(w.get("human_reviewed")),
+                "verification_status": w.get("verification_status", "provisional"),
+                "verification_source": w.get("verification_source"),
                 "score": round(_score(w), 3),
             }
             for w in top_evidence
@@ -322,6 +341,16 @@ def render_markdown(
     if classified_count < total:
         lines.append(f"*(based on {classified_count:,} classified works)*")
         lines.append("")
+    verified_count = metrics.get("verified_count", 0)
+    if classified_count:
+        provisional_count = classified_count - verified_count
+        lines.append(
+            f"> {provisional_count:,} classification(s) are **provisional** "
+            f"(abstract-only, not yet checked against full text); "
+            f"{verified_count:,} have been **verified** "
+            f"(`wake evidence` full-text reading + human sign-off)."
+        )
+        lines.append("")
     by_rel = metrics.get("by_relationship", {})
     relationship_order = [
         "extends", "builds-on", "uses-as-tool", "benchmarks",
@@ -354,8 +383,16 @@ def render_markdown(
         rel = ev.get("relationship", "?")
         conf = ev.get("confidence", 0)
         just = ev.get("justification", "")
-        reviewed_tag = " (human-reviewed)" if ev.get("human_reviewed") else ""
-        lines.append(f"> *{rel}*{reviewed_tag} (confidence: {conf:.2f}) — {just}")
+        status = ev.get("verification_status", "provisional")
+        if status == "verified":
+            source = ev.get("verification_source")
+            if source == "evidence-dossier":
+                status_tag = " [VERIFIED via full-text reading]"
+            else:
+                status_tag = " [VERIFIED via human judgment]"
+        else:
+            status_tag = " [PROVISIONAL — abstract-only, not yet checked against full text]"
+        lines.append(f"> *{rel}*{status_tag} (confidence: {conf:.2f}) — {just}")
         if ev.get("doi"):
             lines.append(f"> DOI: {ev['doi']}")
         elif ev.get("openalex_id"):

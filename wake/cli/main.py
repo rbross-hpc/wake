@@ -43,6 +43,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_gaps_parser(sub)
     _build_fill_abstract_parser(sub)
     _build_fetch_pdf_parser(sub)
+    _build_evidence_parser(sub)
     _build_render_parser(sub)
     _build_override_parser(sub)
     _build_cost_parser(sub)
@@ -157,6 +158,23 @@ def _build_fetch_pdf_parser(sub) -> None:
     p.add_argument("--force", action="store_true", help="Re-fetch even if already cached.")
 
 
+def _build_evidence_parser(sub) -> None:
+    p = sub.add_parser(
+        "evidence",
+        help="Full-text verification of one citing work's provisional classification: "
+             "fetches the PDF, reads the whole document, and proposes a relationship "
+             "with quoted, page-cited supporting passages. Never auto-applied -- "
+             "the agent presents the finding to the human and runs `wake override` "
+             "on their behalf once accepted.",
+    )
+    p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    p.add_argument("citing_id", help="OpenAlex ID of the citing work to investigate.")
+    p.add_argument("--force", action="store_true",
+                   help="Re-run verification even if a dossier already exists (re-fetches "
+                        "the PDF only if not already cached; use `wake fetch-pdf --force` "
+                        "separately to force a fresh PDF download).")
+
+
 def _build_render_parser(sub) -> None:
     p = sub.add_parser(
         "render",
@@ -170,7 +188,9 @@ def _build_override_parser(sub) -> None:
     p = sub.add_parser(
         "override",
         help="Record a human-reviewed relationship override for one citing work. "
-             "Wins over the LLM classification in the next render.",
+             "Wins over the LLM classification in the next render. Always run by "
+             "the agent on the human's behalf -- never ask the human to run this "
+             "command themselves (see SKILL.md).",
     )
     from ..classify import RELATIONSHIPS
     p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
@@ -179,6 +199,11 @@ def _build_override_parser(sub) -> None:
                    choices=RELATIONSHIPS,
                    help="The corrected relationship class.")
     p.add_argument("--justification", default="", help="One-line justification for the override.")
+    p.add_argument("--verification-source", default="human-judgment",
+                   choices=["human-judgment", "evidence-dossier"],
+                   help="How the human arrived at this judgment (default: human-judgment). "
+                        "Use 'evidence-dossier' when the human accepted a `wake evidence` "
+                        "full-text finding.")
 
 
 def _build_cost_parser(sub) -> None:
@@ -528,6 +553,80 @@ def run_fetch_pdf(args) -> None:
     emit("fetch-pdf", result, as_json=args.json_out, human=human)
 
 
+def _find_classified_work(seed_id: str, citing_id: str, base) -> dict | None:
+    """Find a citing work's *classified* record (with relationship/
+    confidence/justification), falling back to the plain citing-works
+    record if it hasn't been classified yet."""
+    from ..classify import load_classified
+    classified = load_classified(seed_id, base) or []
+    for w in classified:
+        if w.get("openalex_id") == citing_id:
+            return w
+    return _find_citing_work(seed_id, citing_id, base)
+
+
+def run_evidence(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..evidence import build_dossier
+    base = _work_dir_base(args)
+    seed_id = work["openalex_id"]
+    quiet = is_quiet(args)
+
+    citing_work = _find_classified_work(seed_id, args.citing_id, base)
+    if citing_work is None:
+        emit_error("evidence", RuntimeError(
+            f"{args.citing_id} not found in cached citing works. "
+            f"Run `wake citing {args.seed}` first."
+        ), as_json=args.json_out)
+        sys.exit(1)
+    if not citing_work.get("relationship"):
+        emit_error("evidence", RuntimeError(
+            f"{args.citing_id} has not been classified yet. "
+            f"Run `wake classify {args.seed} --ids {args.citing_id}` first "
+            "so there's a provisional classification to verify against."
+        ), as_json=args.json_out)
+        sys.exit(1)
+
+    result = build_dossier(work, citing_work, base=base, force=args.force, verbose=not quiet)
+
+    def human(d):
+        if not d["ok"]:
+            if d["reason"] == "no_pdf":
+                fr = d["fetch_result"]
+                tried = ", ".join(fr.get("tried", [])) or "(no applicable sources)"
+                print(f"Could not acquire a PDF to verify against (tried: {tried}).")
+                print("Try one of these manually, then run:")
+                print(f"  wake fetch-pdf {args.seed} {args.citing_id}  (after obtaining a PDF)")
+                for label, url in fr.get("fallback_links", {}).items():
+                    print(f"  {label}: {url}")
+            else:
+                print(f"Evidence verification failed: {d.get('message', d['reason'])}")
+            return
+
+        prov = d["provisional"]
+        prop = d["proposed"]
+        print(f"Provisional (abstract-only): {prov['relationship']} (confidence {prov['confidence']:.2f})")
+        print(f"Proposed (full-text reading): {prop['relationship']} (confidence {prop['confidence']:.2f})")
+        print(f"  {prop['justification']}")
+        if not prop["agrees_with_provisional"]:
+            print("  -> differs from the provisional guess")
+        print()
+        if d["quotes"]:
+            print(f"{len(d['quotes'])} supporting passage(s) — see dossier for full context:")
+            print(f"  {d['dossier_path']}")
+        else:
+            print("No supporting passages found in the full text.")
+        print()
+        print(
+            "This is a proposed finding, not applied to the brief. Present the "
+            "quoted passages to the human, then run `wake override` yourself "
+            "once they accept or adjust it — never ask the human to run the "
+            "override command."
+        )
+
+    emit("evidence", result, as_json=args.json_out, human=human)
+
+
 def run_render(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
     from ..citing import load_citing
@@ -561,6 +660,7 @@ def run_override(args) -> None:
         work["openalex_id"], args.citing_id,
         relationship=args.relationship,
         justification=args.justification,
+        verification_source=args.verification_source,
         base=base,
     )
     emit("override", entry, as_json=args.json_out,
@@ -706,6 +806,8 @@ def main() -> None:
             run_fill_abstract(args)
         elif args.command == "fetch-pdf":
             run_fetch_pdf(args)
+        elif args.command == "evidence":
+            run_evidence(args)
         elif args.command == "render":
             run_render(args)
         elif args.command == "override":

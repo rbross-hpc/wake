@@ -50,60 +50,80 @@ ready-made set of links for the human to try manually:
 
 ---
 
-## Theme A2 — Evidence Deep-Dive Dossier (`wake evidence`)
+## Theme A2 — Evidence Deep-Dive Dossier (`wake evidence`) — BUILT
 
-`wake evidence <seed> <citing-id>` → calls `fetch-pdf` first, then produces
-`wake-out/<seed>/evidence/<citing-id>.md` as an **OKF concept document**:
+`wake evidence <seed> <citing-id>` calls `fetch-pdf` first, extracts the
+**entire** document (page-tagged, `sources/pdf_fulltext.py`), then runs an
+LLM full-text verification pass (`evidence.py::verify_full_text()`) and
+writes `wake-out/<seed>/evidence/<citing-id>.md` as an **OKF concept
+document** (+ a `.json` sidecar for programmatic reuse).
 
+**Lifecycle — reframed mid-design at explicit user direction**:
+the abstract-only classification is not a baseline that full-text reading
+confirms/contradicts — it's inherently weak from the start, and full-text
+reading is the substantive assessment, pending human sign-off:
+
+- `provisional` — `classify.py`'s output, always, unconditionally (every
+  classified work, not just ones later verified). Never presented as a
+  finding, however high its confidence.
+- `proposed` — `wake evidence`'s full-text reading: an independent
+  judgment (not a rubber-stamp of the provisional guess), with quoted,
+  page-cited, full-paragraph passages. Never auto-applied.
+- `verified` — only via a human-approved `wake override` call
+  (`--verification-source evidence-dossier` or `human-judgment`), always
+  executed by the agent, never by asking the human to run it themselves.
+
+Dossier frontmatter:
 ```yaml
 ---
 type: citing-work-evidence
 title: "<citing work title>"
 description: "<one-line: how it uses the seed>"
 resource: "<DOI or OpenAlex URL>"
-tags: [relationship:<uses-as-tool|extends|...>, doe-related?, author-overlap?]
+tags: [provisional:<label>, proposed:<label>, status:pending-human-review]
 timestamp: <generated-at>
 ---
 ```
 
-Body:
-- Full citation (title, authors, venue, year, DOI)
-- Author emails if discoverable (best-effort — OpenAlex doesn't reliably
-  carry these; may require Crossref, ORCID, or the PDF itself)
-- Complete abstract
-- Quoted snippets supporting the classification, each with a **page-level**
-  location (pdfplumber — lightweight, page granularity only; explicitly
-  NOT MinerU, per design decision below)
-- Link to the locally-cached PDF (`wake-out/<seed>/pdfs/<citing-id>.pdf`)
-- The `classify.py` verdict (relationship, confidence, justification) this
-  dossier is substantiating
+Body: full citation, complete abstract, the provisional classification
+(clearly framed as a placeholder), the proposed full-text reading, and
+every supporting quote as a **full paragraph, verbatim, with page number**
+— not a bare sentence fragment, per explicit requirement ("I want the
+human to see the literal text supporting the claim, in context").
 
-**Design decision — extraction approach**: lightweight first. Reuse
-pypdf/pdfplumber (already a dependency from `fill-abstract`), locate quotes
-at page granularity only. Zero new heavy deps, consistent with wake's
-existing "no PDF/MinerU dependency" philosophy. MinerU (used by sibling
-`puba`: 1.5–3GB model download, GPU-recommended, ~2min/paper GPU vs.
-~10min/paper CPU, real paragraph-level location anchors via
-`content_list.json`) is explicitly deferred — revisit only if page-level
-citations prove insufficient in practice.
+**Extraction approach (built as planned)**: lightweight — pypdf/pdfplumber,
+page-level only, no MinerU. Confirmed live that multi-column academic PDF
+layouts don't extract into clean paragraphs mechanically (both libraries
+interleave columns on the committed OSTI fixture), so the LLM — not a
+text splitter — is asked to quote the full containing paragraph; it
+handles the reading-order jumbling far better than mechanical splitting
+would, while wake still attaches a real page number.
 
 Interactive, single-reference tool by design: you decide which leads to
-follow, not a batch "process everything" command.
+follow, not a batch "process everything" command. Cached — a second call
+for the same citing work is a no-op (no LLM call) unless `--force`.
+
+Author-email discovery (originally scoped as part of the dossier body)
+was **not built** in this pass — deferred, still an open item below.
 
 ---
 
-## Theme B — DOE-Relevance Signals (folded into A2, same pass)
+## Theme B — DOE-Relevance Signals — DEFERRED, explicitly decoupled from A2
 
-Same document parse as Theme A2 (already reading the full PDF) — no
-separate tool:
-- Author affiliation strings (national labs, DOE program offices)
-- Acknowledged DOE computing resource use (e.g. "resources of the
-  OLCF/ALCF/NERSC...")
-- DOE funding/contract acknowledgment language
-- OSTI cross-check: does this DOI/title appear in OSTI's own index?
-  (reuses `sources/osti.py`)
+Mid-session design discussion: Theme A2 is fully general-purpose and
+contains zero domain-specific logic. Theme B (author affiliation strings,
+DOE compute-resource acknowledgments, funding language, OSTI cross-check)
+was explicitly identified by the user as something *they* want for their
+own use case, but not something every wake user would — it must not be
+baked into the general dossier by default.
 
-Surfaces as additional `tags` + a body section in the Theme A2 dossier.
+Decision: a separate, off-by-default module (e.g. `signals_doe.py`),
+gated by a config flag (`signals.doe.enabled: false` in packaged
+`config.yaml`) with a per-call `wake evidence --with-doe-signals`
+override. When enabled it would reuse A2's already-extracted full text
+(no second parse pass) and append its own section/tags — A2's core
+dossier structure is unaffected whether or not it runs. **Not built in
+this pass** — still fully deferred, tracked here for the next session.
 
 ---
 
@@ -211,7 +231,14 @@ Revisit only if/when MinerU or another genuinely slow step gets adopted.
 ## Open items carried forward (not yet decided)
 
 - Author-email discovery strategy for Theme A2 (Crossref? ORCID? PDF
-  parsing?) — no source currently reliably provides this.
+  parsing?) — no source currently reliably provides this; not attempted
+  in the A2 build.
 - Whether `wake fetch-pdf` should cache negative results (a source
   confirmed to have no OA copy) to avoid re-querying on every dossier
-  regeneration.
+  regeneration. Still open — `wake evidence`'s own dossier-level cache
+  (skip re-verification if a dossier already exists) covers the common
+  case of re-running `wake evidence` on the same citing work, but a
+  fresh `wake evidence` call on a *different* citing work with the same
+  unresolvable DOI would still re-try the full fetch-pdf chain.
+- Theme B (DOE-relevance signals): design decided (separate, off-by-default
+  module — see Theme B above), not yet built.
