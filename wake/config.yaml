@@ -1,6 +1,7 @@
 models:
   describe: "Claude Sonnet 4.6"
   classify: "Claude Sonnet 4.6"
+  pdf_abstract_extract: "Claude Sonnet 4.6"
 
 openalex:
   rate_limit_s: 1.0
@@ -20,6 +21,20 @@ abstract_backfill:
   rate_limit_s:
     osti: 0.5
     semanticscholar: 1.2
+
+# Human-driven escalation for high-value citing works that automatic
+# backfill (OSTI/Semantic Scholar) couldn't recover an abstract for. See
+# `wake gaps` (surface candidates) and `wake fill-abstract` (resolve one).
+gaps:
+  # A no-abstract work is worth surfacing to the human if its own
+  # cited_by_count is at least this — below the threshold, title+venue-only
+  # classification is judged good enough and not worth the escalation.
+  min_cited_by_count: 20
+  default_limit: 10
+
+pdf_extract:
+  max_pages: 3
+  prompt_version: "pdf-abstract-1"
 
 classify:
   prompt_version: "classify-2"

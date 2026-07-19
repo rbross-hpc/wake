@@ -40,6 +40,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_sample_parser(sub)
     _build_describe_parser(sub)
     _build_classify_parser(sub)
+    _build_gaps_parser(sub)
+    _build_fill_abstract_parser(sub)
     _build_render_parser(sub)
     _build_override_parser(sub)
     _build_cost_parser(sub)
@@ -106,6 +108,40 @@ def _build_classify_parser(sub) -> None:
                    help="Report what would be classified and estimated cost; make no LLM calls.")
     p.add_argument("--force", action="store_true", help="Re-classify even if cached.")
     p.add_argument("--delay", type=float, default=0.5, metavar="S", help="Seconds between LLM calls (default: 0.5).")
+
+
+def _build_gaps_parser(sub) -> None:
+    p = sub.add_parser(
+        "gaps",
+        help="Surface high-value citing works with no recoverable abstract "
+             "(automatic backfill exhausted) — candidates for wake fill-abstract.",
+    )
+    p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    p.add_argument("--min-cited-by", type=int, default=None, metavar="N",
+                   help="Only surface gaps whose own cited_by_count is >= N "
+                        "(default: from config, gaps.min_cited_by_count).")
+    p.add_argument("-n", "--limit", type=int, default=None, metavar="N",
+                   help="Max number of gaps to surface (default: from config, gaps.default_limit).")
+    p.add_argument("--no-auto-backfill-check", action="store_true",
+                   help="Skip the OSTI/Semantic Scholar re-check (faster, but may surface "
+                        "works that auto-backfill would have resolved anyway).")
+
+
+def _build_fill_abstract_parser(sub) -> None:
+    p = sub.add_parser(
+        "fill-abstract",
+        help="Manually resolve a missing abstract for one citing work, "
+             "from a local PDF's lead pages or human-supplied text.",
+    )
+    p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    p.add_argument("citing_id", help="OpenAlex ID of the citing work to fill in.")
+    src = p.add_mutually_exclusive_group(required=True)
+    src.add_argument("--from-pdf", metavar="PATH",
+                      help="Path to a locally-downloaded PDF of the citing work. "
+                           "Extracts the first few pages (config.pdf_extract.max_pages, "
+                           "default 3) and asks an LLM to locate the abstract within them.")
+    src.add_argument("--text", metavar="TEXT",
+                      help="The abstract text itself, supplied directly (no LLM call).")
 
 
 def _build_render_parser(sub) -> None:
@@ -352,6 +388,87 @@ def run_classify(args) -> None:
     emit("classify", data, as_json=args.json_out, human=human)
 
 
+def run_gaps(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..citing import fetch_and_cache
+    from ..gaps import find_gaps
+    base = _work_dir_base(args)
+    quiet = is_quiet(args)
+
+    citing = fetch_and_cache(work["openalex_id"], base=base, verbose=not quiet)
+    gaps = find_gaps(
+        citing,
+        seed_id=work["openalex_id"],
+        base=base,
+        min_cited_by_count=args.min_cited_by,
+        limit=args.limit,
+        try_auto_backfill=not args.no_auto_backfill_check,
+        verbose=not quiet,
+    )
+
+    data = {
+        "count": len(gaps),
+        "gaps": [
+            {
+                "openalex_id": g.get("openalex_id"),
+                "title": g.get("title"),
+                "year": g.get("year"),
+                "venue": g.get("venue"),
+                "doi": g.get("doi"),
+                "url": g.get("url"),
+                "cited_by_count": g.get("cited_by_count", 0),
+            }
+            for g in gaps
+        ],
+    }
+
+    def human(d):
+        if not d["gaps"]:
+            print("No high-value abstract gaps found (all above threshold "
+                  "have an abstract, or none meet the citation threshold).")
+            return
+        print(f"{d['count']} high-value citing work(s) with no recoverable abstract:")
+        print()
+        for g in d["gaps"]:
+            print(f"  {g['openalex_id']}  ({g['cited_by_count']:,} cites, {g.get('year','?')})")
+            print(f"    {g['title']}")
+            if g.get("doi"):
+                print(f"    DOI: {g['doi']}")
+            if g.get("url"):
+                print(f"    URL: {g['url']}")
+            print()
+        print("Resolve with:")
+        print(f"  wake fill-abstract {args.seed} <openalex-id> --from-pdf <path/to.pdf>")
+        print(f"  wake fill-abstract {args.seed} <openalex-id> --text \"...\"")
+
+    emit("gaps", data, as_json=args.json_out, human=human)
+
+
+def run_fill_abstract(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..gaps import fill_from_pdf, fill_from_text
+    base = _work_dir_base(args)
+    seed_id = work["openalex_id"]
+
+    try:
+        if args.from_pdf:
+            entry = fill_from_pdf(seed_id, args.citing_id, args.from_pdf, base=base)
+        else:
+            entry = fill_from_text(seed_id, args.citing_id, args.text, base=base)
+    except (FileNotFoundError, ValueError, ImportError) as exc:
+        emit_error("fill-abstract", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        print(f"Abstract recorded for {args.citing_id} (source: {d['abstract_source']}):")
+        print(f"  {d['abstract'][:300]}{'...' if len(d['abstract']) > 300 else ''}")
+        print()
+        print("This will be picked up automatically the next time you run:")
+        print(f"  wake classify {args.seed} --ids {args.citing_id} --force")
+
+    emit("fill-abstract", entry, as_json=args.json_out, human=human)
+
+
 def run_render(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
     from ..citing import load_citing
@@ -510,6 +627,10 @@ def main() -> None:
             run_describe(args)
         elif args.command == "classify":
             run_classify(args)
+        elif args.command == "gaps":
+            run_gaps(args)
+        elif args.command == "fill-abstract":
+            run_fill_abstract(args)
         elif args.command == "render":
             run_render(args)
         elif args.command == "override":

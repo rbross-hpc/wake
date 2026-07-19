@@ -83,6 +83,14 @@ def report_cfg() -> dict[str, Any]:
     return load()["report"]
 
 
+def gaps_cfg() -> dict[str, Any]:
+    return load().get("gaps", {})
+
+
+def pdf_extract_cfg() -> dict[str, Any]:
+    return load().get("pdf_extract", {})
+
+
 def show() -> str:
     cfg = load()
     lc = _local_config()

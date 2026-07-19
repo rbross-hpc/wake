@@ -4,10 +4,11 @@
 
 `wake` is an analysis instrument you (the agent) wield on the human's behalf.
 It is **not** an autopilot — there is no single "do everything" command. You
-compose thin primitives (`resolve`, `citing`, `sample`, `classify`, `render`,
-`status`, `cost`, `override`) into an **explore-first workflow**, pausing at
-natural decision points so the human can confirm the seed paper, review a
-sample of classifications, and approve spend before you scale up.
+compose thin primitives (`resolve`, `citing`, `sample`, `classify`, `gaps`,
+`fill-abstract`, `render`, `status`, `cost`, `override`) into an
+**explore-first workflow**, pausing at natural decision points so the human
+can confirm the seed paper, review a sample of classifications, and approve
+spend before you scale up.
 
 Every command supports `--json` and returns a stable envelope:
 ```json
@@ -66,7 +67,14 @@ Relationship classes (strongest signal of impact first):
 - `uses-as-tool` — uses the seed's software/tool/dataset as-is
 - `benchmarks` — benchmarks against the seed as a baseline
 - `applies-to-domain` — applies the seed's approach to a new domain
+- `related-infrastructure` — complementary tooling in the same ecosystem, no direct dependency
 - `background-mention` — cites only as background/related work
+
+Roughly 20% of citing works typically lack an OpenAlex abstract. `classify`
+transparently tries OSTI and Semantic Scholar to backfill these before
+falling back to lower-confidence title/venue-only classification — no
+action needed from you for this. See step 6 below for what to do about the
+high-value works that backfill *can't* resolve.
 
 ### 5. Check cost before scaling up
 
@@ -96,7 +104,34 @@ This is resumable — safe to Ctrl-C and re-run; already-classified works are
 skipped (matched by prompt version + model, so changing either invalidates
 the cache for those works only).
 
-### 7. Render and present the brief
+### 7. (Optional) Resolve high-value abstract gaps
+
+After classifying, some influential citing works may still lack an
+abstract (automatic OSTI/Semantic Scholar backfill couldn't recover one).
+Check whether any are worth the extra effort:
+
+```bash
+wake --json gaps "<seed>" --min-cited-by 50
+```
+
+If the human has (or can get) a PDF for one of these, or already knows the
+paper well enough to state its abstract:
+
+```bash
+wake --json fill-abstract "<seed>" <citing-id> --from-pdf paper.pdf
+# or:
+wake --json fill-abstract "<seed>" <citing-id> --text "..."
+
+wake --json classify "<seed>" --ids <citing-id> --force   # re-classify with the recovered abstract
+```
+
+`--from-pdf` only reads the first few pages (the abstract is always in the
+front matter, never further in) and makes one small, targeted LLM call —
+not a full-document summarization. This step is optional and should only
+be offered for works that are clearly consequential (high citation count);
+don't suggest it for background-mention-tier works.
+
+### 8. Render and present the brief
 
 ```bash
 wake --json render "<seed>"
@@ -106,7 +141,7 @@ Works on partial data — if not everything is classified, the brief notes
 coverage (e.g. "based on 50 of 408 citing works"). Read `impact.md` and
 summarize it for the human; don't just dump the raw file unless asked.
 
-### 8. Refine
+### 9. Refine
 
 If the human disagrees with a specific classification:
 ```bash
@@ -135,19 +170,23 @@ wake --json show top "<seed>" -n N # top-evidence table only
 wake config show / validate / init
 ```
 
+Note: `--json` must appear before the subcommand (global flag), e.g.
+`wake --json classify "<seed>"`, not `wake classify "<seed>" --json`.
+
 ## Output Layout
 
 ```
 wake-out/<OpenAlex-ID>/
-  seed.json          — resolved seed + LLM description
-  citing.json        — all citing works (paginated, cached)
-  classified.json    — per-citing-work relationship + evidence
-  impact.json        — aggregated metrics
-  impact.md          — the impact brief
-  .state.json        — stage cache keys
-  .classify/         — per-work classification sidecars (resumable)
-  .cost.jsonl        — per-LLM-call estimated token/cost log
-  .overrides.jsonl   — human-reviewed relationship overrides
+  seed.json               — resolved seed + LLM description
+  citing.json             — all citing works (paginated, cached)
+  classified.json         — per-citing-work relationship + evidence
+  impact.json             — aggregated metrics
+  impact.md               — the impact brief
+  .state.json             — stage cache keys
+  .classify/              — per-work classification sidecars (resumable)
+  .cost.jsonl             — per-LLM-call estimated token/cost log
+  .overrides.jsonl        — human-reviewed relationship overrides
+  .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
 ```
 
 Use `--work-dir DIR` (or `WAKE_WORK_DIR` env var) to control where
@@ -176,3 +215,7 @@ Use `--work-dir DIR` (or `WAKE_WORK_DIR` env var) to control where
    useful.
 5. **Overrides are how the human corrects you.** If they push back on a
    classification, use `override`, don't just apologize and move on.
+6. **Don't chase every missing abstract.** `gaps` + `fill-abstract` is for
+   the small number of high-value, highly-cited works where a better
+   abstract meaningfully changes the evidence — not a general cleanup pass
+   over all no-abstract works.

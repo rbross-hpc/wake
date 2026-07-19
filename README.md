@@ -28,6 +28,9 @@ meant to be used.
 
 ```bash
 pip install -e ".[dev]"
+
+# Optional: PDF abstract extraction (wake fill-abstract --from-pdf)
+pip install -e ".[dev,pdf]"
 ```
 
 ## Quick Start (as an agent would run it)
@@ -62,6 +65,8 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake sample <seed>` | Representative slice of citing works for review (free, no LLM) |
 | `wake describe <seed>` | LLM one-paragraph contribution description |
 | `wake classify <seed>` | LLM relationship classification (`--ids`, `--limit`, `--sort`, `--dry-run`, resumable) |
+| `wake gaps <seed>` | Surface high-value citing works with no recoverable abstract |
+| `wake fill-abstract <seed> <id>` | Manually resolve one via `--from-pdf` or `--text` |
 | `wake render <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
 | `wake override <seed> <id>` | Record a human-reviewed relationship correction |
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |
@@ -87,15 +92,16 @@ Global flags: `--json`, `--work-dir DIR` (or `WAKE_WORK_DIR` env var),
 
 ```
 wake-out/<OpenAlex-ID>/
-  seed.json          — resolved seed + LLM description
-  citing.json        — all citing works (paginated, cached)
-  classified.json    — per-citing-work relationship + evidence
-  impact.json        — aggregated metrics
-  impact.md          — the impact brief (notes coverage if partial)
-  .state.json        — stage cache keys
-  .classify/         — per-work classification sidecars (resumable)
-  .cost.jsonl        — per-LLM-call estimated token/cost log
-  .overrides.jsonl   — human-reviewed relationship overrides
+  seed.json               — resolved seed + LLM description
+  citing.json             — all citing works (paginated, cached)
+  classified.json         — per-citing-work relationship + evidence
+  impact.json             — aggregated metrics
+  impact.md               — the impact brief (notes coverage if partial)
+  .state.json             — stage cache keys
+  .classify/              — per-work classification sidecars (resumable)
+  .cost.jsonl             — per-LLM-call estimated token/cost log
+  .overrides.jsonl        — human-reviewed relationship overrides
+  .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
 ```
 
 ## Relationship Classes
@@ -107,7 +113,35 @@ wake-out/<OpenAlex-ID>/
 | `uses-as-tool` | Uses the seed's software/tool/dataset as-is |
 | `benchmarks` | Benchmarks against the seed as a baseline |
 | `applies-to-domain` | Applies the seed's approach to a new domain |
+| `related-infrastructure` | Complementary tooling in the same ecosystem, no direct dependency |
 | `background-mention` | Cites as background/related work |
+
+## Abstract Recovery
+
+~20% of citing works typically lack an OpenAlex abstract, forcing lower-
+confidence title/venue-only classification. `wake` recovers most of these
+automatically and lazily (only for works actually selected for
+classification, never eagerly for the full citing set):
+
+1. **Automatic backfill** (`classify` does this transparently): tries
+   [OSTI](https://www.osti.gov) (DOE-funded work, via its `description`
+   field), then [Semantic Scholar](https://www.semanticscholar.org)
+   (broader coverage). Free, unauthenticated, no PDF dependency.
+2. **Manual escalation** for high-value works that step 1 couldn't resolve:
+   ```bash
+   wake gaps <seed>                          # surface candidates, ranked by influence
+   wake fill-abstract <seed> <id> --from-pdf paper.pdf   # extract from PDF lead pages + LLM cleanup
+   wake fill-abstract <seed> <id> --text "..."           # or paste the abstract directly
+   wake classify <seed> --ids <id> --force   # re-classify with the recovered abstract
+   ```
+   `--from-pdf` only ever reads the first few pages (config
+   `pdf_extract.max_pages`, default 3) — if the abstract isn't in the front
+   matter, it isn't reported as found. Requires the `pdf` extra
+   (`pip install 'wake[pdf]'`).
+
+Recovered abstracts are tagged with their source (`abstract_source`:
+`osti`, `semanticscholar`, `pdf-extract`, or `human-text`) and the count is
+shown in the brief's Reach section.
 
 ## Cost Telemetry (estimate-only)
 
@@ -123,15 +157,15 @@ Create `wake.config.yaml` in your working directory (or run `wake config init`):
 
 ```yaml
 models:
-  describe: "Claude Sonnet 4.7"
-  classify: "Claude Sonnet 4.7"
+  describe: "Claude Sonnet 4.6"
+  classify: "Claude Sonnet 4.6"
 
 openalex:
   rate_limit_s: 1.0
 
 cost:
   rates_per_1k_usd:
-    "Claude Sonnet 4.7": {in: 0.003, out: 0.015}
+    "Claude Sonnet 4.6": {in: 0.003, out: 0.015}
 ```
 
 ## Environment Variables
