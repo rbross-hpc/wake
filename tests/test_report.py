@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import pytest
-from wake.report import build_metrics, render_markdown, _score
+from wake.report import build_metrics, render_markdown, _score, _venue_type_or_fallback
 from wake.classify import RELATIONSHIP_STRENGTH
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
@@ -149,3 +149,45 @@ def test_render_markdown_full_coverage_no_partial_note():
     metrics = build_metrics(seed, classified)
     md = render_markdown(seed, metrics)
     assert "Partial analysis" not in md
+
+
+def test_venue_type_or_fallback_uses_venue_type_when_present():
+    work = {"venue_type": "journal", "type": "conference-paper"}
+    assert _venue_type_or_fallback(work) == "journal"
+
+
+def test_venue_type_or_fallback_maps_conference_paper():
+    work = {"venue_type": None, "type": "conference-paper"}
+    assert _venue_type_or_fallback(work) == "conference"
+
+
+def test_venue_type_or_fallback_maps_article_to_journal():
+    work = {"venue_type": None, "type": "article"}
+    assert _venue_type_or_fallback(work) == "journal"
+
+
+def test_venue_type_or_fallback_maps_dissertation_to_thesis():
+    work = {"venue_type": None, "type": "dissertation"}
+    assert _venue_type_or_fallback(work) == "thesis"
+
+
+def test_venue_type_or_fallback_unmapped_type_is_unknown():
+    work = {"venue_type": None, "type": "some-new-openalex-type"}
+    assert _venue_type_or_fallback(work) == "unknown"
+
+
+def test_venue_type_or_fallback_no_type_at_all_is_unknown():
+    assert _venue_type_or_fallback({}) == "unknown"
+
+
+def test_build_metrics_venue_type_fallback_reduces_unknown_bucket():
+    works = [
+        {**SAMPLE_CITING_WORKS[0], "venue_type": None, "type": "conference-paper"},
+        {**SAMPLE_CITING_WORKS[1], "venue_type": None, "type": "article"},
+        {**SAMPLE_CITING_WORKS[2], "venue_type": None, "type": None},
+    ]
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, works)
+    by_vt = metrics["by_venue_type"]
+    assert by_vt.get("conference") == 1
+    assert by_vt.get("journal") == 1
+    assert by_vt.get("unknown") == 1
