@@ -21,7 +21,7 @@ def _client() -> OpenAI:
 
 
 def _model(role: str) -> str:
-    return config.models().get(role, "Claude Sonnet 4.7")
+    return config.models().get(role, "Claude Sonnet 4.6")
 
 
 def _strip_markdown_fence(text: str) -> str:
@@ -40,6 +40,40 @@ def _strip_markdown_fence(text: str) -> str:
     return text
 
 
+def _stream_completion(
+    client: OpenAI,
+    model: str,
+    system: str,
+    user: str,
+    temperature: float,
+) -> str:
+    """Stream a chat completion and return the concatenated text.
+
+    Some OpenAI-compatible endpoints (e.g. Argo's Claude/Anthropic proxy)
+    reject non-streaming requests outright with a 500 ("Streaming is
+    required for operations that may take longer than 10 minutes"). We
+    always stream and accumulate here so wake works uniformly against
+    endpoints that require it and those that don't.
+    """
+    stream = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        temperature=temperature,
+        stream=True,
+    )
+    chunks: list[str] = []
+    for event in stream:
+        if not event.choices:
+            continue
+        delta = event.choices[0].delta.content
+        if delta:
+            chunks.append(delta)
+    return "".join(chunks).strip()
+
+
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=20))
 def chat_json(
     system: str,
@@ -51,15 +85,7 @@ def chat_json(
 ) -> Any:
     client = _client()
     resolved = model if model is not None else _model(model_role)
-    response = client.chat.completions.create(
-        model=resolved,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        temperature=temperature,
-    )
-    raw = (response.choices[0].message.content or "").strip()
+    raw = _stream_completion(client, resolved, system, user, temperature)
     if cost_sink is not None:
         cost_sink(resolved, system, user, raw)
     raw = _strip_markdown_fence(raw)
@@ -77,15 +103,7 @@ def chat_text(
 ) -> str:
     client = _client()
     resolved = model if model is not None else _model(model_role)
-    response = client.chat.completions.create(
-        model=resolved,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        temperature=temperature,
-    )
-    text = (response.choices[0].message.content or "").strip()
+    text = _stream_completion(client, resolved, system, user, temperature)
     if cost_sink is not None:
         cost_sink(resolved, system, user, text)
     return text

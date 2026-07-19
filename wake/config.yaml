@@ -1,6 +1,6 @@
 models:
-  describe: "Claude Sonnet 4.7"
-  classify: "Claude Sonnet 4.7"
+  describe: "Claude Sonnet 4.6"
+  classify: "Claude Sonnet 4.6"
 
 openalex:
   rate_limit_s: 1.0
@@ -8,7 +8,7 @@ openalex:
   mailto_default: "rross@anl.gov"
 
 classify:
-  prompt_version: "classify-1"
+  prompt_version: "classify-2"
   relationships:
     - extends
     - builds-on

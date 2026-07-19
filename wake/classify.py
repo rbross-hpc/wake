@@ -3,12 +3,15 @@
 """LLM-classify each citing work's relationship to the seed paper.
 
 Relationship classes (ordered by strength, strongest first):
-  extends          – directly extends the method/framework of the seed
-  builds-on        – builds a new system/algorithm on top of the seed
-  uses-as-tool     – uses the seed's software/tool/dataset as-is
-  benchmarks       – compares against the seed as a baseline/benchmark
-  applies-to-domain – applies the seed's approach to a new domain/problem
-  background-mention – cites as background/related work without direct use
+  extends              – directly extends the method/framework of the seed
+  builds-on            – builds a new system/algorithm on top of the seed
+  uses-as-tool         – uses the seed's software/tool/dataset as-is
+  benchmarks           – compares against the seed as a baseline/benchmark
+  applies-to-domain    – applies the seed's approach to a new domain/problem
+  related-infrastructure – complementary tooling in the same ecosystem/stack
+                           (e.g. another I/O library operating alongside the
+                           seed), without a direct usage/extension dependency
+  background-mention   – cites as background/related work without direct use
 
 Each classification is written atomically as a sidecar JSON file, so the
 pipeline is safely resumable after Ctrl-C.
@@ -37,32 +40,44 @@ RELATIONSHIPS = [
     "uses-as-tool",
     "benchmarks",
     "applies-to-domain",
+    "related-infrastructure",
     "background-mention",
 ]
 
 RELATIONSHIP_STRENGTH: dict[str, int] = {
-    "extends": 6,
-    "builds-on": 5,
-    "uses-as-tool": 4,
-    "benchmarks": 3,
-    "applies-to-domain": 2,
+    "extends": 7,
+    "builds-on": 6,
+    "uses-as-tool": 5,
+    "benchmarks": 4,
+    "applies-to-domain": 3,
+    "related-infrastructure": 2,
     "background-mention": 1,
 }
 
 _SYSTEM = """\
 You are a bibliometric analyst classifying how a citing paper uses a seed paper.
 
-Relationship classes (choose exactly one):
-- extends: The citing paper directly extends the method, framework, or theory of the seed.
-- builds-on: The citing paper builds a new system, algorithm, or tool that depends on the seed.
-- uses-as-tool: The citing paper uses the seed's software, tool, or dataset as-is without modification.
-- benchmarks: The citing paper benchmarks against or compares performance with the seed.
-- applies-to-domain: The citing paper applies the seed's approach to a new domain or problem.
-- background-mention: The citing paper cites the seed only as background or related work.
+You MUST choose exactly one of these seven relationship class strings —
+copy one verbatim into the "relationship" field, do not invent a new label:
+- "extends": The citing paper directly extends the method, framework, or theory of the seed.
+- "builds-on": The citing paper builds a new system, algorithm, or tool that depends on the seed.
+- "uses-as-tool": The citing paper uses the seed's software, tool, or dataset as-is without modification.
+- "benchmarks": The citing paper benchmarks against or compares performance with the seed.
+- "applies-to-domain": The citing paper applies the seed's approach to a new domain or problem.
+- "related-infrastructure": The citing paper is complementary tooling in the same
+  technical ecosystem or stack (e.g. another library solving an adjacent problem
+  in the same domain) but does not directly depend on, extend, or benchmark the
+  seed — it operates alongside it rather than using it.
+- "background-mention": The citing paper cites the seed only as background or
+  related work, with no specific technical relationship (including cases where
+  the relationship is unclear, indirect, or merely contextual).
 
-Respond ONLY with valid JSON matching this schema:
+If none of the first six clearly apply, use "background-mention" — never
+invent an eighth category or a variation on these names.
+
+Respond with ONLY a single JSON object, no markdown fence, matching this schema:
 {
-  "relationship": "<one of the classes above>",
+  "relationship": "<one of the seven exact strings above>",
   "confidence": <float 0.0-1.0>,
   "justification": "<one sentence explaining the classification>"
 }
@@ -247,15 +262,18 @@ def classify_all(
         except Exception as exc:
             if verbose:
                 print(f"[wake]   WARN: classify failed for {citing_id}: {exc}", file=sys.stderr)
-            result = {
-                "relationship": "background-mention",
-                "confidence": 0.0,
-                "justification": f"Classification failed: {exc}",
-                "has_abstract": bool(cw.get("abstract")),
-                "strength": 1,
-                "error": str(exc),
-            }
             errors += 1
+            # Do not cache a fake classification for a failed call: leaving
+            # no sidecar (and no 'relationship' key) means this work is
+            # correctly treated as unclassified — excluded from
+            # relationship-based metrics/coverage, and retried on the next
+            # run rather than silently and permanently mislabeled.
+            by_id[citing_id] = {
+                **cw,
+                "error": str(exc),
+                "error_at": now_iso(),
+            }
+            continue
 
         sidecar = {
             **result,

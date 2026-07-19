@@ -283,8 +283,8 @@ def render_markdown(
         lines.append("")
     by_rel = metrics.get("by_relationship", {})
     relationship_order = [
-        "extends", "builds-on", "uses-as-tool",
-        "benchmarks", "applies-to-domain", "background-mention",
+        "extends", "builds-on", "uses-as-tool", "benchmarks",
+        "applies-to-domain", "related-infrastructure", "background-mention",
     ]
     lines.append("| Relationship | Count | % |")
     lines.append("|---|---:|---:|")
