@@ -196,6 +196,9 @@ def verify_full_text(
             "note": (q.get("note") or "").strip(),
         })
 
+    from .author_overlap import compute_overlap
+    overlap = compute_overlap(seed_work, citing_work)
+
     return {
         "provisional": provisional,
         "proposed": {
@@ -205,6 +208,7 @@ def verify_full_text(
             "agrees_with_provisional": bool(result.get("agrees_with_provisional", relationship == provisional["relationship"])),
         },
         "quotes": quotes,
+        **overlap,
     }
 
 
@@ -225,6 +229,8 @@ def _render_dossier_markdown(
     proposed_rel = finding["proposed"]["relationship"]
     provisional_rel = finding["provisional"]["relationship"]
 
+    author_overlap = bool(finding.get("author_overlap"))
+
     lines: list[str] = []
     lines.append("---")
     lines.append("type: citing-work-evidence")
@@ -232,6 +238,8 @@ def _render_dossier_markdown(
     lines.append(f'description: "{finding["proposed"]["justification"][:150]}"')
     lines.append(f"resource: \"{resource}\"")
     tags = [f"provisional:{provisional_rel}", f"proposed:{proposed_rel}", "status:pending-human-review"]
+    if author_overlap:
+        tags.append("author-overlap:true")
     lines.append(f"tags: [{', '.join(tags)}]")
     lines.append(f"timestamp: {now_iso()}")
     lines.append("---")
@@ -247,6 +255,12 @@ def _render_dossier_markdown(
     lines.append(f"**{' · '.join(p for p in meta_parts if p)}**")
     if author_str:
         lines.append(f"*{author_str}*")
+    if author_overlap:
+        overlapping = ", ".join(finding.get("overlapping_authors", []))
+        lines.append(
+            f"**Author overlap with seed:** {overlapping} — this appears to be "
+            "the original team's own follow-on work, not an independent third party."
+        )
     lines.append("")
 
     if citing_work.get("abstract"):

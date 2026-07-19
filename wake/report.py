@@ -207,11 +207,14 @@ def build_metrics(
 
     by_relationship: dict[str, int] = Counter()
     verified_count = 0
+    self_extension_count = 0
     for w in classified:
         rel = w.get("relationship", "background-mention")
         by_relationship[rel] += 1
         if w.get("verification_status") == "verified":
             verified_count += 1
+        if w.get("author_overlap"):
+            self_extension_count += 1
 
     sorted_works = sorted(classified, key=_score, reverse=True)
     top_evidence = sorted_works[:top_n]
@@ -229,6 +232,7 @@ def build_metrics(
         "total_citing_works": total,
         "classified_count": classified_count,
         "verified_count": verified_count,
+        "self_extension_count": self_extension_count,
         "coverage": round(coverage, 4),
         "highly_cited_citing": highly_cited,
         "no_abstract_count": no_abstract,
@@ -255,6 +259,8 @@ def build_metrics(
                 "human_reviewed": bool(w.get("human_reviewed")),
                 "verification_status": w.get("verification_status", "provisional"),
                 "verification_source": w.get("verification_source"),
+                "author_overlap": bool(w.get("author_overlap")),
+                "overlapping_authors": w.get("overlapping_authors", []),
                 "score": round(_score(w), 3),
             }
             for w in top_evidence
@@ -368,6 +374,14 @@ def render_markdown(
             f"(`wake evidence` full-text reading + human sign-off)."
         )
         lines.append("")
+    self_extension_count = metrics.get("self_extension_count", 0)
+    if self_extension_count:
+        lines.append(
+            f"> {self_extension_count:,} of these are the seed's own team "
+            "publishing a follow-on/extension (author overlap with the "
+            "seed paper), not independent third-party adoption."
+        )
+        lines.append("")
     by_rel = metrics.get("by_relationship", {})
     relationship_order = [
         "extends", "builds-on", "uses-as-tool", "benchmarks",
@@ -409,6 +423,8 @@ def render_markdown(
                 status_tag = " [VERIFIED via human judgment]"
         else:
             status_tag = " [PROVISIONAL — abstract-only, not yet checked against full text]"
+        if ev.get("author_overlap"):
+            status_tag += " [SELF-EXTENSION — seed's own team]"
         lines.append(f"> *{rel}*{status_tag} (confidence: {conf:.2f}) — {just}")
         if ev.get("doi"):
             lines.append(f"> DOI: {ev['doi']}")

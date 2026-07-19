@@ -66,6 +66,51 @@ def test_summarize_work_minimal():
     assert w["abstract"] == "Test abstract"
 
 
+def test_summarize_work_preserves_author_ids():
+    raw = {
+        "id": "https://openalex.org/W123",
+        "display_name": "Test Paper",
+        "publication_year": 2023,
+        "authorships": [
+            {"author": {"display_name": "Alice Smith", "id": "https://openalex.org/A111"}},
+            {"author": {"display_name": "Bob Jones", "id": "https://openalex.org/A222"}},
+        ],
+        "topics": [],
+    }
+    w = _summarize_work(raw)
+    assert w["authors"] == ["Alice Smith", "Bob Jones"]
+    assert w["author_ids"] == ["A111", "A222"]
+
+
+def test_summarize_work_author_id_missing_uses_empty_string():
+    raw = {
+        "id": "https://openalex.org/W123",
+        "display_name": "Test Paper",
+        "publication_year": 2023,
+        "authorships": [{"author": {"display_name": "Alice Smith"}}],
+        "topics": [],
+    }
+    w = _summarize_work(raw)
+    assert w["authors"] == ["Alice Smith"]
+    assert w["author_ids"] == [""]
+
+
+def test_summarize_work_authorship_with_no_name_is_skipped():
+    raw = {
+        "id": "https://openalex.org/W123",
+        "display_name": "Test Paper",
+        "publication_year": 2023,
+        "authorships": [
+            {"author": {"id": "https://openalex.org/A111"}},
+            {"author": {"display_name": "Bob Jones", "id": "https://openalex.org/A222"}},
+        ],
+        "topics": [],
+    }
+    w = _summarize_work(raw)
+    assert w["authors"] == ["Bob Jones"]
+    assert w["author_ids"] == ["A222"]
+
+
 @pytest.mark.network
 def test_live_get_by_doi():
     from wake.sources.openalex import get_work_by_doi

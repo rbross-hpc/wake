@@ -239,6 +239,45 @@ def test_top_evidence_carries_verification_fields():
     assert verified_entries[0]["verification_source"] == "evidence-dossier"
 
 
+def test_build_metrics_no_self_extension_by_default():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    assert metrics["self_extension_count"] == 0
+
+
+def test_build_metrics_counts_self_extension():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    classified[0]["author_overlap"] = True
+    classified[0]["overlapping_authors"] = ["Jianwei Li"]
+
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    assert metrics["self_extension_count"] == 1
+
+
+def test_top_evidence_carries_author_overlap_fields():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    classified[0]["author_overlap"] = True
+    classified[0]["overlapping_authors"] = ["Jianwei Li"]
+
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    top = metrics["top_evidence"]
+    overlap_entries = [e for e in top if e["author_overlap"]]
+    assert len(overlap_entries) == 1
+    assert overlap_entries[0]["overlapping_authors"] == ["Jianwei Li"]
+
+    non_overlap_entries = [e for e in top if not e["author_overlap"]]
+    assert all(e["overlapping_authors"] == [] for e in non_overlap_entries)
+
+
 def test_render_markdown_shows_provisional_tag_by_default():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
@@ -275,6 +314,32 @@ def test_render_markdown_shows_verified_via_human_judgment():
     metrics = build_metrics(seed, classified)
     md = render_markdown(seed, metrics)
     assert "[VERIFIED via human judgment]" in md
+
+
+def test_render_markdown_shows_self_extension_tag():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    classified[0]["author_overlap"] = True
+    classified[0]["overlapping_authors"] = ["Jianwei Li"]
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    md = render_markdown(seed, metrics)
+    assert "[SELF-EXTENSION — seed's own team]" in md
+    assert "own team publishing a follow-on" in md
+
+
+def test_render_markdown_omits_self_extension_summary_when_none():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    md = render_markdown(seed, metrics)
+    assert "own team publishing a follow-on" not in md
+    assert "[SELF-EXTENSION" not in md
 
 
 def test_render_markdown_nature_of_impact_summary_counts():

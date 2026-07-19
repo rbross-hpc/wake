@@ -84,6 +84,24 @@ def test_classify_one_always_marks_provisional(tmp_path):
     assert result["verification_status"] == "provisional"
 
 
+def test_classify_one_tags_author_overlap_false_by_default(tmp_path):
+    """Fixture works have no author_ids -- must never be spuriously
+    flagged as an overlap just because both sides lack the field."""
+    with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
+        result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
+    assert result["author_overlap"] is False
+    assert result["overlapping_authors"] == []
+
+
+def test_classify_one_tags_author_overlap_true_when_shared_author_id(tmp_path):
+    seed = {**PARALLEL_NETCDF_WORK, "author_ids": ["A1", "A2"]}
+    citing = {**SAMPLE_CITING_WORKS[0], "authors": ["Alice Smith"], "author_ids": ["A1"]}
+    with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
+        result = classify_one(seed, citing, record_cost=False)
+    assert result["author_overlap"] is True
+    assert result["overlapping_authors"] == ["Alice Smith"]
+
+
 def test_classify_all_results_are_provisional(tmp_path):
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
         result = classify_all(

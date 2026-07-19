@@ -87,11 +87,23 @@ def _summarize_work(work: dict) -> dict[str, Any]:
     loc = work.get("primary_location") or {}
     source = loc.get("source") or {}
     doi = _normalize_doi(work.get("doi"))
-    authors = [
-        a.get("author", {}).get("display_name") or ""
-        for a in work.get("authorships", [])
-    ]
-    authors = [a for a in authors if a]
+
+    # authors and author_ids are built from the same loop, index-aligned
+    # (author_ids[i] is the OpenAlex author ID for authors[i], or "" if
+    # that authorship entry had no id) -- needed for author-overlap
+    # detection (BACKLOG Theme E: is a citing work by the seed's own team?
+    # ID intersection, not name matching, since display names collide).
+    authors: list[str] = []
+    author_ids: list[str] = []
+    for a in work.get("authorships", []):
+        author = a.get("author") or {}
+        name = author.get("display_name") or ""
+        if not name:
+            continue
+        authors.append(name)
+        aid = author.get("id") or ""
+        author_ids.append(_normalize_openalex_id(aid) if aid else "")
+
     openalex_id = work.get("id", "")
     if openalex_id:
         openalex_id = _normalize_openalex_id(openalex_id)
@@ -106,6 +118,7 @@ def _summarize_work(work: dict) -> dict[str, Any]:
         "openalex_id": openalex_id,
         "title": work.get("display_name"),
         "authors": authors,
+        "author_ids": author_ids,
         "year": work.get("publication_year"),
         "venue": source.get("display_name"),
         "venue_type": source.get("type"),
