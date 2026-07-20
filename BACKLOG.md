@@ -554,14 +554,19 @@ and held separately rather than sequenced here.
    human isn't expected to read directly, unlike overrides (the human's
    own verification decisions) and classify sidecars (debuggable raw
    per-work LLM output).
-3. **Split `wake/skills/impact-analysis/references/reference.md` into
-   per-workflow-phase files.** It has grown to ~400+ lines covering
-   every command's JSON schema and output layout in one file. Split
-   into `references/resolve.md`, `citing.md`, `sample.md`, `classify.md`,
-   `evidence.md`, `themes.md`, `narrative.md`, `bake.md`,
-   `output-layout.md`, following SKILL.md's existing step numbering as
-   the natural split points, with a small `references/reference.md` (or
-   `index.md`) left as an index page linking out. No behavior change.
+3. ~~**Split `wake/skills/impact-analysis/references/reference.md` into
+   per-workflow-phase files.**~~ — BUILT. It had grown to ~475 lines
+   covering every command's JSON schema and output layout in one file.
+   Split by actual content boundary (some originally-proposed phases —
+   resolve/citing/sample/bake — turned out to have no reference-page
+   content of their own beyond the command list, which stays in the
+   index) into `references/classify.md`, `pdf-acquisition.md`,
+   `evidence.md`, `themes.md`, `narrative.md`, `output-layout.md`,
+   `environment.md`, with `references/reference.md` itself rewritten
+   down to a ~55-line index (seed ID formats, full command list, and a
+   table linking to each phase file) plus SKILL.md's own two inline
+   pointers redirected to the specific file they actually meant. No
+   behavior change; docs-only.
 4. **`wake <noun> show` verbs.** Today `wake show` only has
    `brief`/`metrics`/`top` (seed-level summary artifacts); there's no
    way to view a theme, a narrative section, an outline, or a dossier
