@@ -134,6 +134,56 @@ def add_override(
     return entry
 
 
+def remove_override(seed_id: str, citing_id: str, *, base: Path | None = None) -> bool:
+    """Remove every entry for *citing_id* from `overrides.jsonl` -- used by
+    `wake unverify` to undo a mistaken verification.
+
+    Unlike `exclude.py`/`dedup.py`'s reversal pattern (an explicit
+    `"excluded": false`/rejection entry appended to the same append-only
+    log), there's no "not verified" override entry shape to append here --
+    the only way a citing work stops being verified is for it to have no
+    override on file at all. So this rewrites the log with every prior
+    entry for that ID removed, rather than appending a new one. This
+    matches what the original ad hoc recovery this session actually did
+    (a manual backup-and-restore of the whole file).
+
+    Migrates a legacy `.overrides.jsonl` dotfile first, same as
+    `add_override`, so the rewritten file always lands at the current
+    name.
+
+    Returns True if at least one entry existed and was removed, False if
+    *citing_id* had no override to remove (nothing to undo).
+    """
+    _migrate_legacy_overrides_if_needed(seed_id, base)
+    p = overrides_path(seed_id, base)
+    if not p.exists():
+        return False
+
+    remaining: list[str] = []
+    removed = False
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                entry = json.loads(stripped)
+            except json.JSONDecodeError:
+                remaining.append(stripped)
+                continue
+            if entry.get("citing_id") == citing_id:
+                removed = True
+                continue
+            remaining.append(stripped)
+
+    if not removed:
+        return False
+
+    text = "\n".join(remaining) + ("\n" if remaining else "")
+    atomic_write_text(p, text)
+    return True
+
+
 def apply_overrides(
     classified: list[dict[str, Any]],
     overrides: dict[str, dict[str, Any]],

@@ -271,6 +271,79 @@ def mark_verified(
     return True
 
 
+def mark_pending(
+    seed_id: str,
+    citing_id: str,
+    *,
+    reason: str = "",
+    base: Path | None = None,
+) -> bool:
+    """Patch an existing dossier (.json + .md) back from verified to
+    pending-human-review -- the reverse of `mark_verified()`, used by
+    `wake unverify` to undo a mistaken verification.
+
+    If the human's original verification corrected the model's proposed
+    relationship (`mark_verified` moved the original reading into
+    `proposed.model_relationship`/`model_justification`), that correction
+    is undone too -- `proposed.relationship`/`justification` are restored
+    to the model's own original reading, since the human's corrected
+    reading is exactly the judgment being reverted. `human_verification`
+    is removed entirely (it's the record of a human sign-off that no
+    longer stands).
+
+    Returns False (no-op) if no dossier exists for this citing work --
+    e.g. undoing a plain human-judgment override with no `wake evidence`
+    behind it has nothing to mark.
+    """
+    from .evidence import dossier_json_path
+
+    json_path = dossier_json_path(seed_id, citing_id, base)
+    if not json_path.exists():
+        return False
+
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    payload["verification_status"] = "pending-human-review"
+    payload.pop("human_verification", None)
+
+    proposed = payload.setdefault("proposed", {})
+    model_relationship = proposed.pop("model_relationship", None)
+    model_justification = proposed.pop("model_justification", None)
+    current_relationship = proposed.get("relationship")
+    if model_relationship is not None:
+        proposed["relationship"] = model_relationship
+        if model_justification is not None:
+            proposed["justification"] = model_justification
+
+    atomic_write_text(json_path, json.dumps(payload, indent=2, default=str))
+
+    md_path = dossier_path(seed_id, citing_id, base)
+    if md_path.exists():
+        md_text = md_path.read_text(encoding="utf-8")
+        md_text = md_text.replace("status:verified", "status:pending-human-review")
+        if model_relationship is not None:
+            md_text = md_text.replace(
+                f"proposed:{current_relationship}", f"proposed:{model_relationship}"
+            )
+
+        status_note = "This finding has not been applied to the impact brief. An agent"
+        new_status_block = (
+            "<!-- status-section:start -->\n"
+            "## Status: pending your review\n\n"
+            f"{status_note} "
+            "should present the passages above to a human, then run "
+            "`wake override` on their behalf once the human accepts or adjusts "
+            "the reading — see SKILL.md."
+            + (f" (A prior verification was reverted: {reason})" if reason else "")
+            + "\n"
+            "<!-- status-section:end -->"
+        )
+        if _STATUS_SECTION_RE.search(md_text):
+            md_text = _STATUS_SECTION_RE.sub(new_status_block, md_text, count=1)
+            atomic_write_text(md_path, md_text)
+
+    return True
+
+
 def _load_all_themes(seed_id: str, base: Path | None = None) -> list[dict[str, Any]]:
     from .themes import themes_dir
 

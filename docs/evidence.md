@@ -36,6 +36,13 @@ using `wake` always presents a `wake evidence` finding (pasting the
 literal quoted passages, in context) and runs the resulting `override`
 call on the human's behalf. See `SKILL.md` for the full workflow.
 
+If a work ends up verified without the human actually having reviewed
+it — e.g. an agent misreading a bulk go-ahead — `wake unverify <seed>
+<citing-id> --reason "..."` undoes it: removes the override entirely and,
+if a dossier exists, reverts it back to `pending-human-review`. Batch
+variants (`--since <timestamp>` / `--last N`) cover recovering from a
+whole run of mistaken verifications at once.
+
 Full-text extraction is page-level only (no MinerU, no paragraph-boundary
 detection — multi-column academic layouts don't extract reliably enough
 for that); the LLM is asked to quote the full containing paragraph
