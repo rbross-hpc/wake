@@ -306,14 +306,14 @@ Framing sentences with no factual claim don't need one. `create_section`
 validates every marker before writing anything, in two passes:
 
 1. **Packet consistency.** Every citing work this seed's own bookkeeping
-   (`.overrides.jsonl`) currently calls human-verified must have an
+   (`overrides.jsonl`) currently calls human-verified must have an
    actual dossier file on disk. If any are missing, the whole packet is
    refused as inconsistent — fix it (re-run `wake evidence`/`wake
    override`) before drafting any section.
 2. **Per-marker validity.** Each ID named in a `[ref:...]` marker must be
    `SEED` or a citing work that is *currently* human-verified for this
    seed (same "verified" definition `wake theme confirm` uses: it went
-   through `.overrides.jsonl`, whether via a full evidence dossier or a
+   through `overrides.jsonl`, whether via a full evidence dossier or a
    plain `wake override` judgment call — `classified.json`'s own
    `verification_status` field is never updated in place and is not
    trusted here). Unknown or unverified IDs are rejected, naming every
@@ -407,9 +407,9 @@ wake-out/<OpenAlex-ID>/
   impact.md               — the impact brief (notes coverage if partial;
                              per-entry [PROVISIONAL]/[VERIFIED via ...] tags)
   .state.json             — stage cache keys
-  .classify/              — per-work classification sidecars (resumable)
+  classify/               — per-work classification sidecars (resumable)
   .cost.jsonl             — per-LLM-call estimated token/cost log
-  .overrides.jsonl        — human-reviewed relationship overrides
+  overrides.jsonl         — human-reviewed relationship overrides
                              (verification_status: "verified")
   .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
   pdfs/                   — locally-cached PDFs (wake fetch-pdf / wake evidence)

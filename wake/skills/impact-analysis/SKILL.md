@@ -363,7 +363,7 @@ source(s) — `SEED` for the seed paper, or a citing work's OpenAlex ID for
 anything else. `create_section` refuses the whole call if any marker
 names an ID that isn't `SEED` or isn't currently human-verified for this
 seed (same bar as `wake theme confirm`), and refuses outright if the
-packet itself is inconsistent (a work `.overrides.jsonl` calls verified
+packet itself is inconsistent (a work `overrides.jsonl` calls verified
 but has no dossier file on disk). This guarantees every citation in the
 final narrative points at a real, checked source — it does not, by
 itself, guarantee the source actually supports that sentence's claim;

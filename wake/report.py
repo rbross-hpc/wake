@@ -19,17 +19,46 @@ _STAGE = "report"
 
 
 def overrides_path(seed_id: str, base: Path | None = None) -> Path:
+    return work_dir(seed_id, base) / "overrides.jsonl"
+
+
+def _legacy_overrides_path(seed_id: str, base: Path | None = None) -> Path:
+    """Pre-rename dotfile location. A working directory the human is
+    explicitly expected to inspect shouldn't hide the human's own
+    verification decisions behind a dotfile convention meant for
+    user-home/config directories. Kept only for one release's worth of
+    read-compat with packets built before the rename; see
+    `_migrate_legacy_overrides_if_needed`."""
     return work_dir(seed_id, base) / ".overrides.jsonl"
+
+
+def _migrate_legacy_overrides_if_needed(seed_id: str, base: Path | None = None) -> None:
+    """Rename `.overrides.jsonl` -> `overrides.jsonl` in place the first
+    time this seed's overrides are written to after the rename. No-op if
+    the new-named file already exists (never overwrites) or if there's
+    nothing to migrate."""
+    new_path = overrides_path(seed_id, base)
+    old_path = _legacy_overrides_path(seed_id, base)
+    if old_path.exists() and not new_path.exists():
+        old_path.rename(new_path)
 
 
 def load_overrides(seed_id: str, base: Path | None = None) -> dict[str, dict[str, Any]]:
     """Load human-reviewed overrides, keyed by citing OpenAlex ID.
 
     Later entries for the same ID win (append-only log; last write wins).
+    Reads the current `overrides.jsonl` name; falls back to the
+    pre-rename `.overrides.jsonl` dotfile if the new name doesn't exist
+    yet (a packet built before the rename that hasn't had a fresh
+    `wake override` call to trigger migration). This is read-only
+    compat -- migration to the new filename happens in `add_override`,
+    the write path, not here.
     """
     p = overrides_path(seed_id, base)
     if not p.exists():
-        return {}
+        p = _legacy_overrides_path(seed_id, base)
+        if not p.exists():
+            return {}
     overrides: dict[str, dict[str, Any]] = {}
     with open(p, encoding="utf-8") as f:
         for line in f:
@@ -84,6 +113,7 @@ def add_override(
         "strength": RELATIONSHIP_STRENGTH.get(relationship, 1),
         "overridden_at": now_iso(),
     }
+    _migrate_legacy_overrides_if_needed(seed_id, base)
     p = overrides_path(seed_id, base)
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "a", encoding="utf-8") as f:
@@ -470,7 +500,7 @@ def bake_and_save(
 
     *citing_works* may be the full set (some possibly unclassified — the
     brief will note partial coverage) or a pre-filtered subset. Human
-    overrides from .overrides.jsonl are applied unless disabled.
+    overrides from overrides.jsonl are applied unless disabled.
 
     Returns (json_path, md_path).
     """

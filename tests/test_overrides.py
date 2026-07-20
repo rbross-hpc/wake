@@ -3,14 +3,54 @@
 """Tests for wake.report overrides (human-in-the-loop refinement)."""
 from __future__ import annotations
 
+import json
+
 import pytest
-from wake.report import add_override, load_overrides, apply_overrides, overrides_path
+from wake.report import (
+    add_override,
+    load_overrides,
+    apply_overrides,
+    overrides_path,
+    _legacy_overrides_path,
+)
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 
 def test_overrides_path(tmp_path):
     p = overrides_path("W2156077349", base=tmp_path)
-    assert p.name == ".overrides.jsonl"
+    assert p.name == "overrides.jsonl"
+
+
+def test_load_overrides_falls_back_to_legacy_dotfile(tmp_path):
+    """A packet built before the .overrides.jsonl -> overrides.jsonl
+    rename should still be readable without any migration ceremony."""
+    seed_id, citing_id = "W2156077349", "W1000000001"
+    legacy_path = _legacy_overrides_path(seed_id, base=tmp_path)
+    legacy_path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"citing_id": citing_id, "relationship": "extends"}
+    legacy_path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+
+    assert not overrides_path(seed_id, base=tmp_path).exists()
+    loaded = load_overrides(seed_id, base=tmp_path)
+    assert loaded[citing_id]["relationship"] == "extends"
+
+
+def test_add_override_migrates_legacy_dotfile_in_place(tmp_path):
+    """The first wake override call after the rename should move
+    existing legacy entries over rather than starting a fresh, empty
+    overrides.jsonl next to the stale .overrides.jsonl."""
+    seed_id = "W2156077349"
+    legacy_path = _legacy_overrides_path(seed_id, base=tmp_path)
+    legacy_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_entry = {"citing_id": "W_old", "relationship": "extends"}
+    legacy_path.write_text(json.dumps(legacy_entry) + "\n", encoding="utf-8")
+
+    add_override(seed_id, "W_new", relationship="uses-as-tool", base=tmp_path)
+
+    assert not legacy_path.exists()
+    overrides = load_overrides(seed_id, base=tmp_path)
+    assert "W_old" in overrides
+    assert "W_new" in overrides
 
 
 def test_load_overrides_missing_returns_empty(tmp_path):

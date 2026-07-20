@@ -380,7 +380,7 @@ def test_confirm_theme_section_with_multiple_themes_requires_all_confirmed(tmp_p
     _make_confirmed_theme(tmp_path, "t1")  # uses indices 0, 1
     # t2 exists (uses the remaining sample work) but is never confirmed.
     works2 = _seed_classified(tmp_path, 3)  # re-saves 0,1,2 -- t1's overrides are keyed
-                                             # by citing_id in .overrides.jsonl, unaffected
+                                             # by citing_id in overrides.jsonl, unaffected
     themes.create_theme(
         PARALLEL_NETCDF_WORK, "t2", title="T2", summary="S2",
         citing_ids=[works2[2]["openalex_id"]], base=tmp_path,
@@ -471,7 +471,7 @@ def test_stitch_preserves_outline_order(tmp_path):
 # --- reference markers: packet consistency & per-marker validation ------
 
 def test_create_section_packet_consistency_pass_rejects_missing_dossier(tmp_path):
-    """If .overrides.jsonl calls a work verified but its dossier file is
+    """If overrides.jsonl calls a work verified but its dossier file is
     missing on disk, the packet is inconsistent -- refuse before even
     looking at this section's own markers."""
     works = _seed_classified(tmp_path, 1)

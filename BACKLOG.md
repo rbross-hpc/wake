@@ -301,7 +301,7 @@ by rescanning `evidence/*.json`):
 
 `index.md`/`log.md` only spring into existence on the first real event —
 no empty scaffolding created at `resolve`/`citing` time, consistent with
-`impact.md` not existing until `wake bake` and `.overrides.jsonl` not
+`impact.md` not existing until `wake bake` and `overrides.jsonl` not
 existing until the first override.
 
 No new CLI surface: both files are plain markdown, read directly (same as
@@ -544,13 +544,16 @@ and held separately rather than sequenced here.
 
 1. ~~Workflow reframe design capture~~ — done first, see Theme F4 above;
    held, not executed.
-2. **Rename dotfiles in packet directories.** `.overrides.jsonl` →
-   `overrides.jsonl`, `.classify/` → `classify/`. A working directory
-   the human is explicitly expected to inspect shouldn't hide its own
-   state behind dotfile conventions meant for user-home/config
-   directories. Read-either compat shim for one release (old dotfile
-   name still read if the new one doesn't exist), migrate to the new
-   name on first write, drop the compat shim in a later cleanup.
+2. ~~**Rename dotfiles in packet directories.**~~ — BUILT. `.overrides
+   .jsonl` → `overrides.jsonl`, `.classify/` → `classify/`. Read-either
+   compat shim (old dotfile name/directory still read if the new one
+   doesn't exist yet), migrates to the new name/directory automatically
+   on the next write (`add_override`/`_write_sidecar`), never overwrites
+   an existing new-named file/directory. `.cost.jsonl` and `.state.json`
+   deliberately left as dotfiles — genuinely internal bookkeeping the
+   human isn't expected to read directly, unlike overrides (the human's
+   own verification decisions) and classify sidecars (debuggable raw
+   per-work LLM output).
 3. **Split `wake/skills/impact-analysis/references/reference.md` into
    per-workflow-phase files.** It has grown to ~400+ lines covering
    every command's JSON schema and output layout in one file. Split

@@ -11,6 +11,9 @@ from unittest.mock import patch
 from wake.classify import (
     RELATIONSHIPS,
     RELATIONSHIP_STRENGTH,
+    _legacy_sidecar_dir,
+    _legacy_sidecar_path,
+    _sidecar_dir,
     _sidecar_path,
     _write_sidecar,
     _load_sidecar,
@@ -53,8 +56,39 @@ def test_sidecar_missing_returns_none(tmp_path):
 def test_sidecar_path_structure(tmp_path):
     p = _sidecar_path("W2156077349", "W1000000001", base=tmp_path)
     assert p.name == "W1000000001.json"
-    assert p.parent.name == ".classify"
+    assert p.parent.name == "classify"
     assert p.parent.parent.name == "W2156077349"
+
+
+def test_load_sidecar_falls_back_to_legacy_dotfile_dir(tmp_path):
+    """A packet built before the .classify/ -> classify/ rename should
+    still be readable without any migration ceremony."""
+    seed_id, citing_id = "W2156077349", "W1000000001"
+    payload = {"relationship": "extends", "confidence": 0.9}
+    legacy_path = _legacy_sidecar_path(seed_id, citing_id, base=tmp_path)
+    legacy_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert not _sidecar_dir(seed_id, base=tmp_path).exists()
+    loaded = _load_sidecar(seed_id, citing_id, base=tmp_path)
+    assert loaded == payload
+
+
+def test_write_sidecar_migrates_legacy_dotfile_dir_in_place(tmp_path):
+    """The first write after the rename should move the whole legacy
+    .classify/ directory to classify/, not just add a new-named sibling
+    alongside stale old-named files."""
+    seed_id = "W2156077349"
+    legacy_dir = _legacy_sidecar_dir(seed_id, base=tmp_path)
+    legacy_dir.mkdir(parents=True, exist_ok=True)
+    (legacy_dir / "W_old.json").write_text(json.dumps({"relationship": "extends"}), encoding="utf-8")
+
+    _write_sidecar(seed_id, "W_new", {"relationship": "uses-as-tool"}, base=tmp_path)
+
+    assert not legacy_dir.exists()
+    new_dir = _sidecar_dir(seed_id, base=tmp_path)
+    assert (new_dir / "W_old.json").exists()
+    assert (new_dir / "W_new.json").exists()
 
 
 def test_select_for_classification_limit():

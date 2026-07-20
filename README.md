@@ -139,9 +139,9 @@ wake-out/<OpenAlex-ID>/
   impact.json             — aggregated metrics
   impact.md               — the impact brief (notes coverage if partial)
   .state.json             — stage cache keys
-  .classify/              — per-work classification sidecars (resumable)
+  classify/               — per-work classification sidecars (resumable)
   .cost.jsonl             — per-LLM-call estimated token/cost log
-  .overrides.jsonl        — human-reviewed relationship overrides
+  overrides.jsonl         — human-reviewed relationship overrides
   .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
   pdfs/                   — locally-cached PDFs (wake fetch-pdf / wake evidence)
     <citing-id>.pdf         — the PDF itself
@@ -390,7 +390,7 @@ End every factual sentence with a `[ref:ID,...]` marker naming its
 source(s) — `SEED` for the seed paper, or a citing work's OpenAlex ID.
 `wake` refuses the whole call if any marker names an ID that isn't
 `SEED` or isn't currently human-verified for this seed, and refuses
-outright if the packet itself is inconsistent (a work `.overrides.jsonl`
+outright if the packet itself is inconsistent (a work `overrides.jsonl`
 calls verified but has no dossier file on disk). This guarantees every
 citation points at a real, checked source — it does not, by itself,
 guarantee the source actually supports that sentence, which stays a
