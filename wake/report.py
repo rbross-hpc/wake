@@ -512,6 +512,7 @@ def bake_and_save(
         print("[wake] Building impact report...", file=sys.stderr)
 
     from .dedup import load_duplicates
+    from .exclude import is_excluded, load_exclusions
 
     works = citing_works
     if apply_human_overrides:
@@ -527,6 +528,10 @@ def bake_and_save(
         # double-counting reach metrics without needing to reconcile two
         # different relationship classifications into one.
         works = [w for w in works if w.get("openalex_id") not in duplicates]
+
+    exclusions = load_exclusions(seed_id, base)
+    if exclusions:
+        works = [w for w in works if not is_excluded(w.get("openalex_id"), exclusions)]
 
     metrics = build_metrics(seed_work, works)
     md_text = bake_markdown(seed_work, metrics)

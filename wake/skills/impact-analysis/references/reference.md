@@ -45,6 +45,8 @@ wake --json narrative refs-check export "<seed>"
 wake --json narrative refs-check summarize "<seed>" <results.json>
 wake --json bake "<seed>"
 wake --json override "<seed>" <citing-id> --relationship <class> --justification "..." [--verification-source human-judgment|evidence-dossier]
+wake --json exclude "<seed>" <citing-id> --reason "..." [--category not-about-seed|poster-or-abstract|irrelevant|other]
+wake --json unexclude "<seed>" <citing-id> --reason "..."
 
 # Standalone
 wake --json describe "<seed>"      # LLM contribution paragraph (independent of classify)
@@ -69,6 +71,7 @@ back to cwd), `--verbose` (keep progress banners on stderr even under `--json`).
 |---|---|
 | [`classify.md`](classify.md) | Relationship classes, author-overlap tag |
 | [`dedup.md`](dedup.md) | `wake dedup candidates`/`confirm`/`reject`, downstream exclusion from bake/theme/narrative |
+| [`exclude.md`](exclude.md) | `wake exclude`/`unexclude`, downstream exclusion from bake/theme/narrative/gaps/theme-queue |
 | [`pdf-acquisition.md`](pdf-acquisition.md) | The `wake fetch-pdf` source chain and fallback behavior |
 | [`evidence.md`](evidence.md) | `wake evidence`/`wake override`, the provisional → proposed → verified lifecycle, diagnosing a surprising finding |
 | [`themes.md`](themes.md) | `wake theme create`/`confirm`/`queue`, draft → confirmed lifecycle |

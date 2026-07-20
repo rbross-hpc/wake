@@ -49,6 +49,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_narrative_parser(sub)
     _build_bake_parser(sub)
     _build_override_parser(sub)
+    _build_exclude_parser(sub)
+    _build_unexclude_parser(sub)
     _build_cost_parser(sub)
     _build_show_parser(sub)
     _build_config_parser(sub)
@@ -409,6 +411,35 @@ def _build_override_parser(sub) -> None:
                    help="How the human arrived at this judgment (default: human-judgment). "
                         "Use 'evidence-dossier' when the human accepted a `wake evidence` "
                         "full-text finding.")
+
+
+def _build_exclude_parser(sub) -> None:
+    p = sub.add_parser(
+        "exclude",
+        help="Record an explicit, permanent exclusion for one citing work -- judged not "
+             "actually about the seed. wake persists this decision -- it never decides "
+             "that a work should be excluded. Excluded works are refused by wake theme "
+             "create and wake narrative reference validation, dropped from wake bake's "
+             "reach metrics, and no longer surfaced by wake gaps/wake theme queue. "
+             "Always run by the agent on the human's behalf, one work at a time.",
+    )
+    from .. import exclude as exclude_mod
+    p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    p.add_argument("citing_id", help="OpenAlex ID of the citing work to exclude.")
+    p.add_argument("--reason", required=True, help="Justification for the exclusion (required).")
+    p.add_argument("--category", default="other", choices=exclude_mod.EXCLUSION_REASONS,
+                   help="At-a-glance category for the exclusion (default: other).")
+
+
+def _build_unexclude_parser(sub) -> None:
+    p = sub.add_parser(
+        "unexclude",
+        help="Reverse a prior exclusion -- a separate, explicit action with its own "
+             "required justification, never an implicit side effect of another command.",
+    )
+    p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    p.add_argument("citing_id", help="OpenAlex ID of the citing work to un-exclude.")
+    p.add_argument("--reason", required=True, help="Justification for reversing the exclusion (required).")
 
 
 def _build_cost_parser(sub) -> None:
@@ -1293,6 +1324,47 @@ def run_override(args) -> None:
          human=lambda d: print(f"Override recorded: {args.citing_id} -> {d['relationship']}"))
 
 
+def run_exclude(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..exclude import exclude_work
+    base = _work_dir_base(args)
+
+    try:
+        result = exclude_work(
+            work["openalex_id"], args.citing_id,
+            reason=args.reason, category=args.category, base=base,
+        )
+    except ValueError as exc:
+        emit_error("exclude", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        print(f"Excluded: {d['citing_id']} ({d['category']}) — {d['reason']}")
+        print("  Now refused by wake theme create and wake narrative reference validation, "
+              "dropped from wake bake's reach metrics, and no longer surfaced by "
+              "wake gaps/wake theme queue.")
+
+    emit("exclude", result, as_json=args.json_out, human=human)
+
+
+def run_unexclude(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..exclude import unexclude_work
+    base = _work_dir_base(args)
+
+    try:
+        result = unexclude_work(work["openalex_id"], args.citing_id, reason=args.reason, base=base)
+    except ValueError as exc:
+        emit_error("unexclude", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        print(f"Un-excluded: {d['citing_id']} — {d['reason']}")
+        print("  Fully usable again in theme/narrative/bake.")
+
+    emit("unexclude", result, as_json=args.json_out, human=human)
+
+
 def run_cost(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
     from .. import cost as cost_mod
@@ -1455,6 +1527,10 @@ def main() -> None:
             run_bake(args)
         elif args.command == "override":
             run_override(args)
+        elif args.command == "exclude":
+            run_exclude(args)
+        elif args.command == "unexclude":
+            run_unexclude(args)
         elif args.command == "cost":
             run_cost(args)
         elif args.command == "show":

@@ -183,19 +183,21 @@ def _parse_ref_markers(prose: str) -> list[list[str]]:
 def _validate_ref_ids(seed_id: str, prose: str, base: Path | None = None) -> None:
     """Validate every `[ref:...]` marker in *prose*: each named ID must be
     either `SEED` or a citing work currently human-verified for this seed
-    (see `_verified_ids`), and must not be a confirmed duplicate of
-    another work (see `dedup.load_duplicates`) -- cite the canonical
-    work instead. Raises ValueError naming every invalid ID at once, not
-    one at a time.
+    (see `_verified_ids`), must not be a confirmed duplicate of another
+    work (see `dedup.load_duplicates`) -- cite the canonical work
+    instead -- and must not be an explicitly excluded work (see
+    `exclude.load_exclusions`). Raises ValueError naming every invalid
+    ID at once, not one at a time.
 
     This validates only that the referenced source is real, verified,
-    and not a known duplicate -- not that it actually supports the
-    sentence's claim, which remains an agent/human judgment (a future
-    `wake narrative section audit` command is the intended place for
-    that check, kept deliberately separate from this structural
-    validation).
+    not a known duplicate, and not excluded -- not that it actually
+    supports the sentence's claim, which remains an agent/human judgment
+    (a future `wake narrative section audit` command is the intended
+    place for that check, kept deliberately separate from this
+    structural validation).
     """
     from .dedup import load_duplicates
+    from .exclude import is_excluded, load_exclusions
 
     all_ids: set[str] = set()
     for ids in _parse_ref_markers(prose):
@@ -221,6 +223,15 @@ def _validate_ref_ids(seed_id: str, prose: str, base: Path | None = None) -> Non
         raise ValueError(
             f"prose references confirmed duplicate(s): {pointers}. "
             "Cite the canonical work instead of a work confirmed to be its duplicate."
+        )
+
+    exclusions = load_exclusions(seed_id, base)
+    excluded_refs = sorted(i for i in all_ids if is_excluded(i, exclusions))
+    if excluded_refs:
+        raise ValueError(
+            f"prose references excluded work(s): {', '.join(excluded_refs)}. "
+            "An excluded work has been judged not actually about the seed and "
+            "cannot be cited in a narrative -- run `wake unexclude` first if this was a mistake."
         )
 
 
