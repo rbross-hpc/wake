@@ -31,9 +31,16 @@ API-based (no scraping publisher landing pages, no sci-hub-style sources):
    backfill research). Frequently 403s on direct download from publisher
    sites (confirmed: ScienceDirect during WIND Toolkit testing) — still
    worth attempting.
-4. **arXiv** — conditional: if title/author search finds a matching arXiv
+4. **Springer** — `sources/springer.py`, added during a real end-to-end
+   validation run (BACKLOG's "use A/C/D/E for real" gate) when older
+   Springer LNCS conference chapters kept failing OSTI/S2/Unpaywall/arXiv
+   but resolved cleanly at `link.springer.com/content/pdf/<DOI>.pdf`.
+   No API call — pure URL construction for `10.1007/...` DOIs, validated
+   the same way as every other source (`_looks_like_pdf` rejects a
+   paywall HTML page served at that URL). A no-op for non-Springer DOIs.
+5. **arXiv** — conditional: if title/author search finds a matching arXiv
    preprint, download directly (always freely available, no bot-blocking).
-5. **CORE.ac.uk** — optional, gated behind `CORE_API_KEY` env var (silently
+6. **CORE.ac.uk** — optional, gated behind `CORE_API_KEY` env var (silently
    skipped if unset, same pattern as `SEMANTICSCHOLAR_API_KEY`). Large
    aggregator of repository-hosted OA copies.
 

@@ -162,6 +162,47 @@ def test_fetch_pdf_uses_core_when_enabled(tmp_path):
     assert result["source"] == "core"
 
 
+def test_fetch_pdf_tries_springer_between_unpaywall_and_arxiv(tmp_path):
+    """springer.get_fulltext_pdf_url_by_doi makes no network call (pure URL
+    construction), so it should be attempted for every Springer DOI even
+    though it sits after unpaywall/before arxiv in the default chain."""
+    with patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.semanticscholar.get_open_access_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.unpaywall.get_oa_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.arxiv_fetch.find_pdf_url_by_title") as mock_arxiv, \
+         patch("wake.pdf_fetch.core.is_enabled", return_value=False), \
+         patch("wake.pdf_fetch.requests.get", return_value=_mock_response()):
+        result = pdf_fetch.fetch_pdf(
+            "W123", "W456", doi="10.1007/978-3-540-92859-1_9", title="Some Title",
+            base=tmp_path, verbose=False,
+        )
+    mock_arxiv.assert_not_called()  # springer already succeeded
+    assert result["ok"] is True
+    assert result["source"] == "springer"
+    assert "springer" in result["url"]
+
+
+def test_fetch_pdf_springer_noop_for_non_springer_doi(tmp_path):
+    """A non-Springer DOI should fall through springer with no network call
+    (get_fulltext_pdf_url_by_doi returns None immediately) and proceed to
+    the next source in the chain."""
+    with patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.semanticscholar.get_open_access_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.unpaywall.get_oa_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.arxiv_fetch.find_pdf_url_by_title", return_value="https://arxiv.org/pdf/1234.5678"), \
+         patch("wake.pdf_fetch.core.is_enabled", return_value=False), \
+         patch("wake.pdf_fetch.requests.get", return_value=_mock_response()):
+        result = pdf_fetch.fetch_pdf(
+            "W123", "W456", doi="10.1109/icpp.2009.68", title="Some Title",
+            base=tmp_path, verbose=False,
+        )
+    # springer.get_fulltext_pdf_url_by_doi is real (not mocked) here — a
+    # non-Springer DOI returns None immediately, so the chain correctly
+    # falls through to arxiv, which succeeds.
+    assert result["ok"] is True
+    assert result["source"] == "arxiv"
+
+
 def test_fallback_links_includes_google_scholar_when_title_present():
     links = pdf_fetch.fallback_links(doi=None, title="A Paper Title")
     assert "google_scholar" in links

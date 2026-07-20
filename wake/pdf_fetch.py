@@ -13,11 +13,18 @@ Source chain (config: pdf_fetch.sources, default order):
   2. Semantic Scholar — openAccessPdf.url (often a repository copy)
   3. Unpaywall        — best_oa_location PDF URL (frequently 403s on
                         publisher sites; still worth attempting)
-  4. arXiv            — title-search match, always freely downloadable
-  5. CORE.ac.uk       — optional, requires CORE_API_KEY, silently skipped
+  4. Springer         — predictable link.springer.com/content/pdf/<DOI>.pdf
+                        URL for Springer DOIs (10.1007/...); no API call,
+                        just a direct download attempt. Frequently succeeds
+                        for older LNCS conference chapters that Unpaywall/
+                        OSTI/S2 don't index, and is a no-op (returns None
+                        immediately) for non-Springer DOIs.
+  5. arXiv            — title-search match, always freely downloadable
+  6. CORE.ac.uk       — optional, requires CORE_API_KEY, silently skipped
                         if unset
 
-All API-based; no scraping of publisher landing pages, no sci-hub-style
+Mostly API-based (Springer is a direct, predictable URL rather than an
+API lookup); no scraping of publisher landing pages, no sci-hub-style
 sources. On success, saves to wake-out/<seed>/pdfs/<citing-id>.pdf.
 """
 from __future__ import annotations
@@ -32,7 +39,7 @@ import requests
 
 from . import config
 from .seed import work_dir
-from .sources import arxiv_fetch, core, osti, semanticscholar, unpaywall
+from .sources import arxiv_fetch, core, osti, semanticscholar, springer, unpaywall
 
 
 def _cfg() -> dict[str, Any]:
@@ -57,6 +64,8 @@ def _source_func(name: str) -> Callable[[str], str | None] | None:
         return semanticscholar.get_open_access_pdf_url_by_doi
     if name == "unpaywall":
         return unpaywall.get_oa_pdf_url_by_doi
+    if name == "springer":
+        return springer.get_fulltext_pdf_url_by_doi
     if name == "arxiv":
         return None  # handled specially below (needs title, not doi)
     if name == "core":
@@ -137,7 +146,7 @@ def fetch_pdf(
     returns immediately without making any network calls.
     """
     cfg = _cfg()
-    sources = cfg.get("sources", ["osti", "semanticscholar", "unpaywall", "arxiv", "core"])
+    sources = cfg.get("sources", ["osti", "semanticscholar", "unpaywall", "springer", "arxiv", "core"])
     rate_limits = cfg.get("rate_limit_s", {})
     timeout = cfg.get("download_timeout_s", 30)
     min_bytes = cfg.get("min_valid_pdf_bytes", 2048)
