@@ -351,13 +351,26 @@ the underlying theme(s)/dossiers yourself:
 ```bash
 wake --json narrative section create "<seed>" earth-adoption \
   --title "Adoption in Earth System Modeling" \
-  --prose "<your prose, grounded in the theme's confirmed findings>" \
+  --prose "<your prose, grounded in the theme's confirmed findings, each factual sentence ending with [ref:ID,ID,...]>" \
   --theme-slugs earth-system-modeling
 ```
 
 Like `wake theme create`, this makes no LLM call — you write the prose
 yourself; `wake` validates and persists it. Every section starts `draft`.
-Present it to the human, then confirm it on their behalf:
+
+**End every factual sentence with a `[ref:ID,...]` marker** naming its
+source(s) — `SEED` for the seed paper, or a citing work's OpenAlex ID for
+anything else. `create_section` refuses the whole call if any marker
+names an ID that isn't `SEED` or isn't currently human-verified for this
+seed (same bar as `wake theme confirm`), and refuses outright if the
+packet itself is inconsistent (a work `.overrides.jsonl` calls verified
+but has no dossier file on disk). This guarantees every citation in the
+final narrative points at a real, checked source — it does not, by
+itself, guarantee the source actually supports that sentence's claim;
+that judgment is yours when drafting and the human's at confirm time.
+Framing sentences with no factual content don't need a marker.
+
+Present the drafted section to the human, then confirm it on their behalf:
 
 ```bash
 wake --json narrative section confirm "<seed>" earth-adoption
@@ -384,6 +397,13 @@ drafted-but-unconfirmed sections carry a `⚠ DRAFT` banner, and the whole
 document is flagged "Partial narrative" at the top whenever anything is
 incomplete. Never present a partial stitch to the human as a finished
 narrative.
+
+Stitching is also when `[ref:ID,...]` markers get renumbered into
+`[R1]`, `[R2]`, ... in reading order (stable across reuse — the same
+source cited twice keeps one number), with a Chicago-style `##
+References` list appended at the bottom. This only happens at stitch
+time, once the whole document is available; every earlier per-section
+preview keeps the raw `[ref:...]` form.
 
 This step is optional — only draft a narrative once the underlying
 themes are solid; a narrative built on shaky, unconfirmed themes will

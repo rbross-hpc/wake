@@ -251,7 +251,13 @@ def _build_narrative_parser(sub) -> None:
     section_create.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     section_create.add_argument("slug", help="Section identifier, matching a component in the outline.")
     section_create.add_argument("--title", required=True, help="Human-readable section title.")
-    section_create.add_argument("--prose", required=True, help="Drafted prose, written by the agent.")
+    section_create.add_argument(
+        "--prose", required=True,
+        help="Drafted prose, written by the agent. Each factual sentence should end with a "
+             "[ref:ID,ID,...] marker naming its source(s) -- SEED for the seed paper, or a "
+             "citing work's OpenAlex ID. Every marker is validated against the packet: each "
+             "ID must be SEED or a currently human-verified citing work.",
+    )
     section_create.add_argument(
         "--theme-slugs", default="", metavar="SLUG,SLUG,...",
         help="Comma-separated theme slugs this section is grounded in (omit for a free-form section).",

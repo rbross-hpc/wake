@@ -410,20 +410,66 @@ section drafted and confirmed (blocked correctly when tested against an
 unconfirmed theme first), partial stitch correctly labeled the 4 not-yet-
 drafted sections.
 
-Deferred, now that F1 exists:
+**Per-sentence source references, added in a follow-up round (absorbing
+most of F3 into F1):** explicit user requirement — "each sentence with a
+factual basis" should carry a reference an agent or human can verify.
+Every factual sentence in `--prose` can end with a `[ref:ID,ID,...]`
+marker (`SEED` for the seed paper, or a citing OpenAlex ID for anything
+else). `create_section` validates every marker in two passes before
+writing anything:
+
+1. **Packet consistency** — every citing work `.overrides.jsonl` calls
+   human-verified must have an actual dossier file on disk; if any are
+   missing, the whole packet is refused as inconsistent (a corrupted
+   packet can't be trusted for any reference, not just the one being
+   added).
+2. **Per-marker validity** — each named ID must be `SEED` or a citing
+   work that is *currently* human-verified for this seed (`.overrides
+   .jsonl`, not `classified.json`'s own never-updated `verification_
+   status` field — same "verified" definition `wake theme confirm`
+   already uses). Unknown/unverified IDs are rejected, naming every bad
+   ID at once.
+
+This guarantees every reference names a real, checked source — it does
+**not** guarantee the source supports the sentence's specific claim,
+which stays an agent/human judgment (a future `wake narrative section
+audit` command, deliberately deferred, is the intended place for that
+semantic check).
+
+Raw `[ref:...]` markers are the source of truth, kept as-written in
+`section.json`/`section.md`/`outline.md`. Only `wake narrative stitch`
+renumbers them — once the whole document is available — into `[R1]`,
+`[R2]`, ... in reading order (stable across reuse: the same source cited
+in two sections keeps one number), and appends a Chicago-author-date
+`## References` list at the bottom, one entry per distinct source, with
+a DOI link where available. wake has no persisted OSTI identifier for
+any citing work (OSTI is used only transiently as one candidate
+PDF-acquisition source, never written back to `classified.json`), so no
+OSTI suffix is rendered — noted as a known gap, not silently faked.
+
+Validated live: drafted a 3-paragraph narrative (what PnetCDF is, its own
+evolution; broad adoption across scientific computing; earth-system
+adoption) directly from the 3 confirmed Parallel netCDF themes, every
+factual sentence carrying a marker, stitched with a dense R1...Rn
+reference list.
+
+Deferred, now that F1 (+ per-sentence refs) exists:
 - **F2** — Thematic impact bullet summary: a shorter, bullet-style
   section-drafting mode alongside full prose (F1's sections are already
   "cluster confirmed-theme evidence into a narrative unit," so F2 may
   turn out to be a rendering variant of the same `section create`
   primitive rather than a separate mechanism — revisit once F1 is used
   for a second real seed).
-- **F3** — Full cited narrative with per-sentence markdown links into
-  Theme A2/B/C evidence docs, packaged into a folder (`narrative.md`
-  top-level + `evidence/` + `evidence/themes/` + `data/` for JSON) —
-  zippable for a tech editor. F1's `narrative.md` is already the
-  top-level file F3 envisioned; F3 is now "add per-sentence evidence
-  links + folder packaging" on top of F1's existing output, not a
-  from-scratch build.
+- **Claim-vs-source semantic audit** — `wake narrative section audit`:
+  for each `[ref:...]`-marked sentence, have an LLM read the referenced
+  dossier(s) and flag whether the sentence's claim is actually supported
+  — a real value-add for long, multi-session narratives, deliberately
+  kept as a separate opt-in step rather than folded into `create_section`
+  or `confirm_section`.
+- Packaging (zip a folder of `narrative.md` + linked `evidence/` +
+  `evidence/themes/` for a tech editor) — F1's `narrative.md` +
+  `evidence/` directory already are that folder; only the packaging step
+  itself (zip, or a `wake export` command) remains unbuilt.
 
 ## Deferred — Theme G: Timeline Generation
 
