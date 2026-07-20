@@ -186,9 +186,11 @@ def _build_theme_parser(sub) -> None:
 
     create = ssub.add_parser(
         "create",
-        help="Write (or overwrite) a theme document. Always a draft -- no LLM call; "
-             "the agent supplies the title/summary/citing-ids after reading the "
-             "underlying dossiers/classifications itself.",
+        help="Write (or overwrite) a theme document. wake validates and persists this "
+             "judgment -- it never decides which works belong together or writes the "
+             "summary itself. Always a draft -- no LLM call; the agent supplies the "
+             "title/summary/citing-ids after reading the underlying dossiers/"
+             "classifications itself.",
     )
     create.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     create.add_argument("slug", help="Theme identifier, e.g. 'earth-system-modeling' (lowercase, hyphenated).")
@@ -200,9 +202,11 @@ def _build_theme_parser(sub) -> None:
     confirm = ssub.add_parser(
         "confirm",
         help="Human-approved sign-off promoting a theme from 'draft' to 'confirmed'. "
-             "Always run by the agent on the human's behalf, never by asking the human "
-             "to run this command themselves (see SKILL.md). Refuses unless every cited "
-             "work is already human-verified via `wake override`.",
+             "wake only validates the sign-off (every cited work already human-verified) "
+             "and records it -- the human's approval is the actual decision. Always run "
+             "by the agent on the human's behalf, never by asking the human to run this "
+             "command themselves (see SKILL.md). Refuses unless every cited work is "
+             "already human-verified via `wake override`.",
     )
     confirm.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     confirm.add_argument("slug", help="Theme identifier to confirm.")
@@ -233,7 +237,9 @@ def _build_narrative_parser(sub) -> None:
     outline_create = outline_sub.add_parser(
         "create",
         help="Write (or overwrite) the narrative outline: an ordered list of components. "
-             "No LLM call, no confirmation of its own -- it's a plan, not a claim.",
+             "wake validates the structure and persists it -- it never decides the "
+             "narrative's shape. No LLM call, no confirmation of its own -- it's a plan, "
+             "not a claim.",
     )
     outline_create.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     outline_create.add_argument(
@@ -252,8 +258,10 @@ def _build_narrative_parser(sub) -> None:
 
     section_create = section_sub.add_parser(
         "create",
-        help="Write (or overwrite) one section's prose. Always a draft -- no LLM call; the "
-             "agent writes the prose after reading the underlying theme(s)/dossiers itself.",
+        help="Write (or overwrite) one section's prose. wake validates and persists this "
+             "prose -- it never writes it or decides what it should say. Always a draft "
+             "-- no LLM call; the agent writes the prose after reading the underlying "
+             "theme(s)/dossiers itself.",
     )
     section_create.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     section_create.add_argument("slug", help="Section identifier, matching a component in the outline.")
@@ -272,8 +280,10 @@ def _build_narrative_parser(sub) -> None:
 
     section_confirm = section_sub.add_parser(
         "confirm",
-        help="Human-approved sign-off promoting a section from 'draft' to 'confirmed'. Always run "
-             "by the agent on the human's behalf (see SKILL.md). For a theme-backed section, "
+        help="Human-approved sign-off promoting a section from 'draft' to 'confirmed'. wake "
+             "only validates the sign-off (every referenced theme currently confirmed) and "
+             "records it -- the human's approval is the actual decision. Always run by the "
+             "agent on the human's behalf (see SKILL.md). For a theme-backed section, "
              "refuses unless every referenced theme is currently confirmed.",
     )
     section_confirm.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
@@ -306,10 +316,11 @@ def _build_bake_parser(sub) -> None:
 def _build_override_parser(sub) -> None:
     p = sub.add_parser(
         "override",
-        help="Record a human-reviewed relationship override for one citing work. "
-             "Wins over the LLM classification in the next bake. Always run by "
-             "the agent on the human's behalf -- never ask the human to run this "
-             "command themselves (see SKILL.md).",
+        help="Record a human-reviewed relationship override for one citing work. wake "
+             "persists this judgment -- it never decides the relationship itself, the "
+             "human already has. Wins over the LLM classification in the next bake. "
+             "Always run by the agent on the human's behalf -- never ask the human to "
+             "run this command themselves (see SKILL.md).",
     )
     from ..classify import RELATIONSHIPS
     p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")

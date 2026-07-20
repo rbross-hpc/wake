@@ -587,13 +587,20 @@ and held separately rather than sequenced here.
    invocation via `sys.argv`, not just the underlying module functions)
    verify success and not-yet-built-error paths for all five, live-
    tested against the real Parallel netCDF dry-run packet.
-5. **CLI help + SKILL.md write-primitive clarity audit.** Small
-   documentation-only pass triggered by the "wait: what does `theme
-   create` *do*?" question mid-session — every `wake X
-   create`/`confirm`/`override` verb's `--help` text and SKILL.md
-   description should say plainly that wake validates and persists the
-   agent's/human's judgment, and does not itself decide anything or run
-   an LLM. Cheap, immediate, independent of the (held) workflow reframe.
+5. ~~**CLI help + SKILL.md write-primitive clarity audit.**~~ — BUILT.
+   Small documentation-only pass triggered by the "wait: what does
+   `theme create` *do*?" question mid-session. Every `wake theme
+   create`/`confirm`, `wake narrative outline create`, `wake narrative
+   section create`/`confirm`, and `wake override` `--help` text now says
+   plainly that wake validates and persists a judgment already made
+   (by the agent for `create`, by the human for `confirm`/`override`)
+   rather than deciding anything itself or running an LLM. Added a new
+   Principle 13 to SKILL.md's "Principles for Agents" section stating
+   the same rule generally, as a catch-all for any future write-
+   primitive command: "if you find yourself expecting one of these
+   commands to tell you whether something is a good idea, that's a sign
+   the command is being asked to do a job it doesn't do." No behavior
+   change; docs-only.
 6. **Split top-level `README.md` into a short README + `docs/` topic
    pages.** README has grown to ~500 lines including full workflow
    narrative, PDF-source explanation, abstract-recovery philosophy, etc.
