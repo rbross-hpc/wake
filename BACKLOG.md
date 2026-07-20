@@ -601,16 +601,22 @@ and held separately rather than sequenced here.
    commands to tell you whether something is a good idea, that's a sign
    the command is being asked to do a job it doesn't do." No behavior
    change; docs-only.
-6. **Split top-level `README.md` into a short README + `docs/` topic
-   pages.** README has grown to ~500 lines including full workflow
-   narrative, PDF-source explanation, abstract-recovery philosophy, etc.
-   New README should be about one screen: what wake is, install, one
-   command example, links out. New top-level `docs/` (repo docs, not
-   packaged with the pip install) gets `docs/workflow.md`,
-   `docs/abstract-recovery.md`, `docs/pdf-sources.md`,
-   `docs/narrative.md`, `docs/themes.md`. Agent-facing files (SKILL.md,
-   the skill's own `references/`) are untouched by this split — they
-   serve a different reader.
+6. ~~**Split top-level `README.md` into a short README + `docs/` topic
+   pages.**~~ — BUILT. README had grown to 514 lines including full
+   workflow narrative, PDF-source explanation, abstract-recovery
+   philosophy, thematic-synthesis and narrative-drafting walkthroughs.
+   New top-level `docs/` (repo docs, not packaged with the pip install)
+   holds `docs/workflow.md` (full command list, quick-start, seed ID
+   formats, relationship classes), `docs/abstract-recovery.md`,
+   `docs/pdf-sources.md`, `docs/evidence.md` (verification lifecycle +
+   the evidence wiki), `docs/themes.md`, `docs/narrative.md`, plus
+   `docs/README.md` as a small index page. Top-level `README.md` is now
+   137 lines: what wake is, install, a trimmed quick-start, a
+   documentation table linking to every `docs/` page, configuration,
+   environment variables, and a pointer to
+   `references/output-layout.md` for the full directory tree. Agent-
+   facing files (SKILL.md, the skill's own `references/`) untouched by
+   this split — they serve a different reader. No behavior change.
 7. **`wake narrative refs-check <seed>` — verify the stitched
    narrative's References section with the external `ref-checker` tool**
    (https://github.com/rbross-hpc/ref-checker). Distinct from the
