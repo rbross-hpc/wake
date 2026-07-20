@@ -51,6 +51,17 @@ untouched. Re-running `wake evidence --force` on an already-verified
 dossier resets it back to `pending-human-review` — a fresh full-text read
 is a new finding, not a continuation of the old sign-off.
 
+## Re-printing an already-built dossier
+
+`wake show dossier "<seed>" <citing-id>` prints the already-written
+`evidence/<citing-id>.md` as-is, no computation -- same convention as
+`wake show brief`/`metrics`/`top` for the seed-level artifacts:
+```json
+{"ok": true, "data": {"markdown": "..."}}
+```
+Errors (exit 1) with a message naming `wake evidence "<seed>" <citing-id>`
+if no dossier exists yet.
+
 ## Diagnosing a surprising finding: check the extraction first
 
 `extracted_text_path` (also linked from the dossier's "Source" section)

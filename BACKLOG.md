@@ -567,16 +567,26 @@ and held separately rather than sequenced here.
    table linking to each phase file) plus SKILL.md's own two inline
    pointers redirected to the specific file they actually meant. No
    behavior change; docs-only.
-4. **`wake <noun> show` verbs.** Today `wake show` only has
-   `brief`/`metrics`/`top` (seed-level summary artifacts); there's no
-   way to view a theme, a narrative section, an outline, or a dossier
-   through it. Existing precedent already exists in the CLI
-   (`wake config show`, `wake skill show`) for a subject-noun-first
-   `show` verb. Add `wake theme show <seed> <slug>`, `wake narrative
-   show <seed>`, `wake narrative section show <seed> <slug>`, `wake
-   narrative outline show <seed>`, `wake evidence show <seed>
-   <citing-id>`. Leave `wake show brief/metrics/top` as-is — those are
-   cross-cutting seed-summary views, a different (still valid) shape.
+4. ~~**`wake <noun> show` verbs.**~~ — BUILT. Added `wake theme show
+   <seed> <slug>`, `wake narrative show <seed>` (the stitched top-level
+   `narrative.md`), `wake narrative outline show <seed>`, `wake
+   narrative section show <seed> <slug>`, following the subject-noun-
+   first precedent already set by `wake config show`/`wake skill show`.
+   One deviation from the original plan: `wake evidence <seed>
+   <citing-id>` already has two bare positional args and no subaction
+   structure, so adding an `evidence show` subaction created a genuine
+   argparse ambiguity (confirmed interactively: argparse can't
+   disambiguate `wake evidence W1 W2` from a third case `wake evidence
+   show W1 W2` once both a subparser and top-level positionals are
+   registered on the same parser). Rather than restructure `evidence`'s
+   primary invocation shape, dossier re-printing was added as `wake show
+   dossier <seed> <citing-id>` instead, alongside the existing
+   `brief`/`metrics`/`top`. All five re-emit an already-written file
+   as-is with no computation, matching `wake show brief`'s existing
+   convention; 11 new end-to-end CLI tests (full `wake.cli.main.main()`
+   invocation via `sys.argv`, not just the underlying module functions)
+   verify success and not-yet-built-error paths for all five, live-
+   tested against the real Parallel netCDF dry-run packet.
 5. **CLI help + SKILL.md write-primitive clarity audit.** Small
    documentation-only pass triggered by the "wait: what does `theme
    create` *do*?" question mid-session — every `wake X

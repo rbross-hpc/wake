@@ -215,6 +215,10 @@ def _build_theme_parser(sub) -> None:
     )
     queue.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
+    show = ssub.add_parser("show", help="Print an already-written theme document.")
+    show.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    show.add_argument("slug", help="Theme identifier to print.")
+
 
 def _build_narrative_parser(sub) -> None:
     p = sub.add_parser(
@@ -239,6 +243,9 @@ def _build_narrative_parser(sub) -> None:
              '"theme_slugs":["earth-system-modeling"]}]\'. kind is "theme" (requires non-empty '
              'theme_slugs, each an already-existing theme) or "free" (framing prose, no theme_slugs).',
     )
+
+    outline_show = outline_sub.add_parser("show", help="Print the current narrative outline.")
+    outline_show.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
     section = ssub.add_parser("section", help="Draft or confirm one narrative section's prose.")
     section_sub = section.add_subparsers(dest="section_action", required=True, metavar="ACTION")
@@ -272,12 +279,19 @@ def _build_narrative_parser(sub) -> None:
     section_confirm.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     section_confirm.add_argument("slug", help="Section identifier to confirm.")
 
+    section_show = section_sub.add_parser("show", help="Print one already-drafted section's prose.")
+    section_show.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    section_show.add_argument("slug", help="Section identifier to print.")
+
     stitch = ssub.add_parser(
         "stitch",
         help="Assemble the outline order + every drafted section into the top-level narrative.md. "
              "Works on partial data -- missing/still-draft sections are clearly labeled, not hidden.",
     )
     stitch.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+
+    show = ssub.add_parser("show", help="Print the assembled top-level narrative.md.")
+    show.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
 
 def _build_bake_parser(sub) -> None:
@@ -329,6 +343,10 @@ def _build_show_parser(sub) -> None:
     st = ssub.add_parser("top", help="Print top-evidence table for a seed.")
     st.add_argument("seed", help="OpenAlex ID or seed string.")
     st.add_argument("-n", type=int, default=10, help="Number of top works to show (default: 10).")
+
+    sd = ssub.add_parser("dossier", help="Print an already-built evidence dossier for one citing work.")
+    sd.add_argument("seed", help="OpenAlex ID or seed string.")
+    sd.add_argument("citing_id", help="OpenAlex ID of the citing work whose dossier to print.")
 
 
 def _build_config_parser(sub) -> None:
@@ -739,6 +757,8 @@ def run_theme(args) -> None:
         run_theme_confirm(args)
     elif args.theme_action == "queue":
         run_theme_queue(args)
+    elif args.theme_action == "show":
+        run_theme_show(args)
 
 
 def run_theme_create(args) -> None:
@@ -816,6 +836,23 @@ def run_theme_queue(args) -> None:
     emit("theme", {"queue": entries}, as_json=args.json_out, human=lambda d: human(d["queue"]))
 
 
+def run_theme_show(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..themes import theme_path
+    base = _work_dir_base(args)
+    seed_id = work["openalex_id"]
+
+    p = theme_path(seed_id, args.slug, base)
+    if not p.exists():
+        emit_error("theme", RuntimeError(
+            f"No theme {args.slug!r} found for {args.seed}. Run `wake theme create` first."
+        ), as_json=args.json_out)
+        sys.exit(1)
+
+    text = p.read_text(encoding="utf-8")
+    emit("theme", {"markdown": text}, as_json=args.json_out, human=lambda d: print(d["markdown"]))
+
+
 def run_narrative(args) -> None:
     if args.narrative_action == "outline":
         run_narrative_outline(args)
@@ -823,11 +860,32 @@ def run_narrative(args) -> None:
         run_narrative_section(args)
     elif args.narrative_action == "stitch":
         run_narrative_stitch(args)
+    elif args.narrative_action == "show":
+        run_narrative_show(args)
+
+
+def run_narrative_show(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..narrative import narrative_md_path
+    base = _work_dir_base(args)
+    seed_id = work["openalex_id"]
+
+    p = narrative_md_path(seed_id, base)
+    if not p.exists():
+        emit_error("narrative", RuntimeError(
+            f"No assembled narrative found for {args.seed}. Run `wake narrative stitch` first."
+        ), as_json=args.json_out)
+        sys.exit(1)
+
+    text = p.read_text(encoding="utf-8")
+    emit("narrative", {"markdown": text}, as_json=args.json_out, human=lambda d: print(d["markdown"]))
 
 
 def run_narrative_outline(args) -> None:
     if args.outline_action == "create":
         run_narrative_outline_create(args)
+    elif args.outline_action == "show":
+        run_narrative_outline_show(args)
 
 
 def run_narrative_outline_create(args) -> None:
@@ -857,11 +915,30 @@ def run_narrative_outline_create(args) -> None:
     emit("narrative", result, as_json=args.json_out, human=human)
 
 
+def run_narrative_outline_show(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..narrative import outline_md_path
+    base = _work_dir_base(args)
+    seed_id = work["openalex_id"]
+
+    p = outline_md_path(seed_id, base)
+    if not p.exists():
+        emit_error("narrative", RuntimeError(
+            f"No narrative outline found for {args.seed}. Run `wake narrative outline create` first."
+        ), as_json=args.json_out)
+        sys.exit(1)
+
+    text = p.read_text(encoding="utf-8")
+    emit("narrative", {"markdown": text}, as_json=args.json_out, human=lambda d: print(d["markdown"]))
+
+
 def run_narrative_section(args) -> None:
     if args.section_action == "create":
         run_narrative_section_create(args)
     elif args.section_action == "confirm":
         run_narrative_section_confirm(args)
+    elif args.section_action == "show":
+        run_narrative_section_show(args)
 
 
 def run_narrative_section_create(args) -> None:
@@ -911,6 +988,23 @@ def run_narrative_section_confirm(args) -> None:
     emit("narrative", result, as_json=args.json_out, human=human)
     if not result["ok"]:
         sys.exit(1)
+
+
+def run_narrative_section_show(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..narrative import section_md_path
+    base = _work_dir_base(args)
+    seed_id = work["openalex_id"]
+
+    p = section_md_path(seed_id, args.slug, base)
+    if not p.exists():
+        emit_error("narrative", RuntimeError(
+            f"No section {args.slug!r} found for {args.seed}. Run `wake narrative section create` first."
+        ), as_json=args.json_out)
+        sys.exit(1)
+
+    text = p.read_text(encoding="utf-8")
+    emit("narrative", {"markdown": text}, as_json=args.json_out, human=lambda d: print(d["markdown"]))
 
 
 def run_narrative_stitch(args) -> None:
@@ -1049,6 +1143,17 @@ def run_show(args) -> None:
                 )
 
         emit("show", {"top_evidence": top}, as_json=args.json_out, human=lambda d: human(d["top_evidence"]))
+
+    elif what == "dossier":
+        from ..evidence import dossier_path
+        p = dossier_path(oid, args.citing_id, base)
+        if not p.exists():
+            emit_error("show", RuntimeError(
+                f"No dossier found for {args.citing_id}. Run `wake evidence {args.seed} {args.citing_id}` first."
+            ), as_json=args.json_out)
+            sys.exit(1)
+        text = p.read_text(encoding="utf-8")
+        emit("show", {"markdown": text}, as_json=args.json_out, human=lambda d: print(d["markdown"]))
 
 
 def run_config(args) -> None:

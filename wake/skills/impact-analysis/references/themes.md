@@ -79,3 +79,13 @@ auto-updated** when a dossier appears; only an explicit `wake theme
 create` re-run (after reading the new dossier) changes it, so a
 full-text finding that contradicts the original abstract-only guess can
 never silently get folded into the theme unreviewed.
+
+`wake theme show "<seed>" <slug>` prints the already-written
+`evidence/themes/<slug>.md` (draft or confirmed) as-is — no computation,
+just a re-emit, same as `wake show brief` re-emits `impact.md`:
+```json
+{"ok": true, "data": {"markdown": "..."}}
+```
+Errors (non-existent slug) the same way `wake show brief` does when
+`impact.md` doesn't exist yet — a clear message naming the exact command
+to run first, exit 1.
