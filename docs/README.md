@@ -17,3 +17,10 @@ organized for an LLM to load selectively during a session), see
 [`wake/skills/impact-analysis/references/`](../wake/skills/impact-analysis/references/)
 instead — that directory serves a different reader and is kept
 independent of this one.
+
+[`design/`](design/) holds design-discussion documents captured
+mid-session for larger changes that need a live conversation before
+being executed — see [`design/theme-workflow-reframe.md`](design/theme-workflow-reframe.md)
+for the current one. These are deliberately not "how it works today"
+documentation; check `BACKLOG.md` for whether a linked design has
+actually been built yet.
