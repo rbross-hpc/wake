@@ -165,9 +165,9 @@ Try to get a PDF automatically before asking the human for one:
 wake --json fetch-pdf "<seed>" <citing-id>
 ```
 
-This tries OSTI, Semantic Scholar, Unpaywall, arXiv, and (if configured)
-CORE.ac.uk in order, and caches the result. If it succeeds, feed the local
-path straight into `fill-abstract`:
+This tries OSTI, Semantic Scholar, Unpaywall, Springer (direct URL, no
+API key), arXiv, and (if configured) CORE.ac.uk in order, and caches the
+result. If it succeeds, feed the local path straight into `fill-abstract`:
 
 ```bash
 wake --json fill-abstract "<seed>" <citing-id> --from-pdf wake-out/<seed>/pdfs/<citing-id>.pdf

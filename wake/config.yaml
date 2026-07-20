@@ -46,11 +46,12 @@ pdf_extract:
 # instead (Unpaywall lookup page, Google Scholar search, publisher DOI,
 # CORE search).
 pdf_fetch:
-  sources: [osti, semanticscholar, unpaywall, arxiv, core]
+  sources: [osti, semanticscholar, unpaywall, springer, arxiv, core]
   rate_limit_s:
     osti: 0.5
     semanticscholar: 1.2
     unpaywall: 0.5
+    springer: 0.5
     arxiv: 3.0
     core: 1.0
   download_timeout_s: 30
