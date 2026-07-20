@@ -677,15 +677,44 @@ and held separately rather than sequenced here.
    caught by hand earlier this session, both at 1.00 similarity) with
    zero missed hits; confirming those two dropped `wake bake`'s
    `total_citing_works` from 408 to 406 as expected.
-9. **Posters/conference-abstracts: surface for human sign-off, same
-   shape as dedup.** `type == "conference-abstract"` or a
-   `Poster:`/`Abstract:` title prefix currently has to be caught and
-   excluded by hand each session (this session's "posters are out" rule
-   was established ad hoc mid-run). Surface candidates for explicit
-   human exclusion rather than silently dropping them or requiring the
-   human to remember to ask — same one-at-a-time confirmation pattern as
-   dedup and the same downstream effect as `wake exclude` (below) once a
-   human confirms.
+9. ~~**Posters/conference-abstracts: surface for human sign-off, same
+   shape as dedup.**~~ — BUILT. Executed after item 10 (`wake exclude`)
+   since this item depends on it for the actual downstream effect. New
+   `wake/posters.py`: `poster_candidates()` scans classified works for a
+   `type == "conference-abstract"` OpenAlex type or a `Poster:`/
+   `Abstract:` title prefix (either signal alone is sufficient — a
+   mistyped/mis-indexed OpenAlex type shouldn't hide an obvious
+   title-prefix case; an ordinary title that merely starts with the
+   English word "Abstract" without the colon, e.g. "Abstraction Layers
+   for...", does not match). Pure read, deterministic, no LLM call —
+   same trust model as `wake dedup` throughout: never excludes anything
+   itself, only surfaces candidates for a human to look at one at a
+   time. `keep_candidate()` records a human's decision that a flagged
+   candidate is a false positive and should stay fully usable, so it
+   isn't resurfaced by a later scan (`posters_reviewed.jsonl`, same
+   append-only shape as `duplicates.jsonl`/`dedup_rejected.jsonl`).
+   Already-excluded works (any `wake exclude` category) are also
+   filtered out of scan results. CLI: `wake posters candidates <seed>`,
+   `wake posters keep <seed> <citing-id> --reason "..."`. Once a human
+   confirms a candidate really is a poster/abstract stub, the agent
+   excludes it the normal way: `wake exclude <seed> <citing-id> --reason
+   "..." --category poster-or-abstract` — `wake posters` has no
+   exclusion mechanism of its own, it only feeds `wake exclude`. 10 new
+   tests in `test_posters.py`. Docs: new
+   `wake/skills/impact-analysis/references/posters.md`, `reference.md`
+   index + full command list, SKILL.md new step 8 (renumbering steps
+   9-15 accordingly, all "step N" cross-references fixed), `docs/
+   workflow.md` command table. Live-validated against the real Parallel
+   netCDF dry-run packet: found all 4 real poster/abstract-type works in
+   the 408-work classified set (`W2036045262` "Poster reception---...",
+   `W2130808347` "Poster: Bringing Task and Data Parallelism...",
+   `W4256234323` "Abstract: Bringing Task and Data Parallelism...", and
+   `W2173402311` "SRC", an ACM Student Research Competition abstract
+   caught purely by its `conference-abstract` type since its title gives
+   no hint); confirmed `wake posters keep` removed a candidate from
+   subsequent scans, then reverted that smoke-test state to leave the
+   packet's real, unresolved poster candidates for an actual future
+   human sign-off pass rather than deciding on the human's behalf.
 10. ~~**`wake exclude` — first-class exclude state.**~~ — BUILT. A citing
     work judged not actually about the seed (e.g. background-mention
     where the seed appears only in a bibliography) previously just sat

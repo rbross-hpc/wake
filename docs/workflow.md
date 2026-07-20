@@ -62,6 +62,8 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake dedup candidates <seed>` | Scan for likely-duplicate citing works (title similarity + shared authors) |
 | `wake dedup confirm <seed> <dup-id> <canonical-id>` | Record a human-confirmed duplicate; excluded from bake/theme/narrative thereafter |
 | `wake dedup reject <seed> <id-a> <id-b>` | Record that a candidate pair is genuinely distinct, not a duplicate |
+| `wake posters candidates <seed>` | Scan for likely posters/conference-abstracts (`type: conference-abstract` or a `Poster:`/`Abstract:` title prefix) |
+| `wake posters keep <seed> <id> --reason "..."` | Record that a flagged candidate should be kept as-is, not excluded |
 | `wake exclude <seed> <id> --reason "..."` | Record an explicit, permanent exclusion; refused by theme/narrative, dropped from bake, hidden from gaps/theme-queue |
 | `wake unexclude <seed> <id> --reason "..."` | Reverse a prior exclusion |
 | `wake fill-abstract <seed> <id>` | Manually resolve one via `--from-pdf` or `--text` |

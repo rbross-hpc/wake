@@ -27,6 +27,8 @@ wake --json gaps "<seed>" [--min-cited-by N] [--no-auto-backfill-check]
 wake --json dedup candidates "<seed>" [--min-title-similarity F]
 wake --json dedup confirm "<seed>" <duplicate-id> <canonical-id> [--reason "..."]
 wake --json dedup reject "<seed>" <id-a> <id-b> [--reason "..."]
+wake --json posters candidates "<seed>"
+wake --json posters keep "<seed>" <citing-id> --reason "..."
 wake --json fetch-pdf "<seed>" <citing-id> [--force]
 wake --json fill-abstract "<seed>" <citing-id> --from-pdf PATH | --text TEXT
 wake --json evidence "<seed>" <citing-id> [--force]
@@ -71,6 +73,7 @@ back to cwd), `--verbose` (keep progress banners on stderr even under `--json`).
 |---|---|
 | [`classify.md`](classify.md) | Relationship classes, author-overlap tag |
 | [`dedup.md`](dedup.md) | `wake dedup candidates`/`confirm`/`reject`, downstream exclusion from bake/theme/narrative |
+| [`posters.md`](posters.md) | `wake posters candidates`/`keep`, surfacing poster/conference-abstract stubs for `wake exclude` |
 | [`exclude.md`](exclude.md) | `wake exclude`/`unexclude`, downstream exclusion from bake/theme/narrative/gaps/theme-queue |
 | [`pdf-acquisition.md`](pdf-acquisition.md) | The `wake fetch-pdf` source chain and fallback behavior |
 | [`evidence.md`](evidence.md) | `wake evidence`/`wake override`, the provisional → proposed → verified lifecycle, diagnosing a surprising finding |
