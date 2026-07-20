@@ -32,9 +32,10 @@ Use `--json` for everything you parse programmatically. Errors use
 exit code.
 
 For the full command list, output-file layout, environment variables, and
-the PDF-acquisition source chain, see `references/reference.md`. This file
-covers only the workflow — when to run what, and where to check in with
-the human.
+the PDF-acquisition source chain, see `references/reference.md` — an
+index into `references/*.md`, one file per workflow phase. This file
+(SKILL.md) covers only the workflow — when to run what, and where to
+check in with the human.
 
 ## The Workflow
 
@@ -112,7 +113,7 @@ wake --json classify "<seed>" --limit 10 --sort cited-by
 Show the human the classification results and a couple of justifications.
 **Ask if the relationship categories make sense** before scaling up — this
 is the cheapest point to catch a systematically wrong assumption. (See
-`references/reference.md` for the full relationship-class list and what
+`references/classify.md` for the full relationship-class list and what
 each one means.)
 
 Roughly 20% of citing works typically lack an OpenAlex abstract. `classify`
