@@ -49,6 +49,9 @@ from .seed import work_dir
 _SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 _KINDS = ("theme", "free")
 
+_REF_RE = re.compile(r"\[ref:([A-Za-z0-9_,\s]+)\]")
+_SEED_REF = "SEED"
+
 
 def _validate_slug(slug: str) -> None:
     if not _SLUG_RE.match(slug):
@@ -113,6 +116,90 @@ def _load_all_sections(seed_id: str, base: Path | None = None) -> dict[str, dict
         slug = entry.get("slug", p.stem)
         sections[slug] = entry
     return sections
+
+
+def _verified_ids(seed_id: str, base: Path | None = None) -> set[str]:
+    """The set of citing IDs currently human-verified for this seed --
+    same definition themes.py uses (`_resolve_work_status`): a work
+    counts as verified once it appears in `.overrides.jsonl`, regardless
+    of whether it went through a full evidence dossier or a plain
+    `wake override` judgment call. `classified.json`'s own
+    `verification_status` field is never updated in place and must not
+    be trusted for this check.
+    """
+    from .classify import load_classified
+    from .report import load_overrides
+
+    classified = load_classified(seed_id, base) or []
+    classified_ids = {w.get("openalex_id") for w in classified}
+    overrides = load_overrides(seed_id, base)
+    return {cid for cid in overrides if cid in classified_ids}
+
+
+def _check_packet_consistency(seed_id: str, base: Path | None = None) -> None:
+    """Guard against a corrupted/half-migrated packet before trusting any
+    reference marker in it: every citing work this seed's own bookkeeping
+    considers verified must have an actual dossier markdown file on disk
+    (the physical artifact of that verification). If any are missing,
+    the packet itself is inconsistent and no narrative built on top of it
+    can be trusted -- raise naming every offender, not just the first.
+    """
+    from .evidence import dossier_path
+
+    missing = [
+        cid for cid in sorted(_verified_ids(seed_id, base))
+        if not dossier_path(seed_id, cid, base).exists()
+    ]
+    if missing:
+        raise ValueError(
+            "Packet inconsistency: the following citing work(s) are marked "
+            "verified but have no evidence dossier on disk: "
+            f"{', '.join(missing)}. Fix the packet (e.g. re-run `wake evidence` "
+            "or `wake override`) before drafting narrative sections that cite them."
+        )
+
+
+def _parse_ref_markers(prose: str) -> list[list[str]]:
+    """Return the list of ID-lists named by each `[ref:ID,ID,...]` marker
+    in *prose*, in order of appearance. Whitespace around commas/brackets
+    is tolerated; IDs themselves are returned exactly as written (case
+    preserved) for exact-match validation against citing IDs and `SEED`.
+    """
+    markers = []
+    for m in _REF_RE.finditer(prose):
+        ids = [part.strip() for part in m.group(1).split(",") if part.strip()]
+        markers.append(ids)
+    return markers
+
+
+def _validate_ref_ids(seed_id: str, prose: str, base: Path | None = None) -> None:
+    """Validate every `[ref:...]` marker in *prose*: each named ID must be
+    either `SEED` or a citing work currently human-verified for this seed
+    (see `_verified_ids`). Raises ValueError naming every invalid ID at
+    once, not one at a time.
+
+    This validates only that the referenced source is real and verified
+    -- not that it actually supports the sentence's claim, which remains
+    an agent/human judgment (a future `wake narrative section audit`
+    command is the intended place for that check, kept deliberately
+    separate from this structural validation).
+    """
+    all_ids: set[str] = set()
+    for ids in _parse_ref_markers(prose):
+        all_ids.update(ids)
+    if not all_ids:
+        return
+
+    verified = _verified_ids(seed_id, base)
+    bad = sorted(i for i in all_ids if i != _SEED_REF and i not in verified)
+    if bad:
+        raise ValueError(
+            "prose references source(s) that are not SEED and not a "
+            f"currently human-verified citing work: {', '.join(bad)}. "
+            "Every [ref:...] marker must name SEED or a citing ID that has "
+            "been through `wake evidence` + `wake override` (or a plain "
+            "`wake override`) for this seed."
+        )
 
 
 def create_outline(
@@ -227,6 +314,17 @@ def create_section(
     (loadable) but need not be confirmed yet -- that's enforced at
     `confirm_section()` time, re-checked fresh.
 
+    Prose may cite its sources with `[ref:ID,ID,...]` markers, where each
+    ID is `SEED` or a citing work's OpenAlex ID. Every marker is validated
+    against the packet: first a consistency pass (every citing work this
+    seed's bookkeeping calls verified must have a dossier file on disk --
+    a corrupted packet is refused outright, not just the specific claim),
+    then each named ID must resolve to `SEED` or a currently
+    human-verified citing work. This guarantees every reference in the
+    stitched narrative points at a real, human-checked source -- it does
+    not guarantee the source actually supports the sentence, which stays
+    an agent/human judgment.
+
     Always overwrites (no --force: nothing expensive to protect against
     re-doing -- same rationale as `wake theme create`).
     """
@@ -248,6 +346,9 @@ def create_section(
                 f"Section {slug!r} references theme(s) that don't exist yet: "
                 f"{', '.join(missing)}. Run `wake theme create` first."
             )
+
+    _check_packet_consistency(seed_id, base)
+    _validate_ref_ids(seed_id, prose, base)
 
     existing = load_section(seed_id, slug, base)
     created_at = existing.get("created_at") if existing else now_iso()
@@ -346,6 +447,79 @@ def confirm_section(
     }
 
 
+def _work_metadata_for_ref(ref_id: str, seed_work: dict[str, Any], base: Path | None = None) -> dict[str, Any] | None:
+    """Bibliographic fields for one reference ID, for the Chicago-style
+    entry: SEED resolves to the seed work itself; any other ID resolves
+    to its entry in classified.json (the only place wake persists a
+    citing work's authors/year/venue/DOI)."""
+    if ref_id == _SEED_REF:
+        return seed_work
+
+    from .classify import load_classified
+
+    seed_id = seed_work["openalex_id"]
+    classified = load_classified(seed_id, base) or []
+    for w in classified:
+        if w.get("openalex_id") == ref_id:
+            return w
+    return None
+
+
+def _chicago_entry(work: dict[str, Any] | None, ref_id: str) -> str:
+    """One Chicago author-date-style reference-list entry. Missing fields
+    (venue, DOI) are omitted cleanly rather than rendered as blanks.
+    wake has no persisted OSTI identifier for any citing work (OSTI is
+    used only transiently, as one candidate PDF source), so no OSTI
+    suffix is ever rendered here."""
+    if work is None:
+        return f"*{ref_id}: no bibliographic record found in classified.json.*"
+
+    authors = work.get("authors") or []
+    if not authors:
+        author_str = ""
+    elif len(authors) == 1:
+        author_str = authors[0]
+    elif len(authors) == 2:
+        author_str = f"{authors[0]} and {authors[1]}"
+    else:
+        author_str = ", ".join(authors[:-1]) + f", and {authors[-1]}"
+
+    year = work.get("year")
+    title = work.get("title") or "(untitled)"
+    venue = work.get("venue")
+    doi = work.get("doi")
+
+    parts: list[str] = []
+    if author_str:
+        parts.append(f"{author_str}.")
+    if year:
+        parts.append(f"{year}.")
+    parts.append(f'"{title}."')
+    if venue:
+        parts.append(f"{venue}.")
+    if doi:
+        doi_url = doi if doi.startswith("http") else f"https://doi.org/{doi}"
+        parts.append(f"DOI: [{doi}]({doi_url}).")
+
+    return " ".join(parts)
+
+
+def _render_refs_in_prose(prose: str, ref_numbers: dict[str, int]) -> str:
+    """Rewrite every `[ref:ID,ID,...]` marker in *prose* into
+    `[R<n>]`/`[R<n>, R<m>]` linked to that reference's entry in the
+    References section, using the already-assigned *ref_numbers* map.
+    Each `R<n>` is individually linked; a multi-ID marker is rendered as
+    several comma-separated links rather than nested inside one extra
+    pair of brackets."""
+
+    def _replace(m: re.Match) -> str:
+        ids = [part.strip() for part in m.group(1).split(",") if part.strip()]
+        links = [f"[R{ref_numbers[i]}](#r{ref_numbers[i]})" for i in ids if i in ref_numbers]
+        return ", ".join(links)
+
+    return _REF_RE.sub(_replace, prose)
+
+
 def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, Any]:
     """Assemble the outline order + every drafted section into one
     top-level `wake-out/<seed>/narrative.md`. Always runs, even on
@@ -354,6 +528,14 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
     output always clearly labels each section as confirmed prose,
     still-draft prose (shown but flagged), or not yet written at all,
     rather than silently omitting or overstating what's actually there.
+
+    Every `[ref:ID,...]` marker across the whole document is renumbered
+    to `[R1]`, `[R2]`, ... in reading (outline) order, stable across
+    reuse -- the same source cited in two different sections keeps one
+    number -- and a Chicago-style "## References" section is appended,
+    one entry per distinct ID, in R-order. This renumbering only happens
+    here, once the whole document is available; the raw `[ref:...]`
+    marker form is preserved in each section's own .json/.md.
 
     Raises ValueError if no outline has been created yet.
     """
@@ -369,6 +551,16 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
     confirmed_count = sum(1 for s in sections.values() if s.get("section_status") == "confirmed")
     draft_count = sum(1 for s in sections.values() if s.get("section_status") == "draft")
     missing = [c["slug"] for c in outline["components"] if c["slug"] not in sections]
+
+    ref_numbers: dict[str, int] = {}
+    for component in outline["components"]:
+        section = sections.get(component["slug"])
+        if section is None:
+            continue
+        for ids in _parse_ref_markers(section.get("prose", "")):
+            for ref_id in ids:
+                if ref_id not in ref_numbers:
+                    ref_numbers[ref_id] = len(ref_numbers) + 1
 
     lines: list[str] = []
     title = seed_work.get("title") or seed_id
@@ -397,8 +589,16 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
             if status != "confirmed":
                 lines.append("**⚠ DRAFT — not yet human-confirmed.**")
                 lines.append("")
-            lines.append(section["prose"])
+            lines.append(_render_refs_in_prose(section["prose"], ref_numbers))
         lines.append("")
+
+    if ref_numbers:
+        lines.append("## References")
+        lines.append("")
+        for ref_id, n in sorted(ref_numbers.items(), key=lambda kv: kv[1]):
+            work = _work_metadata_for_ref(ref_id, seed_work, base)
+            lines.append(f'<a name="r{n}"></a>{n}. {_chicago_entry(work, ref_id)}')
+            lines.append("")
 
     md_path = narrative_md_path(seed_id, base)
     atomic_write_text(md_path, "\n".join(lines))
@@ -409,6 +609,7 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
         "confirmed_sections": confirmed_count,
         "draft_sections": draft_count,
         "missing_sections": missing,
+        "reference_count": len(ref_numbers),
     }
 
 

@@ -379,12 +379,25 @@ theme(s)/dossiers yourself:
 ```bash
 wake narrative section create <seed> earth-adoption \
   --title "Adoption in Earth System Modeling" \
-  --prose "<the paragraph you write, grounded in the theme's confirmed findings>" \
+  --prose "<the paragraph you write, grounded in the theme's confirmed findings, each factual sentence ending with [ref:ID,ID,...]>" \
   --theme-slugs earth-system-modeling
 ```
 
 Like `wake theme create`, this is a pure write primitive — no LLM call.
-Every section starts `draft`; promote it after human sign-off:
+Every section starts `draft`.
+
+End every factual sentence with a `[ref:ID,...]` marker naming its
+source(s) — `SEED` for the seed paper, or a citing work's OpenAlex ID.
+`wake` refuses the whole call if any marker names an ID that isn't
+`SEED` or isn't currently human-verified for this seed, and refuses
+outright if the packet itself is inconsistent (a work `.overrides.jsonl`
+calls verified but has no dossier file on disk). This guarantees every
+citation points at a real, checked source — it does not, by itself,
+guarantee the source actually supports that sentence, which stays a
+judgment call for you and the human. Framing sentences with no factual
+content don't need a marker.
+
+Promote a section after human sign-off:
 
 ```bash
 wake narrative section confirm <seed> earth-adoption
@@ -413,6 +426,13 @@ sections are shown with a `⚠ DRAFT` banner rather than presented as
 final. A top-of-file note flags the whole document as a "Partial
 narrative" whenever anything is missing or still draft, so a partially
 assembled file is never mistaken for a finished one.
+
+Stitching also renumbers every `[ref:ID,...]` marker into `[R1]`, `[R2]`,
+... in reading order (the same source cited twice keeps one number), and
+appends a Chicago-style `## References` list at the bottom — one entry
+per distinct source, with a DOI link where available. This renumbering
+only happens at stitch time, once the whole document exists; every
+per-section preview file keeps the raw `[ref:...]` form.
 
 ### Inspecting what the model actually read
 

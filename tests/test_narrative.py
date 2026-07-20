@@ -466,3 +466,259 @@ def test_stitch_preserves_outline_order(tmp_path):
     result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
     text = Path(result["narrative_path"]).read_text()
     assert text.index("Z Comes First") < text.index("A Comes Second")
+
+
+# --- reference markers: packet consistency & per-marker validation ------
+
+def test_create_section_packet_consistency_pass_rejects_missing_dossier(tmp_path):
+    """If .overrides.jsonl calls a work verified but its dossier file is
+    missing on disk, the packet is inconsistent -- refuse before even
+    looking at this section's own markers."""
+    works = _seed_classified(tmp_path, 1)
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], works[0]["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    # No dossier was ever built for this work -- packet is inconsistent.
+    with pytest.raises(ValueError, match="Packet inconsistency"):
+        narrative.create_section(
+            PARALLEL_NETCDF_WORK, "s1", title="S", prose="No refs here at all.", base=tmp_path,
+        )
+
+
+def test_create_section_accepts_valid_seed_ref(tmp_path):
+    result = narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="S",
+        prose="PnetCDF was introduced in 2003. [ref:SEED]", base=tmp_path,
+    )
+    assert result["ok"] is True
+
+
+def test_create_section_accepts_valid_verified_work_ref(tmp_path):
+    works = _seed_classified(tmp_path, 1)
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], works[0]["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    result = narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="S",
+        prose=f"This work extends PnetCDF. [ref:{works[0]['openalex_id']}]", base=tmp_path,
+    )
+    assert result["ok"] is True
+
+
+def test_create_section_accepts_multi_id_marker(tmp_path):
+    works = _seed_classified(tmp_path, 2)
+    for w in works:
+        _build_dossier_for(tmp_path, w, pdf_name=f"{w['openalex_id']}.pdf")
+        add_override(
+            PARALLEL_NETCDF_WORK["openalex_id"], w["openalex_id"],
+            relationship="extends", justification="accepted", base=tmp_path,
+            verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+        )
+    ids = ",".join(w["openalex_id"] for w in works)
+    result = narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="S",
+        prose=f"Both works extend PnetCDF. [ref:{ids}]", base=tmp_path,
+    )
+    assert result["ok"] is True
+
+
+def test_create_section_rejects_unknown_ref_id(tmp_path):
+    with pytest.raises(ValueError, match="W9999999999"):
+        narrative.create_section(
+            PARALLEL_NETCDF_WORK, "s1", title="S",
+            prose="Some claim. [ref:W9999999999]", base=tmp_path,
+        )
+
+
+def test_create_section_rejects_unverified_ref_id(tmp_path):
+    """A work that's classified but never overridden/verified is not a
+    valid reference, even though it's a real citing work in this packet."""
+    works = _seed_classified(tmp_path, 1)
+    with pytest.raises(ValueError, match=works[0]["openalex_id"]):
+        narrative.create_section(
+            PARALLEL_NETCDF_WORK, "s1", title="S",
+            prose=f"Some claim. [ref:{works[0]['openalex_id']}]", base=tmp_path,
+        )
+
+
+def test_create_section_rejects_dossier_only_unoverridden_ref_id(tmp_path):
+    """A dossier exists (proposed, LLM-verified) but no human override was
+    ever recorded -- themes.py's own status model calls this "proposed",
+    not "verified", and narrative refs use the same bar."""
+    works = _seed_classified(tmp_path, 1)
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    with pytest.raises(ValueError, match=works[0]["openalex_id"]):
+        narrative.create_section(
+            PARALLEL_NETCDF_WORK, "s1", title="S",
+            prose=f"Some claim. [ref:{works[0]['openalex_id']}]", base=tmp_path,
+        )
+
+
+def test_create_section_reports_all_bad_ids_together(tmp_path):
+    with pytest.raises(ValueError, match=r"W9999999999.*W8888888888|W8888888888.*W9999999999"):
+        narrative.create_section(
+            PARALLEL_NETCDF_WORK, "s1", title="S",
+            prose="Some claim. [ref:W9999999999] Another. [ref:W8888888888]", base=tmp_path,
+        )
+
+
+def test_create_section_no_markers_still_works(tmp_path):
+    """Framing prose with no factual claim needs no markers at all."""
+    result = narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="S", prose="This paper set the stage for what followed.",
+        base=tmp_path,
+    )
+    assert result["ok"] is True
+
+
+# --- stitch: R-numbering and Chicago references -------------------------
+
+def test_stitch_renumbers_refs_and_builds_reference_list(tmp_path):
+    works = _seed_classified(tmp_path, 1)
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], works[0]["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    cid = works[0]["openalex_id"]
+
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "s1", "title": "Section One", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One",
+        prose=f"PnetCDF was introduced in 2003. [ref:SEED] This work extends it. [ref:{cid}]",
+        base=tmp_path,
+    )
+    narrative.confirm_section(PARALLEL_NETCDF_WORK, "s1", base=tmp_path)
+
+    result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    assert result["reference_count"] == 2
+
+    text = Path(result["narrative_path"]).read_text()
+    assert "[ref:" not in text
+    assert "[R1]" in text
+    assert "[R2]" in text
+    assert "## References" in text
+    assert "1. " in text
+    assert "2. " in text
+    # SEED's own bibliographic fields (from PARALLEL_NETCDF_WORK) show up.
+    assert PARALLEL_NETCDF_WORK["doi"] in text
+    assert works[0]["doi"] in text
+
+
+def test_stitch_ref_numbers_are_stable_across_reuse(tmp_path):
+    """The same source cited in two different sections keeps one number,
+    assigned on its first appearance in outline order."""
+    works = _seed_classified(tmp_path, 2)
+    for w in works:
+        _build_dossier_for(tmp_path, w, pdf_name=f"{w['openalex_id']}.pdf")
+        add_override(
+            PARALLEL_NETCDF_WORK["openalex_id"], w["openalex_id"],
+            relationship="extends", justification="accepted", base=tmp_path,
+            verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+        )
+    cid0, cid1 = works[0]["openalex_id"], works[1]["openalex_id"]
+
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[
+            {"slug": "s1", "title": "Section One", "kind": "free"},
+            {"slug": "s2", "title": "Section Two", "kind": "free"},
+        ],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One",
+        prose=f"First mention. [ref:{cid0}]", base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s2", title="Section Two",
+        prose=f"Second mention, same source again. [ref:{cid0}] And a new one. [ref:{cid1}]",
+        base=tmp_path,
+    )
+    result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    assert result["reference_count"] == 2
+
+    text = Path(result["narrative_path"]).read_text()
+    # cid0 got R1 (first section, first appearance); reused unchanged in
+    # section two; cid1 got R2 (first appears in section two).
+    assert "First mention. [R1](#r1)" in text
+    assert "same source again. [R1](#r1)" in text
+    assert "a new one. [R2](#r2)" in text
+
+
+def test_stitch_multi_id_marker_renders_multiple_ref_links(tmp_path):
+    works = _seed_classified(tmp_path, 2)
+    for w in works:
+        _build_dossier_for(tmp_path, w, pdf_name=f"{w['openalex_id']}.pdf")
+        add_override(
+            PARALLEL_NETCDF_WORK["openalex_id"], w["openalex_id"],
+            relationship="extends", justification="accepted", base=tmp_path,
+            verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+        )
+    ids = ",".join(w["openalex_id"] for w in works)
+
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "s1", "title": "Section One", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One",
+        prose=f"Both works agree. [ref:{ids}]", base=tmp_path,
+    )
+    result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = Path(result["narrative_path"]).read_text()
+    assert "[R1](#r1), [R2](#r2)" in text
+
+
+def test_stitch_no_references_section_when_no_markers_used(tmp_path):
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "s1", "title": "Section One", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One", prose="No sources here.", base=tmp_path,
+    )
+    result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    assert result["reference_count"] == 0
+    text = Path(result["narrative_path"]).read_text()
+    assert "## References" not in text
+
+
+def test_stitch_reference_entry_omits_missing_doi_cleanly(tmp_path):
+    """SAMPLE_CITING_WORKS[2] has doi=None -- the Chicago entry should
+    simply skip the DOI clause rather than render a broken link."""
+    works = [_classified_work(2)]
+    save_classified(PARALLEL_NETCDF_WORK["openalex_id"], works, base=tmp_path)
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], works[0]["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    cid = works[0]["openalex_id"]
+
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "s1", "title": "Section One", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One",
+        prose=f"A survey paper. [ref:{cid}]", base=tmp_path,
+    )
+    result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = Path(result["narrative_path"]).read_text()
+    assert "DOI:" not in text
+    assert works[0]["title"] in text
