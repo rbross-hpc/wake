@@ -38,6 +38,8 @@ wake --json narrative section confirm "<seed>" <slug>
 wake --json narrative section show "<seed>" <slug>
 wake --json narrative stitch "<seed>"
 wake --json narrative show "<seed>"
+wake --json narrative refs-check export "<seed>"
+wake --json narrative refs-check summarize "<seed>" <results.json>
 wake --json bake "<seed>"
 wake --json override "<seed>" <citing-id> --relationship <class> --justification "..." [--verification-source human-judgment|evidence-dossier]
 

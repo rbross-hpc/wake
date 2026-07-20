@@ -410,6 +410,27 @@ This step is optional — only draft a narrative once the underlying
 themes are solid; a narrative built on shaky, unconfirmed themes will
 just need to be redone.
 
+**Optional follow-up: verify the References list against live scholarly
+databases** using the external `ref-checker` tool
+(https://github.com/rbross-hpc/ref-checker). This checks the
+bibliographic details themselves (author spelling, year, DOI), which is
+a different question from what `[ref:...]` validation already
+guarantees (that the source is real and human-verified for this seed —
+see `references/narrative.md`). wake never runs `ref-checker` itself:
+
+```bash
+wake --json narrative refs-check export "<seed>"
+pipx install git+https://github.com/rbross-hpc/ref-checker.git   # once per environment
+ref-checker check --refs-json wake-out/<seed>/narrative/refs.json \
+  --results-json wake-out/<seed>/narrative/refs.results.json
+wake --json narrative refs-check summarize "<seed>" wake-out/<seed>/narrative/refs.results.json
+```
+
+Report any flagged entries to the human — a `CLOSEST`/`NO MATCH` status,
+or even an `OK` match carrying a year-mismatch or dead-URL note — and
+let them decide whether to fix the citing work's metadata or accept it
+as a known limitation.
+
 ### 12. Refine
 
 If the human disagrees with a specific classification (with or without a

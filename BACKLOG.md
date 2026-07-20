@@ -617,20 +617,30 @@ and held separately rather than sequenced here.
    `references/output-layout.md` for the full directory tree. Agent-
    facing files (SKILL.md, the skill's own `references/`) untouched by
    this split — they serve a different reader. No behavior change.
-7. **`wake narrative refs-check <seed>` — verify the stitched
-   narrative's References section with the external `ref-checker` tool**
+7. ~~**`wake narrative refs-check` — verify the stitched narrative's
+   References list with the external `ref-checker` tool**~~ — BUILT
    (https://github.com/rbross-hpc/ref-checker). Distinct from the
    already-noted "claim-vs-source semantic audit" deferred item under
    Theme F1/F3 — this checks that the *bibliographic entries themselves*
    (authors, year, title, DOI) are correct and resolvable, not whether a
-   sentence's claim is actually supported by its source. Shape: export
-   the References section to a `refs.json` matching ref-checker's
-   expected input, install ref-checker if not already present, run
-   `ref-checker check --refs-json <refs> --results-json <output>` as a
-   subprocess, parse the results and surface any discrepancies to the
-   human. Human decides how to resolve flagged entries (fix the citing
-   work's metadata upstream, or accept as a known limitation). Exact
-   JSON shape TBD from ref-checker's own docs at implementation time.
+   sentence's claim is actually supported by its source. Two
+   subcommands bookend an agent-run `ref-checker check` call, same
+   "wake never orchestrates external tools, it validates its own
+   inputs/outputs" rule as everywhere else: `wake narrative refs-check
+   export <seed>` writes `narrative/refs.json` in ref-checker's expected
+   bare-array shape, numbered identically to `narrative.md`'s
+   `[R1]`/`[R2]`/... so a flagged index always maps back to the same
+   reference the human sees in the document; `wake narrative refs-check
+   summarize <seed> <results.json>` parses ref-checker's schema_version-3
+   results sidecar into a clean-OK count and a flagged list. Flagged
+   includes not just `CLOSEST`/`NO MATCH` but also an identifier-
+   confirmed `OK` match that still carries a note (year mismatch,
+   DOI-title divergence, dead URL, exhausted retries) — the match being
+   confirmed doesn't mean every detail about it is trustworthy. 10 new
+   tests. Live-validated against the real Parallel netCDF narrative's
+   19-entry reference list end to end (wake export → real `ref-checker
+   check` subprocess → wake summarize): all 19 resolved `OK` with title
+   similarity 1.00 against OpenAlex, 0 flagged.
 8. **`wake dedup <seed>` — surface likely-duplicate citing works for
    human sign-off.** Covers all three duplicate shapes seen or expected:
    preprint vs. published version (2 caught by hand this session via
