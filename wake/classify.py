@@ -108,17 +108,49 @@ def _model() -> str:
 
 
 def _sidecar_dir(openalex_id: str, base: Path | None = None) -> Path:
+    return work_dir(openalex_id, base) / "classify"
+
+
+def _legacy_sidecar_dir(openalex_id: str, base: Path | None = None) -> Path:
+    """Pre-rename dotfile location. Kept only for one release's worth of
+    read-compat with packets built before the rename (a working directory
+    the human is explicitly expected to inspect shouldn't hide its
+    per-work classification sidecars behind a dotfile convention meant
+    for user-home/config directories); see
+    `_migrate_legacy_sidecar_dir_if_needed`."""
     return work_dir(openalex_id, base) / ".classify"
+
+
+def _migrate_legacy_sidecar_dir_if_needed(seed_id: str, base: Path | None = None) -> None:
+    """Rename `.classify/` -> `classify/` in place the first time this
+    seed's sidecars are written to after the rename. No-op if the
+    new-named directory already exists (never overwrites/merges) or if
+    there's nothing to migrate."""
+    new_dir = _sidecar_dir(seed_id, base)
+    old_dir = _legacy_sidecar_dir(seed_id, base)
+    if old_dir.exists() and not new_dir.exists():
+        old_dir.rename(new_dir)
 
 
 def _sidecar_path(seed_id: str, citing_id: str, base: Path | None = None) -> Path:
     return _sidecar_dir(seed_id, base) / f"{citing_id}.json"
 
 
+def _legacy_sidecar_path(seed_id: str, citing_id: str, base: Path | None = None) -> Path:
+    return _legacy_sidecar_dir(seed_id, base) / f"{citing_id}.json"
+
+
 def _load_sidecar(seed_id: str, citing_id: str, base: Path | None = None) -> dict | None:
+    """Reads the current `classify/` location; falls back to the
+    pre-rename `.classify/` dotfile if the new directory doesn't exist
+    yet (a packet built before the rename that hasn't had a fresh
+    `wake classify` call to trigger migration). Read-only compat --
+    migration happens in `_write_sidecar`, the write path, not here."""
     p = _sidecar_path(seed_id, citing_id, base)
     if not p.exists():
-        return None
+        p = _legacy_sidecar_path(seed_id, citing_id, base)
+        if not p.exists():
+            return None
     try:
         return read_json(p)
     except (json.JSONDecodeError, OSError):
@@ -126,6 +158,7 @@ def _load_sidecar(seed_id: str, citing_id: str, base: Path | None = None) -> dic
 
 
 def _write_sidecar(seed_id: str, citing_id: str, result: dict, base: Path | None = None) -> None:
+    _migrate_legacy_sidecar_dir_if_needed(seed_id, base)
     p = _sidecar_path(seed_id, citing_id, base)
     p.parent.mkdir(parents=True, exist_ok=True)
     atomic_write_json(p, result)

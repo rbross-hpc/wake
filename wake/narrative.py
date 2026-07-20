@@ -121,7 +121,7 @@ def _load_all_sections(seed_id: str, base: Path | None = None) -> dict[str, dict
 def _verified_ids(seed_id: str, base: Path | None = None) -> set[str]:
     """The set of citing IDs currently human-verified for this seed --
     same definition themes.py uses (`_resolve_work_status`): a work
-    counts as verified once it appears in `.overrides.jsonl`, regardless
+    counts as verified once it appears in `overrides.jsonl`, regardless
     of whether it went through a full evidence dossier or a plain
     `wake override` judgment call. `classified.json`'s own
     `verification_status` field is never updated in place and must not
