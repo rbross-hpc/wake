@@ -536,6 +536,20 @@ wake --json override "<seed>" <citing-openalex-id> --relationship extends --just
 (`wake --json bake "<seed>"`) — overrides always win over the LLM
 classification and are marked `[VERIFIED via ...]` in the brief.
 
+**If you (the agent) ever verify a work by mistake** — e.g. misreading a
+bulk go-ahead and running `override` on works the human never actually
+reviewed — undo it explicitly rather than leaving a false verification
+in place:
+```bash
+wake --json unverify "<seed>" <citing-id> --reason "..."
+```
+If the mistake affected a whole run of works at once, use the batch
+form instead of calling this one at a time: `wake --json unverify
+"<seed>" --since <timestamp> --reason "..."` or `--last N --reason
+"..."`. This is a real recovery action, not a cleanup nicety — a work
+left falsely `verified` can end up cited in a theme or narrative
+section as if a human had actually signed off on it.
+
 ## Principles for Agents
 
 1. **Never jump straight to full classification.** Sample first, check with

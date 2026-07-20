@@ -84,6 +84,7 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake narrative refs-check summarize <seed> <results.json>` | Summarize a `ref-checker` results sidecar into OK/flagged counts |
 | `wake bake <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
 | `wake override <seed> <id>` | Record a human-reviewed relationship correction (`--verification-source human-judgment\|evidence-dossier`) |
+| `wake unverify <seed> <id> --reason "..."` | Reverse a mistaken verification; also `--since <timestamp>`/`--last N` for batch recovery |
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |
 | `wake show brief <seed>` | Print cached impact.md |
 | `wake show metrics <seed>` | Print cached impact.json |

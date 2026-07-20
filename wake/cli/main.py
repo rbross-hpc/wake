@@ -52,6 +52,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_override_parser(sub)
     _build_exclude_parser(sub)
     _build_unexclude_parser(sub)
+    _build_unverify_parser(sub)
     _build_cost_parser(sub)
     _build_show_parser(sub)
     _build_config_parser(sub)
@@ -470,6 +471,32 @@ def _build_unexclude_parser(sub) -> None:
     p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     p.add_argument("citing_id", help="OpenAlex ID of the citing work to un-exclude.")
     p.add_argument("--reason", required=True, help="Justification for reversing the exclusion (required).")
+
+
+def _build_unverify_parser(sub) -> None:
+    p = sub.add_parser(
+        "unverify",
+        help="Reverse a mistaken verification -- a separate, explicit action with its "
+             "own justification, never an implicit side effect of another command. "
+             "Removes the citing work's overrides.jsonl entry entirely and, if an "
+             "evidence dossier exists, patches it back to pending-human-review.",
+    )
+    p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    p.add_argument("citing_id", nargs="?", default=None,
+                   help="OpenAlex ID of the citing work to un-verify. Omit when using "
+                        "--since/--last for batch recovery.")
+    batch = p.add_mutually_exclusive_group()
+    batch.add_argument(
+        "--since", metavar="TIMESTAMP",
+        help="Batch recovery: un-verify every override recorded at or after this "
+             "ISO-8601 timestamp, instead of one citing_id.",
+    )
+    batch.add_argument(
+        "--last", type=int, metavar="N",
+        help="Batch recovery: un-verify the N most-recently-recorded overrides, "
+             "instead of one citing_id.",
+    )
+    p.add_argument("--reason", default="", help="Justification for reversing the verification.")
 
 
 def _build_cost_parser(sub) -> None:
@@ -1444,6 +1471,57 @@ def run_unexclude(args) -> None:
     emit("unexclude", result, as_json=args.json_out, human=human)
 
 
+def run_unverify(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..unverify import unverify_batch, unverify_work
+    base = _work_dir_base(args)
+
+    if args.since is not None or args.last is not None:
+        if args.citing_id is not None:
+            emit_error(
+                "unverify", ValueError("Cannot give both citing_id and --since/--last."),
+                as_json=args.json_out,
+            )
+            sys.exit(1)
+        try:
+            result = unverify_batch(
+                work, since=args.since, last=args.last, reason=args.reason, base=base,
+            )
+        except ValueError as exc:
+            emit_error("unverify", exc, as_json=args.json_out)
+            sys.exit(1)
+
+        def human_batch(d):
+            if d["count"] == 0:
+                print("No overrides matched -- nothing to un-verify.")
+                return
+            print(f"Un-verified {d['count']} citing work(s):")
+            for r in d["reverted"]:
+                print(f"  {r['citing_id']}")
+
+        emit("unverify", result, as_json=args.json_out, human=human_batch)
+        return
+
+    if args.citing_id is None:
+        emit_error(
+            "unverify", ValueError("Must give either citing_id or --since/--last."),
+            as_json=args.json_out,
+        )
+        sys.exit(1)
+
+    try:
+        result = unverify_work(work, args.citing_id, reason=args.reason, base=base)
+    except ValueError as exc:
+        emit_error("unverify", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        print(f"Un-verified: {d['citing_id']}" + (f" — {d['reason']}" if d["reason"] else ""))
+        print("  No longer counted as verified in theme/narrative/bake.")
+
+    emit("unverify", result, as_json=args.json_out, human=human)
+
+
 def run_cost(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
     from .. import cost as cost_mod
@@ -1612,6 +1690,8 @@ def main() -> None:
             run_exclude(args)
         elif args.command == "unexclude":
             run_unexclude(args)
+        elif args.command == "unverify":
+            run_unverify(args)
         elif args.command == "cost":
             run_cost(args)
         elif args.command == "show":

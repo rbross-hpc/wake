@@ -49,6 +49,9 @@ wake --json bake "<seed>"
 wake --json override "<seed>" <citing-id> --relationship <class> --justification "..." [--verification-source human-judgment|evidence-dossier]
 wake --json exclude "<seed>" <citing-id> --reason "..." [--category not-about-seed|poster-or-abstract|irrelevant|other]
 wake --json unexclude "<seed>" <citing-id> --reason "..."
+wake --json unverify "<seed>" <citing-id> [--reason "..."]
+wake --json unverify "<seed>" --since <timestamp> [--reason "..."]   # batch recovery
+wake --json unverify "<seed>" --last N [--reason "..."]              # batch recovery
 
 # Standalone
 wake --json describe "<seed>"      # LLM contribution paragraph (independent of classify)
@@ -76,7 +79,7 @@ back to cwd), `--verbose` (keep progress banners on stderr even under `--json`).
 | [`posters.md`](posters.md) | `wake posters candidates`/`keep`, surfacing poster/conference-abstract stubs for `wake exclude` |
 | [`exclude.md`](exclude.md) | `wake exclude`/`unexclude`, downstream exclusion from bake/theme/narrative/gaps/theme-queue |
 | [`pdf-acquisition.md`](pdf-acquisition.md) | The `wake fetch-pdf` source chain and fallback behavior |
-| [`evidence.md`](evidence.md) | `wake evidence`/`wake override`, the provisional → proposed → verified lifecycle, diagnosing a surprising finding |
+| [`evidence.md`](evidence.md) | `wake evidence`/`wake override`/`wake unverify`, the provisional → proposed → verified lifecycle, diagnosing a surprising finding |
 | [`themes.md`](themes.md) | `wake theme create`/`confirm`/`queue`, draft → confirmed lifecycle |
 | [`narrative.md`](narrative.md) | `wake narrative outline`/`section`/`stitch`, inline `[ref:...]` source references, stitch-time renumbering |
 | [`output-layout.md`](output-layout.md) | Full `wake-out/<seed>/` directory tree |

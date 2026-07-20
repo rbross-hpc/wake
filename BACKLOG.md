@@ -744,16 +744,48 @@ and held separately rather than sequenced here.
     `total_citing_works` from 406 to 405 and `wake theme create`
     refused to cite it, then `wake unexclude`d it and confirmed
     `total_citing_works` was restored to 406.
-11. **`wake unverify <seed> <citing-id> [--reason "..."]` — first-class
-    undo for a mistaken verification.** This session needed exactly this
-    when an agent misread a bulk go-ahead and auto-verified 13 works;
-    recovery was a manual `.overrides.jsonl` backup-and-restore rather
-    than a real command. Add `wake unverify` to remove one entry from
-    `overrides.jsonl` and write a `verification_reverted` line to
-    `evidence/log.md` (matching the ad hoc format used during this
-    session's manual recovery) with the given reason. Batch-recovery
-    variant for exactly this failure mode: `wake unverify --since
-    <timestamp>` or `--last N`.
+11. ~~**`wake unverify <seed> <citing-id> [--reason "..."]` — first-class
+    undo for a mistaken verification.**~~ — BUILT. This session needed
+    exactly this when an agent misread a bulk go-ahead and auto-verified
+    13 works; recovery was a manual `.overrides.jsonl` backup-and-restore
+    rather than a real command. New `report.remove_override()` rewrites
+    `overrides.jsonl` with every entry for the citing ID removed (unlike
+    `exclude`/`dedup`'s reversal pattern, there's no "unverified" entry
+    shape to append -- the only way a work stops being verified is to
+    have no override on file at all). New `evidence_wiki.mark_pending()`
+    is the mirror image of `mark_verified()`: patches an existing dossier
+    back from `verified` to `pending-human-review`, undoing any
+    relationship correction the reverted verification made (restoring
+    `proposed.relationship`/`justification` to the model's own original
+    reading, removing `human_verification` entirely). New
+    `wake/unverify.py` ties both together plus a `verification_reverted`
+    line written to `evidence/log.md` (matching the exact ad hoc format
+    used during this session's manual recovery) and an `evidence/
+    index.md` rebuild so the work moves back to Pending Review. CLI:
+    `wake unverify <seed> <citing-id> [--reason "..."]`, plus the
+    batch-recovery variant for exactly this failure mode: `wake unverify
+    <seed> --since <timestamp> [--reason "..."]` or `--last N [--reason
+    "..."]` (mutually exclusive with each other and with a citing-id
+    positional). Works for both a plain human-judgment override (no
+    dossier, just removes the `overrides.jsonl` entry) and an
+    evidence-dossier-backed one (also reverts the dossier). 17 new tests
+    in `test_unverify.py`. Docs: new "Undoing a mistaken verification"
+    section in `wake/skills/impact-analysis/references/evidence.md`,
+    reference.md command list, SKILL.md's Refine step, `docs/
+    workflow.md` command table, `docs/evidence.md`. Live-validated
+    against the real Parallel netCDF dry-run packet: found a real
+    verified-but-unused work (`W4386771176`) with a dossier not cited in
+    any theme or narrative section, confirmed `wake unverify` reverted
+    its dossier to `pending-human-review` and dropped it from
+    `overrides.jsonl` (also triggering the still-pending
+    `.overrides.jsonl` → `overrides.jsonl` migration from item 2, since
+    this packet had never had a fresh `wake override`/`wake unverify`
+    call since that rename), confirmed `wake bake` no longer counted it
+    as verified, then re-verified it via a fresh `wake override
+    --verification-source evidence-dossier` call and confirmed the
+    packet was restored to its original state (`impact.json`'s
+    `total_citing_works` unchanged at 406 throughout, since verification
+    status doesn't affect that count -- only bake's evidence tagging).
 
 **Deferred, not sequenced into the batch above (still real, still
 wanted, just not next):**

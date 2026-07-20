@@ -62,6 +62,39 @@ is a new finding, not a continuation of the old sign-off.
 Errors (exit 1) with a message naming `wake evidence "<seed>" <citing-id>`
 if no dossier exists yet.
 
+## Undoing a mistaken verification (`wake unverify`)
+
+`wake unverify "<seed>" <citing-id> [--reason "..."]` response shape:
+```json
+{"ok": true, "data": {"ok": true, "citing_id": "W111", "reason": "...", "had_dossier": true, "reverted_at": "..."}}
+```
+Reverses a verification a human never actually reviewed/accepted (e.g.
+an agent misreading a bulk go-ahead and auto-verifying works) -- a
+separate, explicit action with its own reason, never an implicit side
+effect of any other command. Removes the citing work's entry from
+`overrides.jsonl` entirely (there's no "unverified" override shape to
+append -- the only way a work stops being verified is to have no
+override on file at all); if an evidence dossier exists for the work,
+also patches it back from `verified` to `pending-human-review`
+(undoing any relationship correction the reverted verification made,
+restoring the dossier's `proposed` field to the model's own original
+reading), writes a `verification_reverted` line to `evidence/log.md`,
+and regenerates `evidence/index.md` so the work moves back to Pending
+Review. Raises an error if `citing_id` was never verified in the first
+place (nothing to undo).
+
+Batch-recovery variant for exactly the failure mode this exists for --
+an agent auto-verifies a run of works it shouldn't have:
+```bash
+wake unverify "<seed>" --since <ISO-8601 timestamp> --reason "..."
+wake unverify "<seed>" --last N --reason "..."
+```
+Exactly one of `--since`/`--last` (mutually exclusive with a `citing-id`
+positional and with each other) — `--since` reverts every override
+recorded at or after that timestamp, `--last N` reverts the N
+most-recently-recorded overrides. Response shape: `{"ok": true, "count":
+N, "reverted": [{"ok": true, "citing_id": "...", ...}, ...]}`.
+
 ## Diagnosing a surprising finding: check the extraction first
 
 `extracted_text_path` (also linked from the dossier's "Source" section)
