@@ -146,11 +146,15 @@ def find_gaps(
 
     manual = load_manual_abstracts(seed_id, base) if seed_id else {}
 
+    from .exclude import is_excluded, load_exclusions
+    exclusions = load_exclusions(seed_id, base) if seed_id else {}
+
     candidates = [
         w for w in citing_works
         if not w.get("abstract")
         and w.get("openalex_id") not in manual
         and (w.get("cited_by_count") or 0) >= min_cited_by_count
+        and not is_excluded(w.get("openalex_id"), exclusions)
     ]
     candidates.sort(key=lambda w: -(w.get("cited_by_count") or 0))
 

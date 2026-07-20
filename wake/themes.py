@@ -134,6 +134,7 @@ def create_theme(
     """
     from .classify import load_classified
     from .dedup import load_duplicates
+    from .exclude import is_excluded, load_exclusions
     from .report import load_overrides
 
     _validate_slug(slug)
@@ -151,6 +152,15 @@ def create_theme(
         raise ValueError(
             f"citing_ids includes confirmed duplicate(s): {pointers}. "
             "Cite the canonical work instead of a work confirmed to be its duplicate."
+        )
+
+    exclusions = load_exclusions(seed_id, base)
+    excluded = [cid for cid in citing_ids if is_excluded(cid, exclusions)]
+    if excluded:
+        raise ValueError(
+            f"citing_ids includes excluded work(s): {', '.join(excluded)}. "
+            "An excluded work has been judged not actually about the seed and "
+            "cannot be cited in a theme -- run `wake unexclude` first if this was a mistake."
         )
 
     classified = load_classified(seed_id, base) or []
@@ -301,10 +311,20 @@ def list_theme_needs_evidence(seed_id: str, base: Path | None = None) -> list[di
         silently upgraded.
 
     Each entry: {theme_slug, citing_id, status}
+
+    A citing work excluded (see `exclude.py`) *after* being added to a
+    theme's `needs_evidence` list is skipped here -- an excluded work
+    should never be surfaced as something still worth chasing evidence
+    for, even if `create_theme()` already refuses to add a new excluded
+    work going forward.
     """
+    from .exclude import is_excluded, load_exclusions
+
     wd = themes_dir(seed_id, base)
     if not wd.exists():
         return []
+
+    exclusions = load_exclusions(seed_id, base)
 
     entries: list[dict[str, Any]] = []
     for p in sorted(wd.glob("*.json")):
@@ -314,6 +334,8 @@ def list_theme_needs_evidence(seed_id: str, base: Path | None = None) -> list[di
             continue
         slug = theme.get("slug", p.stem)
         for cid in theme.get("needs_evidence", []):
+            if is_excluded(cid, exclusions):
+                continue
             has_dossier = dossier_json_path(seed_id, cid, base).exists()
             status = "dossier-available-unreviewed" if has_dossier else "needs-evidence"
             entries.append({"theme_slug": slug, "citing_id": cid, "status": status})

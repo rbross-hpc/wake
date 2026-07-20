@@ -686,18 +686,35 @@ and held separately rather than sequenced here.
    human to remember to ask — same one-at-a-time confirmation pattern as
    dedup and the same downstream effect as `wake exclude` (below) once a
    human confirms.
-10. **`wake exclude <seed> <citing-id> --reason "..."` — first-class
-    exclude state.** Today, a citing work judged not actually about the
-    seed (e.g. background-mention where the seed appears only in a
-    bibliography) still just sits as a low-relevance `verified` work —
-    nothing stops a future theme or narrative section from citing it.
-    An explicit, permanent exclusion (with justification, recorded in
-    `evidence/log.md` like other state transitions) should make a work
-    unusable: `theme add`/`theme create` refuses to include an excluded
-    work, `wake narrative` reference validation refuses an excluded ID,
-    `wake gaps`/`wake theme queue` stop surfacing it. Undoing an exclude
-    is a separate, explicit `wake unexclude` action with its own
-    justification — never implicit.
+10. ~~**`wake exclude` — first-class exclude state.**~~ — BUILT. A citing
+    work judged not actually about the seed (e.g. background-mention
+    where the seed appears only in a bibliography) previously just sat
+    as a low-relevance `verified` work — nothing stopped a future theme
+    or narrative section from citing it. `wake exclude <seed>
+    <citing-id> --reason "..." [--category not-about-seed|poster-or-
+    abstract|irrelevant|other]` records an explicit, permanent exclusion
+    (required reason, `exclusions.jsonl`, same append-only/last-write-
+    wins shape as `overrides.jsonl`/`duplicates.jsonl`) that makes the
+    work unusable everywhere downstream: `wake theme create` refuses to
+    include it, `wake narrative` reference validation refuses it in a
+    `[ref:...]` marker (even if the work is itself independently
+    human-verified — the realistic sequence is verify-then-notice, not
+    notice-then-verify), `wake bake` drops it from reach metrics, and
+    `wake gaps`/`wake theme queue` stop surfacing it (the latter
+    computed fresh at query time, so an exclusion recorded *after* a
+    theme was created is still honored). Undoing an exclusion is a
+    separate, explicit `wake unexclude <seed> <citing-id> --reason
+    "..."` action with its own required justification — never implicit.
+    13 new tests plus downstream-exclusion coverage exercising
+    `report.bake_and_save`, `themes.create_theme`,
+    `narrative.create_section`, `gaps.find_gaps`, and
+    `themes.list_theme_needs_evidence` directly. Live-validated against
+    the real Parallel netCDF dry-run packet: excluded a real
+    verified-but-unused work (`W2138238632`, the Blue Gene/L
+    architecture paper), confirmed `wake bake` dropped
+    `total_citing_works` from 406 to 405 and `wake theme create`
+    refused to cite it, then `wake unexclude`d it and confirmed
+    `total_citing_works` was restored to 406.
 11. **`wake unverify <seed> <citing-id> [--reason "..."]` — first-class
     undo for a mistaken verification.** This session needed exactly this
     when an agent misread a bulk go-ahead and auto-verified 13 works;
