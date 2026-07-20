@@ -155,3 +155,19 @@ work (OSTI is used only transiently, as one candidate PDF-acquisition
 source, never written back into `classified.json`), so no OSTI suffix is
 ever rendered. If no section uses any `[ref:...]` marker, no References
 section is appended at all.
+
+## Show verbs: re-printing already-written artifacts
+
+Three read-only re-emit commands, each printing an existing file as-is
+with no computation (same convention as `wake show brief`/`metrics`/
+`top` for the seed-level artifacts):
+
+| Command | Prints |
+|---|---|
+| `wake narrative outline show "<seed>"` | `narrative/outline.md`, with each component's current status |
+| `wake narrative section show "<seed>" <slug>` | `narrative/sections/<slug>.md`, draft or confirmed |
+| `wake narrative show "<seed>"` | the stitched top-level `narrative.md` |
+
+All three respond `{"ok": true, "data": {"markdown": "..."}}` on success
+and error (exit 1) with a message naming the exact command to run first
+if the file doesn't exist yet.

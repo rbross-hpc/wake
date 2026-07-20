@@ -101,16 +101,21 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake theme create <seed> <slug>` | Write a combined-evidence theme doc (`--title`, `--summary`, `--citing-ids`); always draft |
 | `wake theme confirm <seed> <slug>` | Human sign-off promoting a theme to confirmed; refuses unless all cited works are verified |
 | `wake theme queue <seed>` | List theme citing-works still needing an evidence dossier, or needing re-review |
+| `wake theme show <seed> <slug>` | Print an already-written theme document |
 | `wake narrative outline create <seed>` | Plan the narrative's structure (`--components`, a JSON list) before drafting any prose |
+| `wake narrative outline show <seed>` | Print the current narrative outline |
 | `wake narrative section create <seed> <slug>` | Draft one section's prose (`--title`, `--prose`, `--theme-slugs`); always draft |
 | `wake narrative section confirm <seed> <slug>` | Human sign-off promoting a section to confirmed; refuses unless every referenced theme is currently confirmed |
+| `wake narrative section show <seed> <slug>` | Print one already-drafted section's prose |
 | `wake narrative stitch <seed>` | Assemble the outline + every section into the top-level `narrative.md`; works on partial data |
+| `wake narrative show <seed>` | Print the assembled top-level `narrative.md` |
 | `wake bake <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
 | `wake override <seed> <id>` | Record a human-reviewed relationship correction (`--verification-source human-judgment\|evidence-dossier`) |
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |
 | `wake show brief <seed>` | Print cached impact.md |
 | `wake show metrics <seed>` | Print cached impact.json |
 | `wake show top <seed>` | Top-evidence table (`-n`, default 10) |
+| `wake show dossier <seed> <id>` | Print an already-built evidence dossier for one citing work |
 | `wake config show/validate/init` | Configuration plumbing |
 | `wake skill show` | Print the bundled SKILL.md |
 | `wake skill export <path>` | Copy the skill directory to `path` (`--force` to overwrite non-empty) |
