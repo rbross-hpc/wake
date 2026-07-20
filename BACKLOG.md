@@ -641,20 +641,42 @@ and held separately rather than sequenced here.
    19-entry reference list end to end (wake export → real `ref-checker
    check` subprocess → wake summarize): all 19 resolved `OK` with title
    similarity 1.00 against OpenAlex, 0 flagged.
-8. **`wake dedup <seed>` — surface likely-duplicate citing works for
-   human sign-off.** Covers all three duplicate shapes seen or expected:
-   preprint vs. published version (2 caught by hand this session via
-   fuzzy title matching — `W4229646607`/`W2137705743` and
-   `W4251231835`/`W2153325196`, both GMDD preprints of their published
-   counterparts), workshop vs. expanded journal version, and the same
-   paper independently double-published. Heuristic: same/overlapping
-   authors + high title similarity + one side showing a
-   preprint/workshop venue signal. Never auto-merges — presents
-   candidates one at a time (same "human confirms one at a time" rule
-   used everywhere else), waits for explicit accept before recording a
-   merge decision. Downstream theme/narrative/bake views treat a
-   confirmed pair as one work under the human-designated canonical
-   version.
+8. ~~**`wake dedup` — surface likely-duplicate citing works for human
+   sign-off.**~~ — BUILT. Covers all three duplicate shapes seen or
+   expected: preprint vs. published version, workshop vs. expanded
+   journal version, and the same paper independently double-published.
+   `wake dedup candidates <seed>` scans classified works for pairs with
+   both high title similarity (`similarity.title_ratio`, ≥0.85 default,
+   tunable via `--min-title-similarity`) *and* shared OpenAlex author
+   IDs — title similarity alone is deliberately insufficient (live-
+   validated: two unrelated "Reply on RC1"/"Reply on RC2" peer-review
+   threads by different single authors would otherwise generate a false
+   positive at 0.92 similarity from generic short titles). A
+   preprint/no-venue signal on one side is reported as `likely_kind`
+   but not required, so a same-title, same-author double-publication
+   with two full journal venues is still caught, just labeled
+   differently. Never auto-merges — `wake dedup confirm <seed>
+   <duplicate-id> <canonical-id>` and `wake dedup reject <seed> <id-a>
+   <id-b>` are always run by the agent one pair at a time after
+   explicit human sign-off, appending to `duplicates.jsonl`/
+   `dedup_rejected.jsonl` (same one-decision-per-line, last-write-wins
+   log shape as `overrides.jsonl`). A confirmed duplicate is excluded
+   everywhere downstream: `wake bake` drops it from reach metrics
+   (canonical work still counted once), `wake theme create` refuses to
+   cite it directly, `wake narrative` reference validation refuses it
+   in a `[ref:...]` marker too — all three point back at the canonical
+   ID instead. Duplicates are never chained (`confirm_duplicate`
+   refuses if the proposed canonical is itself already someone else's
+   duplicate). 17 new tests in `test_dedup.py`, including downstream-
+   exclusion coverage exercising `report.bake_and_save`,
+   `themes.create_theme`, and `narrative.create_section` directly.
+   Live-validated against the real Parallel netCDF dry-run packet's
+   full 408-work classified set: the heuristic found all 15 real
+   duplicate/near-duplicate pairs present in the data (including both
+   `W4229646607`/`W2137705743` and `W4251231835`/`W2153325196`, the two
+   caught by hand earlier this session, both at 1.00 similarity) with
+   zero missed hits; confirming those two dropped `wake bake`'s
+   `total_citing_works` from 408 to 406 as expected.
 9. **Posters/conference-abstracts: surface for human sign-off, same
    shape as dedup.** `type == "conference-abstract"` or a
    `Poster:`/`Abstract:` title prefix currently has to be caught and

@@ -59,6 +59,9 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake describe <seed>` | LLM one-paragraph contribution description |
 | `wake classify <seed>` | LLM relationship classification (`--ids`, `--limit`, `--sort`, `--dry-run`, resumable) |
 | `wake gaps <seed>` | Surface high-value citing works with no recoverable abstract (`--min-cited-by`, `-n/--limit`, `--no-auto-backfill-check`) |
+| `wake dedup candidates <seed>` | Scan for likely-duplicate citing works (title similarity + shared authors) |
+| `wake dedup confirm <seed> <dup-id> <canonical-id>` | Record a human-confirmed duplicate; excluded from bake/theme/narrative thereafter |
+| `wake dedup reject <seed> <id-a> <id-b>` | Record that a candidate pair is genuinely distinct, not a duplicate |
 | `wake fill-abstract <seed> <id>` | Manually resolve one via `--from-pdf` or `--text` |
 | `wake fetch-pdf <seed> <id>` | Try to automatically acquire a PDF (OSTI, Semantic Scholar, Unpaywall, Springer, arXiv, optional CORE) |
 | `wake evidence <seed> <id>` | Full-text verification: reads the whole PDF, proposes a relationship with quoted, page-cited passages |

@@ -17,7 +17,7 @@ placeholder guess, not a finding. `wake evidence` reads a citing work's
 *actual full text* and proposes a real, quote-backed relationship
 (`"proposed"`). Only after a human reviews that proposal does it become
 `"verified"` — and **you** (the agent) are the one who runs `wake override`
-to record that, never the human. See step 9 below; this lifecycle
+to record that, never the human. See step 10 below; this lifecycle
 (provisional → proposed → verified) is the core epistemic model of the
 whole brief, so keep it in mind throughout — a `[PROVISIONAL]`-tagged
 relationship in the brief is not settled, no matter how high its
@@ -65,7 +65,7 @@ Read the structured result rather than just the pass/fail:
   - Only mention `SEMANTICSCHOLAR_API_KEY` if the analysis looks
     large-scale (hundreds of citing works) and abstract backfill speed
     will actually matter (step 4).
-  - Only mention `CORE_API_KEY` right before `fetch-pdf`/`gaps` (step 7),
+  - Only mention `CORE_API_KEY` right before `fetch-pdf`/`gaps` (step 8),
     and only as an FYI ("CORE.ac.uk isn't configured — I'll skip it as a
     PDF source unless you have a key") — never block on it.
   - Only ask about `WAKE_WORK_DIR`/`--work-dir` once, if the human hasn't
@@ -119,7 +119,7 @@ each one means.)
 Roughly 20% of citing works typically lack an OpenAlex abstract. `classify`
 transparently tries OSTI and Semantic Scholar to backfill these before
 falling back to lower-confidence title/venue-only classification — no
-action needed from you for this. See step 6 below for what to do about the
+action needed from you for this. See step 8 below for what to do about the
 high-value works that backfill *can't* resolve.
 
 ### 5. Check cost before scaling up
@@ -150,7 +150,39 @@ This is resumable — safe to Ctrl-C and re-run; already-classified works are
 skipped (matched by prompt version + model, so changing either invalidates
 the cache for those works only).
 
-### 7. (Optional) Resolve high-value abstract gaps
+### 7. (Optional) Check for duplicate citing works
+
+A citing set can contain a preprint alongside its later-published
+version, a workshop paper alongside its expanded journal version, or the
+same paper independently double-published under two OpenAlex IDs. Left
+unmerged, each inflates reach metrics, can end up in two different
+themes as if independent evidence, or get cited twice from a narrative
+as if two sources agreed rather than one.
+
+```bash
+wake --json dedup candidates "<seed>"
+```
+
+Pure heuristic scan (title similarity + shared author IDs), no LLM call,
+deterministic. **Never auto-merges** — present each candidate pair to the
+human one at a time (same rule as everywhere else), then run the
+decision on their behalf:
+
+```bash
+wake --json dedup confirm "<seed>" <duplicate-id> <canonical-id> --reason "..."
+wake --json dedup reject "<seed>" <id-a> <id-b> --reason "..."   # human judged them genuinely distinct
+```
+
+A confirmed duplicate is excluded everywhere downstream — dropped from
+`wake bake`'s reach metrics, refused by `wake theme create`, refused by
+`wake narrative` reference validation — always pointing back at the
+canonical work instead. This step is optional and worth a quick pass
+once classification is broad enough to surface real candidates; don't
+force a decision on a borderline pair the human isn't confident about —
+`reject` is always available and just means the same pair won't be
+re-surfaced.
+
+### 8. (Optional) Resolve high-value abstract gaps
 
 After classifying, some influential citing works may still lack an
 abstract (automatic OSTI/Semantic Scholar backfill couldn't recover one).
@@ -191,7 +223,7 @@ not a full-document summarization. This step is optional and should only
 be offered for works that are clearly consequential (high citation count);
 don't suggest it for background-mention-tier works.
 
-### 8. Bake and present the brief
+### 9. Bake and present the brief
 
 ```bash
 wake --json bake "<seed>"
@@ -201,7 +233,7 @@ Works on partial data — if not everything is classified, the brief notes
 coverage (e.g. "based on 50 of 408 citing works"). Read `impact.md` and
 summarize it for the human; don't just dump the raw file unless asked.
 
-### 9. (Optional) Deep-dive verification of a specific finding
+### 10. (Optional) Deep-dive verification of a specific finding
 
 Every classification in the brief is `[PROVISIONAL]` by default — an
 abstract-only guess, not a checked fact. For works that matter to the
@@ -275,7 +307,7 @@ work full-text; that defeats the purpose of the provisional/abstract-only
 tier existing at all. Reserve it for works where the narrative genuinely
 hinges on getting the relationship right.
 
-### 10. (Optional) Synthesize a theme from related evidence
+### 11. (Optional) Synthesize a theme from related evidence
 
 When several citing works together support a broader claim (e.g.
 "extensive use in Earth system modeling"), write a combined-evidence
@@ -328,7 +360,7 @@ support the thematic claim the abstract-only guess suggested it did.
 This step is optional — only synthesize themes that genuinely help tell
 the impact story; don't force citing works into artificial groupings.
 
-### 11. (Optional) Draft a narrative from confirmed themes
+### 12. (Optional) Draft a narrative from confirmed themes
 
 Once you have one or more confirmed themes, draft a fuller narrative
 instead of relying on the brief's "Strongest Evidence" list alone. Plan
@@ -431,7 +463,7 @@ or even an `OK` match carrying a year-mismatch or dead-URL note — and
 let them decide whether to fix the citing work's metadata or accept it
 as a known limitation.
 
-### 12. Refine
+### 13. Refine
 
 If the human disagrees with a specific classification (with or without a
 `wake evidence` dossier backing it up):
@@ -440,7 +472,7 @@ wake --json override "<seed>" <citing-openalex-id> --relationship extends --just
 ```
 `--verification-source` defaults to `human-judgment`; pass
 `--verification-source evidence-dossier` when the override follows a
-`wake evidence` finding the human accepted (step 9). Then re-bake
+`wake evidence` finding the human accepted (step 10). Then re-bake
 (`wake --json bake "<seed>"`) — overrides always win over the LLM
 classification and are marked `[VERIFIED via ...]` in the brief.
 
