@@ -327,7 +327,69 @@ support the thematic claim the abstract-only guess suggested it did.
 This step is optional — only synthesize themes that genuinely help tell
 the impact story; don't force citing works into artificial groupings.
 
-### 11. Refine
+### 11. (Optional) Draft a narrative from confirmed themes
+
+Once you have one or more confirmed themes, draft a fuller narrative
+instead of relying on the brief's "Strongest Evidence" list alone. Plan
+the structure first — an ordered list of components, each backed by one
+or more themes (`kind: "theme"`) or free-form framing prose with no
+evidence claim (`kind: "free"`, e.g. an intro/conclusion):
+
+```bash
+wake --json narrative outline create "<seed>" --components '[
+  {"slug":"intro","title":"Introduction","kind":"free"},
+  {"slug":"earth-adoption","title":"Adoption in Earth System Modeling","kind":"theme","theme_slugs":["earth-system-modeling"]},
+  {"slug":"conclusion","title":"Conclusion","kind":"free"}
+]'
+```
+
+The outline is a plan, not a claim — referenced themes don't need to be
+confirmed yet (only at section-confirm time), and you can freely revise
+it as drafting proceeds. Then draft one section at a time, having read
+the underlying theme(s)/dossiers yourself:
+
+```bash
+wake --json narrative section create "<seed>" earth-adoption \
+  --title "Adoption in Earth System Modeling" \
+  --prose "<your prose, grounded in the theme's confirmed findings>" \
+  --theme-slugs earth-system-modeling
+```
+
+Like `wake theme create`, this makes no LLM call — you write the prose
+yourself; `wake` validates and persists it. Every section starts `draft`.
+Present it to the human, then confirm it on their behalf:
+
+```bash
+wake --json narrative section confirm "<seed>" earth-adoption
+```
+
+For a theme-backed section, confirmation **refuses unless every
+referenced theme is currently confirmed** — re-checked fresh each time,
+so if a theme is later reopened to draft (e.g. someone adds a new
+unverified work to it), a section built on it is caught rather than left
+silently stale. A section can reference multiple themes if it synthesizes
+across them. Free-form sections go through the same draft → confirmed
+step (framing prose can still make claims worth a human's eye) but
+confirm immediately since there's no theme to check.
+
+Once satisfied with the sections drafted so far, assemble them:
+
+```bash
+wake --json narrative stitch "<seed>"
+```
+
+`narrative.md` works on partial data, like `bake` — not-yet-drafted
+sections show a placeholder with the exact command to draft them,
+drafted-but-unconfirmed sections carry a `⚠ DRAFT` banner, and the whole
+document is flagged "Partial narrative" at the top whenever anything is
+incomplete. Never present a partial stitch to the human as a finished
+narrative.
+
+This step is optional — only draft a narrative once the underlying
+themes are solid; a narrative built on shaky, unconfirmed themes will
+just need to be redone.
+
+### 12. Refine
 
 If the human disagrees with a specific classification (with or without a
 `wake evidence` dossier backing it up):
@@ -382,3 +444,9 @@ classification and are marked `[VERIFIED via ...]` in the brief.
     confirming one while some cited works are still only provisional or
     proposed — `wake theme confirm` will refuse anyway, so get those
     verified first.
+12. **A narrative section is only as solid as its themes, re-checked at
+    confirm time, not when it was drafted.** If a theme a section relies
+    on gets reopened to draft after the section was written (e.g. a new
+    unverified work was added to it), `wake narrative section confirm`
+    will refuse — that's a real inconsistency to fix (re-confirm the
+    theme first), not a bug to work around.

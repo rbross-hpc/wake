@@ -9,7 +9,9 @@ pipeline.
 
 Sequencing: **A + B first (foundation), then D (organization), then E
 (small, high-value), F/G/H deferred** until we've used A/B/D/E for real and
-know what's actually needed.
+know what's actually needed. A/A2/C/D/E have now been used for real (a
+live 408-work run against Parallel netCDF, 46 works full-text verified, 3
+themes confirmed) — see Theme F1 below, now BUILT as a result.
 
 ---
 
@@ -358,17 +360,70 @@ its creators is a different story thread than third-party adoption).
 
 ---
 
-## Deferred — Theme F: Narrative Drafting Tools
+## Theme F1 — Narrative Drafting (`wake narrative`) — BUILT
 
-Four concrete use cases, roughly in dependency order:
-- **F1** — Contribution narrative draft (problem / tool / differentiator),
-  using seed abstract + Theme E-tagged self-extension papers.
-- **F2** — Thematic impact bullet summary: cluster top-evidence into
-  themes (essentially Theme C, directed at a specific narrative output).
+Built directly out of the first real end-to-end validation run (a live
+408-work Parallel netCDF run, 3 confirmed themes) — the original BACKLOG
+sketch ("contribution narrative draft using seed abstract + Theme E
+self-extension papers") turned out to under-specify the actual need once
+real confirmed themes existed: a narrative isn't one paragraph, it's
+several theme-grounded sections plus free-form framing, drafted one
+component at a time and assembled at the end. Explicit user direction
+mid-design: "describe an overall narrative with a set of themes, then do
+what we just did to support the themes, and then do this narrative
+generation piece one component at a time. Then stitch it all together."
+
+Three explicit stages, same trust model as `wake theme`/`wake override`
+throughout (`wake` never writes prose or decides what's related; it
+validates and persists the agent's/human's judgment):
+
+1. **Outline** (`wake narrative outline create`) — the agent plans the
+   overall structure before writing any prose: an ordered list of
+   components, each `"theme"` (backed by one or more already-existing
+   themes — not required to be confirmed yet, since planning ahead of
+   confirmation is fine) or `"free"` (framing prose, e.g. intro/
+   conclusion, no evidence claim). Always overwritable, no confirmation
+   of its own — a plan, not a claim.
+2. **Sections** (`wake narrative section create` / `section confirm`) —
+   one component drafted at a time. `create` always writes `"draft"`
+   (mirrors `create_theme()` — drafting is never itself a sign-off).
+   `confirm` promotes to `"confirmed"`: for a theme-backed section,
+   refuses unless *every* referenced theme is **currently** confirmed,
+   re-checked fresh at confirm time (not cached) — if a theme is later
+   reopened to draft (e.g. a new unverified work added), a section built
+   on it is caught, not silently left stale. A section can reference
+   *multiple* confirmed themes (explicit user choice: not a strict 1:1
+   constraint). Free-form sections go through the same draft→confirmed
+   lifecycle uniformly (explicit user choice — framing prose can still
+   make claims worth a human's eye) but confirm immediately since there's
+   no theme to check.
+3. **Stitch** (`wake narrative stitch`) — assembles the outline order +
+   every section into `wake-out/<seed>/narrative.md`. Works on partial
+   data like `wake bake` — missing or still-draft sections are clearly
+   labeled ("Partial narrative — N section(s) not yet written: ...", a
+   `⚠ DRAFT` banner on unconfirmed prose), never silently hidden or
+   overstated as more final than they are.
+
+Validated live against the real Parallel netCDF packet: outline created
+referencing all 3 confirmed themes + 2 free sections, one theme-backed
+section drafted and confirmed (blocked correctly when tested against an
+unconfirmed theme first), partial stitch correctly labeled the 4 not-yet-
+drafted sections.
+
+Deferred, now that F1 exists:
+- **F2** — Thematic impact bullet summary: a shorter, bullet-style
+  section-drafting mode alongside full prose (F1's sections are already
+  "cluster confirmed-theme evidence into a narrative unit," so F2 may
+  turn out to be a rendering variant of the same `section create`
+  primitive rather than a separate mechanism — revisit once F1 is used
+  for a second real seed).
 - **F3** — Full cited narrative with per-sentence markdown links into
   Theme A2/B/C evidence docs, packaged into a folder (`narrative.md`
   top-level + `evidence/` + `evidence/themes/` + `data/` for JSON) —
-  zippable for a tech editor.
+  zippable for a tech editor. F1's `narrative.md` is already the
+  top-level file F3 envisioned; F3 is now "add per-sentence evidence
+  links + folder packaging" on top of F1's existing output, not a
+  from-scratch build.
 
 ## Deferred — Theme G: Timeline Generation
 

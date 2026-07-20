@@ -28,6 +28,10 @@ wake --json evidence "<seed>" <citing-id> [--force]
 wake --json theme create "<seed>" <slug> --title "..." --summary "..." --citing-ids ID,ID,...
 wake --json theme confirm "<seed>" <slug>
 wake --json theme queue "<seed>"
+wake --json narrative outline create "<seed>" --components '[{"slug":"...","title":"...","kind":"theme|free","theme_slugs":[...]}]'
+wake --json narrative section create "<seed>" <slug> --title "..." --prose "..." [--theme-slugs SLUG,SLUG,...]
+wake --json narrative section confirm "<seed>" <slug>
+wake --json narrative stitch "<seed>"
 wake --json bake "<seed>"
 wake --json override "<seed>" <citing-id> --relationship <class> --justification "..." [--verification-source human-judgment|evidence-dossier]
 
@@ -238,6 +242,101 @@ create` re-run (after reading the new dossier) changes it, so a
 full-text finding that contradicts the original abstract-only guess can
 never silently get folded into the theme unreviewed.
 
+## Narrative Drafting (`wake narrative`) — outline → sections (draft → confirmed) → stitch
+
+A narrative is built from confirmed themes, one component at a time.
+Three stages, none of which involve `wake` writing prose itself:
+
+| Stage | Command | What it does |
+|---|---|---|
+| Outline | `wake narrative outline create` | Plan the ordered section list before drafting any prose |
+| Section | `wake narrative section create` / `section confirm` | Draft one section's prose, then get human sign-off |
+| Stitch | `wake narrative stitch` | Assemble the outline order + every section into `narrative.md` |
+
+`wake narrative outline create "<seed>" --components '[...]'` response shape:
+```json
+{
+  "ok": true,
+  "data": {
+    "ok": true,
+    "outline_path": "wake-out/<seed>/narrative/outline.md",
+    "outline_json_path": "wake-out/<seed>/narrative/outline.json",
+    "components": [
+      {"slug": "intro", "title": "Introduction", "kind": "free", "theme_slugs": []},
+      {"slug": "earth-adoption", "title": "Adoption in Earth System Modeling", "kind": "theme", "theme_slugs": ["earth-system-modeling"]}
+    ]
+  }
+}
+```
+Each component needs `slug`/`title`/`kind` (`"theme"` or `"free"`).
+`kind: "theme"` requires a non-empty `theme_slugs` list, each referencing
+an already-existing theme (loadable via `wake theme create`) — it does
+**not** need to be confirmed yet, only at section-confirm time.
+`kind: "free"` must not include `theme_slugs`. Always overwrites (no
+`--force` — nothing expensive to protect against re-doing); `created_at`
+preserved across rewrites. Raises an error on a malformed component list
+(bad kind, missing/extra theme_slugs, duplicate slug, or a theme
+reference that doesn't exist).
+
+`wake narrative section create "<seed>" <slug> --title "..." --prose
+"..." [--theme-slugs SLUG,SLUG,...]` response shape:
+```json
+{
+  "ok": true,
+  "data": {
+    "ok": true,
+    "section_path": "wake-out/<seed>/narrative/sections/<slug>.md",
+    "section_json_path": "wake-out/<seed>/narrative/sections/<slug>.json",
+    "section_status": "draft",
+    "kind": "theme",
+    "theme_slugs": ["earth-system-modeling"]
+  }
+}
+```
+`kind` is inferred from whether `--theme-slugs` was passed (non-empty →
+`"theme"`, else `"free"`). Always writes `"draft"` — drafting/redrafting
+is an agent judgment, never itself a sign-off. A section can reference
+*multiple* themes (e.g. a synthesis section spanning two of them). Always
+overwrites the same slug; `created_at` preserved across rewrites.
+
+`wake narrative section confirm "<seed>" <slug>` response shape on success:
+```json
+{"ok": true, "data": {"ok": true, "section_path": "...", "section_json_path": "...", "section_status": "confirmed"}}
+```
+On refusal (theme-backed section only; exits 1 in both `--json` and text mode):
+```json
+{"ok": true, "data": {"ok": false, "reason": "unconfirmed_themes", "unconfirmed": ["earth-system-modeling"], "message": "..."}}
+```
+Note `"ok": true` at the envelope level even on refusal, same convention
+as `theme confirm` — check `data.ok`. Every referenced theme's status is
+re-resolved **fresh** at confirm time (not from the section's own
+possibly-stale JSON), so a theme that was confirmed when the section was
+drafted but has since been reopened to draft (e.g. a new unverified work
+was added to it) is caught, not silently ignored. A `"free"`-kind section
+has no themes to check and confirms unconditionally.
+
+`wake narrative stitch "<seed>"` response shape:
+```json
+{
+  "ok": true,
+  "data": {
+    "ok": true,
+    "narrative_path": "wake-out/<seed>/narrative.md",
+    "confirmed_sections": 1,
+    "draft_sections": 0,
+    "missing_sections": ["conclusion"]
+  }
+}
+```
+Assembles every component in outline order. A component with no section
+yet is rendered as a placeholder naming the exact `section create`
+command to run. A drafted-but-unconfirmed section is rendered with its
+prose plus a `⚠ DRAFT` banner — shown, not hidden, but clearly flagged.
+Whenever anything is missing or still draft, the top of `narrative.md`
+carries a "Partial narrative" note summarizing what's incomplete — same
+"works on partial data, marks coverage" convention as `wake bake`.
+Raises an error if no outline exists yet.
+
 ## Output Layout
 
 ```
@@ -270,6 +369,14 @@ wake-out/<OpenAlex-ID>/
       <slug>.md               — OKF concept doc; draft or confirmed
       <slug>.json              — same theme, structured (citing_works, needs_evidence)
       index.md                 — OKF catalog: Confirmed / Draft
+  narrative/               — narrative drafting (wake narrative)
+    outline.md               — planned section order/status (wake narrative outline create)
+    outline.json              — same, structured (components)
+    sections/
+      <slug>.md                — one section's prose; draft or confirmed
+      <slug>.json               — same section, structured (kind, theme_slugs, prose)
+  narrative.md             — assembled narrative (wake narrative stitch);
+                              notes coverage if partial, same as impact.md
 ```
 
 Use `--work-dir DIR` (or `WAKE_WORK_DIR` env var) to control where

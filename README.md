@@ -96,11 +96,15 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake classify <seed>` | LLM relationship classification (`--ids`, `--limit`, `--sort`, `--dry-run`, resumable) |
 | `wake gaps <seed>` | Surface high-value citing works with no recoverable abstract (`--min-cited-by`, `-n/--limit`, `--no-auto-backfill-check`) |
 | `wake fill-abstract <seed> <id>` | Manually resolve one via `--from-pdf` or `--text` |
-| `wake fetch-pdf <seed> <id>` | Try to automatically acquire a PDF (OSTI, Semantic Scholar, Unpaywall, arXiv, optional CORE) |
+| `wake fetch-pdf <seed> <id>` | Try to automatically acquire a PDF (OSTI, Semantic Scholar, Unpaywall, Springer, arXiv, optional CORE) |
 | `wake evidence <seed> <id>` | Full-text verification: reads the whole PDF, proposes a relationship with quoted, page-cited passages |
 | `wake theme create <seed> <slug>` | Write a combined-evidence theme doc (`--title`, `--summary`, `--citing-ids`); always draft |
 | `wake theme confirm <seed> <slug>` | Human sign-off promoting a theme to confirmed; refuses unless all cited works are verified |
 | `wake theme queue <seed>` | List theme citing-works still needing an evidence dossier, or needing re-review |
+| `wake narrative outline create <seed>` | Plan the narrative's structure (`--components`, a JSON list) before drafting any prose |
+| `wake narrative section create <seed> <slug>` | Draft one section's prose (`--title`, `--prose`, `--theme-slugs`); always draft |
+| `wake narrative section confirm <seed> <slug>` | Human sign-off promoting a section to confirmed; refuses unless every referenced theme is currently confirmed |
+| `wake narrative stitch <seed>` | Assemble the outline + every section into the top-level `narrative.md`; works on partial data |
 | `wake bake <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
 | `wake override <seed> <id>` | Record a human-reviewed relationship correction (`--verification-source human-judgment\|evidence-dossier`) |
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |
@@ -151,6 +155,13 @@ wake-out/<OpenAlex-ID>/
       <slug>.md               — OKF concept doc citing several works' findings
       <slug>.json              — same theme, structured (status, citing_works)
       index.md                 — OKF catalog: Confirmed / Draft
+  narrative/              — narrative drafting (wake narrative)
+    outline.md              — planned section structure (wake narrative outline create)
+    outline.json             — same, structured
+    sections/
+      <slug>.md               — one drafted section's prose (wake narrative section create)
+      <slug>.json              — same section, structured (status, theme_slugs)
+  narrative.md            — assembled narrative (wake narrative stitch); notes coverage if partial
 ```
 
 ## Relationship Classes
@@ -346,6 +357,62 @@ dossier, and works whose dossier has since appeared but hasn't been
 reviewed and re-asserted (re-run `wake theme create` with the same slug
 after reading the new dossier — its full-text finding may not actually
 support the thematic claim the way the abstract-only guess did).
+
+### Narrative drafting (`wake narrative`)
+
+Once you have one or more confirmed themes, draft a narrative from them —
+one component at a time, then assemble:
+
+```bash
+wake narrative outline create <seed> --components '[
+  {"slug":"intro","title":"Introduction","kind":"free"},
+  {"slug":"earth-adoption","title":"Adoption in Earth System Modeling","kind":"theme","theme_slugs":["earth-system-modeling"]},
+  {"slug":"conclusion","title":"Conclusion","kind":"free"}
+]'
+```
+
+The outline is a plan, not a claim — it can be freely revised, and
+referenced themes don't need to be confirmed yet (only at section-confirm
+time). Then draft each section's prose, having read the underlying
+theme(s)/dossiers yourself:
+
+```bash
+wake narrative section create <seed> earth-adoption \
+  --title "Adoption in Earth System Modeling" \
+  --prose "<the paragraph you write, grounded in the theme's confirmed findings>" \
+  --theme-slugs earth-system-modeling
+```
+
+Like `wake theme create`, this is a pure write primitive — no LLM call.
+Every section starts `draft`; promote it after human sign-off:
+
+```bash
+wake narrative section confirm <seed> earth-adoption
+```
+
+For a theme-backed section, confirmation **refuses unless every
+referenced theme is currently confirmed** — re-checked fresh, so a theme
+later reopened to draft (e.g. a new unverified work added to it) is
+caught rather than silently ignored. A section can reference multiple
+themes if it synthesizes across them. Free-form sections (`kind: free`,
+no `--theme-slugs` — e.g. an intro or conclusion) go through the same
+draft → confirmed lifecycle, since framing prose can still make claims
+worth a human's eye, but confirm immediately since there's no theme to
+check.
+
+Once you're satisfied with the sections drafted so far, assemble them:
+
+```bash
+wake narrative stitch <seed>
+```
+
+`narrative.md` is written from whatever exists — like `wake bake`, it
+works on partial data. Sections not yet drafted are shown as a
+placeholder with the exact command to draft them; drafted-but-unconfirmed
+sections are shown with a `⚠ DRAFT` banner rather than presented as
+final. A top-of-file note flags the whole document as a "Partial
+narrative" whenever anything is missing or still draft, so a partially
+assembled file is never mistaken for a finished one.
 
 ### Inspecting what the model actually read
 
