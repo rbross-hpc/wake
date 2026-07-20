@@ -471,6 +471,24 @@ Deferred, now that F1 (+ per-sentence refs) exists:
   `evidence/` directory already are that folder; only the packaging step
   itself (zip, or a `wake export` command) remains unbuilt.
 
+## Held — Theme F4: Workflow reframe (two-phase themes)
+
+**DO NOT EXECUTE.** Raised mid-session when a direct question — "wait:
+what does `wake theme create` *do*?" — surfaced that the current
+single-shot `theme create` (identity + evidence membership in one call)
+runs backwards from how the human actually wants to work: decide the
+narrative's themes first, as a planning conversation with no `wake`
+involvement at all, then assign specific citing works to those themes as
+evidence accumulates. Full design space, two candidate implementations
+(a `theme declare` + `theme add` two-phase split, leaning direction, vs.
+a lighter `theme create` allowing empty `citing_ids`), the rejected
+alternative worked through, four explicit open questions, consequences
+for `wake narrative outline`, and a backward-compatibility sketch are
+all captured in
+[`docs/design/theme-workflow-reframe.md`](docs/design/theme-workflow-reframe.md).
+No code, tests, or docs referenced there should change until this has
+been walked through live with the human.
+
 ## Deferred — Theme G: Timeline Generation
 
 Markdown timeline of key developments/uses/adoption (derived from
@@ -511,3 +529,166 @@ Revisit only if/when MinerU or another genuinely slow step gets adopted.
   unresolvable DOI would still re-try the full fetch-pdf chain.
 - Theme B (DOE-relevance signals): design decided (separate, off-by-default
   module — see Theme B above), not yet built.
+
+---
+
+## Theme J — Session-notes batch (post-narrative-refs housekeeping + trust-model rounding)
+
+Raised as a long list of notes after the first live narrative was drafted
+and reference-checked. Sequenced for execution (each item its own
+branch, merged before the next); see the design-doc note above for why
+the workflow reframe (originally "item 5" in this list) was pulled out
+and held separately rather than sequenced here.
+
+**Sequence:**
+
+1. ~~Workflow reframe design capture~~ — done first, see Theme F4 above;
+   held, not executed.
+2. **Rename dotfiles in packet directories.** `.overrides.jsonl` →
+   `overrides.jsonl`, `.classify/` → `classify/`. A working directory
+   the human is explicitly expected to inspect shouldn't hide its own
+   state behind dotfile conventions meant for user-home/config
+   directories. Read-either compat shim for one release (old dotfile
+   name still read if the new one doesn't exist), migrate to the new
+   name on first write, drop the compat shim in a later cleanup.
+3. **Split `wake/skills/impact-analysis/references/reference.md` into
+   per-workflow-phase files.** It has grown to ~400+ lines covering
+   every command's JSON schema and output layout in one file. Split
+   into `references/resolve.md`, `citing.md`, `sample.md`, `classify.md`,
+   `evidence.md`, `themes.md`, `narrative.md`, `bake.md`,
+   `output-layout.md`, following SKILL.md's existing step numbering as
+   the natural split points, with a small `references/reference.md` (or
+   `index.md`) left as an index page linking out. No behavior change.
+4. **`wake <noun> show` verbs.** Today `wake show` only has
+   `brief`/`metrics`/`top` (seed-level summary artifacts); there's no
+   way to view a theme, a narrative section, an outline, or a dossier
+   through it. Existing precedent already exists in the CLI
+   (`wake config show`, `wake skill show`) for a subject-noun-first
+   `show` verb. Add `wake theme show <seed> <slug>`, `wake narrative
+   show <seed>`, `wake narrative section show <seed> <slug>`, `wake
+   narrative outline show <seed>`, `wake evidence show <seed>
+   <citing-id>`. Leave `wake show brief/metrics/top` as-is — those are
+   cross-cutting seed-summary views, a different (still valid) shape.
+5. **CLI help + SKILL.md write-primitive clarity audit.** Small
+   documentation-only pass triggered by the "wait: what does `theme
+   create` *do*?" question mid-session — every `wake X
+   create`/`confirm`/`override` verb's `--help` text and SKILL.md
+   description should say plainly that wake validates and persists the
+   agent's/human's judgment, and does not itself decide anything or run
+   an LLM. Cheap, immediate, independent of the (held) workflow reframe.
+6. **Split top-level `README.md` into a short README + `docs/` topic
+   pages.** README has grown to ~500 lines including full workflow
+   narrative, PDF-source explanation, abstract-recovery philosophy, etc.
+   New README should be about one screen: what wake is, install, one
+   command example, links out. New top-level `docs/` (repo docs, not
+   packaged with the pip install) gets `docs/workflow.md`,
+   `docs/abstract-recovery.md`, `docs/pdf-sources.md`,
+   `docs/narrative.md`, `docs/themes.md`. Agent-facing files (SKILL.md,
+   the skill's own `references/`) are untouched by this split — they
+   serve a different reader.
+7. **`wake narrative refs-check <seed>` — verify the stitched
+   narrative's References section with the external `ref-checker` tool**
+   (https://github.com/rbross-hpc/ref-checker). Distinct from the
+   already-noted "claim-vs-source semantic audit" deferred item under
+   Theme F1/F3 — this checks that the *bibliographic entries themselves*
+   (authors, year, title, DOI) are correct and resolvable, not whether a
+   sentence's claim is actually supported by its source. Shape: export
+   the References section to a `refs.json` matching ref-checker's
+   expected input, install ref-checker if not already present, run
+   `ref-checker check --refs-json <refs> --results-json <output>` as a
+   subprocess, parse the results and surface any discrepancies to the
+   human. Human decides how to resolve flagged entries (fix the citing
+   work's metadata upstream, or accept as a known limitation). Exact
+   JSON shape TBD from ref-checker's own docs at implementation time.
+8. **`wake dedup <seed>` — surface likely-duplicate citing works for
+   human sign-off.** Covers all three duplicate shapes seen or expected:
+   preprint vs. published version (2 caught by hand this session via
+   fuzzy title matching — `W4229646607`/`W2137705743` and
+   `W4251231835`/`W2153325196`, both GMDD preprints of their published
+   counterparts), workshop vs. expanded journal version, and the same
+   paper independently double-published. Heuristic: same/overlapping
+   authors + high title similarity + one side showing a
+   preprint/workshop venue signal. Never auto-merges — presents
+   candidates one at a time (same "human confirms one at a time" rule
+   used everywhere else), waits for explicit accept before recording a
+   merge decision. Downstream theme/narrative/bake views treat a
+   confirmed pair as one work under the human-designated canonical
+   version.
+9. **Posters/conference-abstracts: surface for human sign-off, same
+   shape as dedup.** `type == "conference-abstract"` or a
+   `Poster:`/`Abstract:` title prefix currently has to be caught and
+   excluded by hand each session (this session's "posters are out" rule
+   was established ad hoc mid-run). Surface candidates for explicit
+   human exclusion rather than silently dropping them or requiring the
+   human to remember to ask — same one-at-a-time confirmation pattern as
+   dedup and the same downstream effect as `wake exclude` (below) once a
+   human confirms.
+10. **`wake exclude <seed> <citing-id> --reason "..."` — first-class
+    exclude state.** Today, a citing work judged not actually about the
+    seed (e.g. background-mention where the seed appears only in a
+    bibliography) still just sits as a low-relevance `verified` work —
+    nothing stops a future theme or narrative section from citing it.
+    An explicit, permanent exclusion (with justification, recorded in
+    `evidence/log.md` like other state transitions) should make a work
+    unusable: `theme add`/`theme create` refuses to include an excluded
+    work, `wake narrative` reference validation refuses an excluded ID,
+    `wake gaps`/`wake theme queue` stop surfacing it. Undoing an exclude
+    is a separate, explicit `wake unexclude` action with its own
+    justification — never implicit.
+11. **`wake unverify <seed> <citing-id> [--reason "..."]` — first-class
+    undo for a mistaken verification.** This session needed exactly this
+    when an agent misread a bulk go-ahead and auto-verified 13 works;
+    recovery was a manual `.overrides.jsonl` backup-and-restore rather
+    than a real command. Add `wake unverify` to remove one entry from
+    `overrides.jsonl` and write a `verification_reverted` line to
+    `evidence/log.md` (matching the ad hoc format used during this
+    session's manual recovery) with the given reason. Batch-recovery
+    variant for exactly this failure mode: `wake unverify --since
+    <timestamp>` or `--last N`.
+
+**Deferred, not sequenced into the batch above (still real, still
+wanted, just not next):**
+
+- `wake evidence --from-pdf <path> <citing-id>` — verify a human-supplied
+  PDF actually matches the citing work's metadata (title fuzzy-match
+  against extracted first-page text, author match, DOI-in-text where
+  present) before copying it into the packet; refuse with a clear
+  message on mismatch. Batch variant `wake evidence --from-pdf-dir
+  <folder> <seed>` tries every PDF in a folder against every currently-
+  provisional citing work; non-matches are left alone in the input
+  folder and simply reported (not deleted, not moved) — the command is
+  stateless, so pointing it at the same folder again just re-reports
+  the same mismatches.
+- `wake missing-pdfs <seed>` — read-only report of provisional citing
+  works with no cached PDF and which fetch sources have already been
+  exhausted, callable any time. Complements incremental surfacing during
+  batch `wake fetch-pdf` runs (print each failure — DOI, title, sources
+  tried — as it happens rather than only in an end-of-batch summary), so
+  a human can start hunting down hard-to-find PDFs manually while the
+  agent keeps working through the rest of the batch.
+- `wake assess <seed>` (or `wake theme coverage <seed>`) — evidence-gap
+  triage report run between `wake classify` and `wake fetch-pdf`:
+  current theme evidence density, and which classified-but-unverified
+  works look highest-value for each theme (by relationship + confidence
+  + citation count) — so PDF-fetching effort gets prioritized rather
+  than spent uniformly across every provisional work.
+- Investigate Springer PDF page-count validation for false-negative
+  failures — `curl`'s reported page count was observed to be wrong at
+  least once against a real Springer PDF this session; the check should
+  be loosened, replaced with a more reliable method, or removed for
+  Springer specifically if it can't be trusted.
+- Interactive review rendering polish — when presenting a citing work to
+  the human pre-verify, include authors alongside title, and surface the
+  dossier's per-quote text + page numbers inline (not just title +
+  justification). Small template change to whatever the agent uses to
+  render the pre-verify summary; the one-at-a-time confirmation pattern
+  itself already works well and doesn't need a redesign, just this
+  richer rendering.
+- `wake narrative section audit <seed> <slug>` / `wake narrative audit
+  <seed>` — semantic claim-vs-source check (already noted under Theme
+  F1/F3's deferred list above; repeated here for visibility in this
+  session's own notes). For each `[ref:...]`-marked sentence, load the
+  referenced dossier(s) and have an LLM flag whether the sentence's
+  claim is actually supported. Reports only, does not enforce; kept
+  separate from `section confirm` so drafting is never blocked on LLM
+  audit availability.
