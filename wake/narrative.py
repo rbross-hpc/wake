@@ -89,6 +89,14 @@ def narrative_md_path(seed_id: str, base: Path | None = None) -> Path:
     return work_dir(seed_id, base) / "narrative.md"
 
 
+def refs_json_path(seed_id: str, base: Path | None = None) -> Path:
+    return narrative_dir(seed_id, base) / "refs.json"
+
+
+def refs_results_json_path(seed_id: str, base: Path | None = None) -> Path:
+    return narrative_dir(seed_id, base) / "refs.results.json"
+
+
 def load_outline(seed_id: str, base: Path | None = None) -> dict[str, Any] | None:
     p = outline_json_path(seed_id, base)
     if not p.exists():
@@ -520,6 +528,28 @@ def _render_refs_in_prose(prose: str, ref_numbers: dict[str, int]) -> str:
     return _REF_RE.sub(_replace, prose)
 
 
+def _compute_ref_numbers(
+    outline: dict[str, Any], sections: dict[str, dict[str, Any]]
+) -> dict[str, int]:
+    """Assign R-numbers to every `[ref:...]`-marked ID across the whole
+    document, in reading (outline) order, stable across reuse -- the
+    same source cited in two different sections keeps one number. Shared
+    by `stitch()` (to number the rendered document) and `export_refs()`
+    (to number the ref-checker input identically), so the R-numbers a
+    human sees in `narrative.md` always match the ones in any refs-check
+    report."""
+    ref_numbers: dict[str, int] = {}
+    for component in outline["components"]:
+        section = sections.get(component["slug"])
+        if section is None:
+            continue
+        for ids in _parse_ref_markers(section.get("prose", "")):
+            for ref_id in ids:
+                if ref_id not in ref_numbers:
+                    ref_numbers[ref_id] = len(ref_numbers) + 1
+    return ref_numbers
+
+
 def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, Any]:
     """Assemble the outline order + every drafted section into one
     top-level `wake-out/<seed>/narrative.md`. Always runs, even on
@@ -552,15 +582,7 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
     draft_count = sum(1 for s in sections.values() if s.get("section_status") == "draft")
     missing = [c["slug"] for c in outline["components"] if c["slug"] not in sections]
 
-    ref_numbers: dict[str, int] = {}
-    for component in outline["components"]:
-        section = sections.get(component["slug"])
-        if section is None:
-            continue
-        for ids in _parse_ref_markers(section.get("prose", "")):
-            for ref_id in ids:
-                if ref_id not in ref_numbers:
-                    ref_numbers[ref_id] = len(ref_numbers) + 1
+    ref_numbers = _compute_ref_numbers(outline, sections)
 
     lines: list[str] = []
     title = seed_work.get("title") or seed_id
@@ -610,6 +632,138 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
         "draft_sections": draft_count,
         "missing_sections": missing,
         "reference_count": len(ref_numbers),
+    }
+
+
+def export_refs(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, Any]:
+    """Export the stitched narrative's References list to
+    `wake-out/<seed>/narrative/refs.json`, in the bare-JSON-array shape
+    the external `ref-checker` tool (github.com/rbross-hpc/ref-checker)
+    accepts via `ref-checker check --refs-json`.
+
+    This is wake's half of the refs-check integration: producing the
+    input file. wake never invokes ref-checker itself -- the agent
+    installs it (if not already present) and runs `ref-checker check
+    --refs-json <this file> --results-json <sidecar>` as its own
+    subprocess, then hands the resulting sidecar to
+    `summarize_refs_check()` for a human-facing report.
+
+    R-numbers (the `index` field) are computed the same way `stitch()`
+    numbers `[R1]`/`[R2]`/... in the rendered document, so a discrepancy
+    ref-checker reports against index N always corresponds to `[RN]` in
+    `narrative.md` -- no separate mapping to keep in sync.
+
+    Raises ValueError if no outline has been created yet (same
+    precondition as `stitch()`).
+    """
+    seed_id = seed_work["openalex_id"]
+    outline = load_outline(seed_id, base)
+    if outline is None:
+        raise ValueError(
+            f"No narrative outline found for seed {seed_id}. Run `wake narrative outline create` first."
+        )
+
+    sections = _load_all_sections(seed_id, base)
+    ref_numbers = _compute_ref_numbers(outline, sections)
+
+    refs = []
+    for ref_id, n in sorted(ref_numbers.items(), key=lambda kv: kv[1]):
+        work = _work_metadata_for_ref(ref_id, seed_work, base)
+        entry: dict[str, Any] = {"index": n, "title": (work or {}).get("title") or ""}
+        if work is not None:
+            if work.get("authors"):
+                entry["authors"] = work["authors"]
+            if work.get("year"):
+                entry["year"] = work["year"]
+            if work.get("doi"):
+                entry["doi"] = work["doi"]
+            if work.get("venue"):
+                entry["venue"] = work["venue"]
+        refs.append(entry)
+
+    p = refs_json_path(seed_id, base)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(p, refs)
+
+    return {
+        "ok": True,
+        "refs_json_path": str(p),
+        "reference_count": len(refs),
+    }
+
+
+def summarize_refs_check(seed_id: str, results_path: str | Path, *, base: Path | None = None) -> dict[str, Any]:
+    """Parse a `ref-checker check --results-json <results_path>` sidecar
+    (schema_version 3) and summarize it into a human-facing report: how
+    many references are OK / CLOSEST / NO MATCH, and the specific detail
+    for every reference that isn't a clean OK, so the human can decide
+    whether to fix the citing work's metadata, accept it as a known
+    limitation, or investigate further.
+
+    wake never runs ref-checker itself -- this only reads a results file
+    the agent already produced by running `ref-checker check` as its own
+    subprocess. Raises ValueError if the file doesn't exist or isn't a
+    recognizable ref-checker results sidecar.
+    """
+    p = Path(results_path)
+    if not p.exists():
+        raise ValueError(
+            f"No ref-checker results file found at {p}. Run `ref-checker check "
+            f"--refs-json <refs.json> --results-json {p}` first."
+        )
+
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{p} is not valid JSON: {exc}") from exc
+
+    references = data.get("references")
+    if not isinstance(references, dict):
+        raise ValueError(
+            f"{p} doesn't look like a ref-checker results sidecar "
+            "(missing top-level 'references' object)."
+        )
+
+    clean_ok_count = 0
+    flagged: list[dict[str, Any]] = []
+    for idx_str, entry in sorted(references.items(), key=lambda kv: int(kv[0])):
+        ref = entry.get("ref", {})
+        result = entry.get("result", {})
+        status = result.get("status", "OTHER")
+        year_mismatch_note = result.get("year_mismatch_note")
+        id_notes = result.get("id_notes", []) or []
+        dead_urls = result.get("dead_urls", []) or []
+        exhausted_sources = result.get("exhausted_sources", []) or []
+
+        has_notes = bool(year_mismatch_note or id_notes or dead_urls or exhausted_sources)
+        if status == "OK" and not has_notes:
+            clean_ok_count += 1
+            continue
+
+        # Flagged: anything not a clean, note-free OK -- CLOSEST/NO MATCH/
+        # OTHER always, and an OK-status match that still carries a note
+        # (year mismatch, DOI-title divergence, a dead URL, or exhausted
+        # retries) since the match itself is confirmed but something
+        # about it is still worth a human's eye.
+        flagged.append({
+            "index": ref.get("index", int(idx_str)),
+            "title": ref.get("title"),
+            "status": status,
+            "score": result.get("display_score"),
+            "best_source": result.get("best_source"),
+            "year_mismatch_note": year_mismatch_note,
+            "id_notes": id_notes,
+            "dead_urls": dead_urls,
+            "exhausted_sources": exhausted_sources,
+        })
+
+    return {
+        "ok": True,
+        "results_path": str(p),
+        "total": len(references),
+        "ok_count": clean_ok_count,
+        "flagged_count": len(flagged),
+        "flagged": sorted(flagged, key=lambda e: e["index"]),
     }
 
 

@@ -156,6 +156,80 @@ source, never written back into `classified.json`), so no OSTI suffix is
 ever rendered. If no section uses any `[ref:...]` marker, no References
 section is appended at all.
 
+## Verifying the References list (`wake narrative refs-check`)
+
+wake's own R-numbering guarantees every citation in the stitched
+narrative *points at a real, human-verified citing work in this seed's
+own packet* — it says nothing about whether the bibliographic details
+(author spelling, year, DOI) that got carried into the Chicago-style
+entry are themselves correct. `wake narrative refs-check` closes that
+gap by shelling out to the external
+[`ref-checker`](https://github.com/rbross-hpc/ref-checker) tool, which
+independently looks each reference up against OpenAlex, CrossRef, OSTI,
+DBLP, Semantic Scholar, and arXiv.
+
+**wake never invokes `ref-checker` itself** — same "wake is a validated
+write primitive, not an orchestrator" rule as everywhere else. Two
+`wake` subcommands bookend an agent-run `ref-checker` call in between:
+
+```bash
+wake --json narrative refs-check export "<seed>"
+# -> writes wake-out/<seed>/narrative/refs.json
+
+pipx install git+https://github.com/rbross-hpc/ref-checker.git   # once per environment
+ref-checker check --refs-json wake-out/<seed>/narrative/refs.json \
+  --results-json wake-out/<seed>/narrative/refs.results.json
+
+wake --json narrative refs-check summarize "<seed>" wake-out/<seed>/narrative/refs.results.json
+```
+
+`wake narrative refs-check export "<seed>"` response shape:
+```json
+{"ok": true, "data": {"ok": true, "refs_json_path": "wake-out/<seed>/narrative/refs.json", "reference_count": 19}}
+```
+Writes a bare JSON array in the exact shape `ref-checker check
+--refs-json` expects (`title`, and where available `authors`, `year`,
+`doi`, `venue`), with each entry's `index` matching the `[R<n>]` number
+that same reference has in the stitched `narrative.md` — so a
+discrepancy `ref-checker` reports against index `N` always maps back to
+`[RN]` in the document a human is reading, with no separate lookup
+table to keep in sync. Raises an error if no outline exists yet (same
+precondition as `stitch`).
+
+`wake narrative refs-check summarize "<seed>" <results.json>` response
+shape:
+```json
+{
+  "ok": true,
+  "data": {
+    "ok": true,
+    "results_path": "wake-out/<seed>/narrative/refs.results.json",
+    "total": 19,
+    "ok_count": 19,
+    "flagged_count": 0,
+    "flagged": []
+  }
+}
+```
+Parses a `ref-checker check --results-json` sidecar (schema_version 3)
+and separates references into a clean-`OK` count and a `flagged` list
+containing everything else worth a human's attention: any `CLOSEST` or
+`NO MATCH` status, plus (this is the one non-obvious case) an
+identifier-confirmed `OK` match that still carries a note — a year
+mismatch, a DOI-vs-reference title divergence, a dead URL, or exhausted
+retries against one source. The match itself being confirmed doesn't
+mean every detail about it is trustworthy, so these aren't silently
+folded into the clean-`OK` bucket. Each flagged entry includes its
+`[R<n>]` index, title, status, score, and whichever notes applied — a
+human decides whether to fix the citing work's own metadata, accept the
+discrepancy as a known limitation, or investigate further. Raises an
+error if the results file doesn't exist yet or doesn't look like a
+ref-checker sidecar.
+
+Live-validated against the Parallel netCDF narrative's real 19-entry
+reference list: every reference resolved `OK` with title similarity
+1.00 against OpenAlex, 0 flagged.
+
 ## Show verbs: re-printing already-written artifacts
 
 Three read-only re-emit commands, each printing an existing file as-is

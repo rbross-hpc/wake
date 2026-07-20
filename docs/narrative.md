@@ -77,3 +77,32 @@ per-section preview file keeps the raw `[ref:...]` form.
 `wake narrative outline show <seed>`, `wake narrative section show <seed>
 <slug>`, and `wake narrative show <seed>` re-print the outline, one
 section, and the assembled document, respectively, as-is.
+
+## Verifying the References list against live scholarly databases
+
+`wake narrative refs-check` shells out to the external
+[`ref-checker`](https://github.com/rbross-hpc/ref-checker) tool to
+independently check each reference's bibliographic details (author
+spelling, year, DOI) against OpenAlex, CrossRef, OSTI, DBLP, Semantic
+Scholar, and arXiv — a different question from what `[ref:...]`
+validation already guarantees (that the source is real and human-
+verified for this seed). `wake` never runs `ref-checker` itself:
+
+```bash
+wake narrative refs-check export <seed>
+# -> wake-out/<seed>/narrative/refs.json
+
+pipx install git+https://github.com/rbross-hpc/ref-checker.git   # once
+ref-checker check --refs-json wake-out/<seed>/narrative/refs.json \
+  --results-json wake-out/<seed>/narrative/refs.results.json
+
+wake narrative refs-check summarize <seed> wake-out/<seed>/narrative/refs.results.json
+```
+
+`export` writes references numbered identically to `narrative.md`'s
+`[R1]`/`[R2]`/... so a discrepancy `ref-checker` reports against index
+`N` always maps back to `[RN]` in the document. `summarize` separates
+the results into a clean-OK count and a flagged list — any
+`CLOSEST`/`NO MATCH` status, plus an identifier-confirmed `OK` match
+that still carries a note (year mismatch, dead URL, exhausted retries)
+worth a second look.

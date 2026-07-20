@@ -73,6 +73,8 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake narrative section show <seed> <slug>` | Print one already-drafted section's prose |
 | `wake narrative stitch <seed>` | Assemble the outline + every section into the top-level `narrative.md`; works on partial data |
 | `wake narrative show <seed>` | Print the assembled top-level `narrative.md` |
+| `wake narrative refs-check export <seed>` | Write `narrative/refs.json` for the external `ref-checker` tool |
+| `wake narrative refs-check summarize <seed> <results.json>` | Summarize a `ref-checker` results sidecar into OK/flagged counts |
 | `wake bake <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
 | `wake override <seed> <id>` | Record a human-reviewed relationship correction (`--verification-source human-judgment\|evidence-dossier`) |
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |

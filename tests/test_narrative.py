@@ -9,6 +9,7 @@ verification call mocked.
 """
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from unittest.mock import patch
@@ -722,3 +723,202 @@ def test_stitch_reference_entry_omits_missing_doi_cleanly(tmp_path):
     text = Path(result["narrative_path"]).read_text()
     assert "DOI:" not in text
     assert works[0]["title"] in text
+
+
+# --- export_refs -----------------------------------------------------------
+
+def test_export_refs_writes_numbered_json_matching_stitch_order(tmp_path):
+    works = _seed_classified(tmp_path, 1)
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], works[0]["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    cid = works[0]["openalex_id"]
+
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "s1", "title": "Section One", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One",
+        prose=f"PnetCDF was introduced. [ref:SEED] This work extends it. [ref:{cid}]",
+        base=tmp_path,
+    )
+
+    result = narrative.export_refs(PARALLEL_NETCDF_WORK, base=tmp_path)
+    assert result["ok"] is True
+    assert result["reference_count"] == 2
+
+    refs = json.loads(Path(result["refs_json_path"]).read_text())
+    assert len(refs) == 2
+    assert refs[0]["index"] == 1
+    assert refs[0]["title"] == PARALLEL_NETCDF_WORK["title"]
+    assert refs[0]["doi"] == PARALLEL_NETCDF_WORK["doi"]
+    assert refs[1]["index"] == 2
+    assert refs[1]["title"] == works[0]["title"]
+
+    # Same R-numbering as stitch() would produce for the same document.
+    stitched = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = Path(stitched["narrative_path"]).read_text()
+    assert "[R1](#r1)" in text
+    assert "[R2](#r2)" in text
+
+
+def test_export_refs_raises_without_outline(tmp_path):
+    with pytest.raises(ValueError, match="No narrative outline"):
+        narrative.export_refs(PARALLEL_NETCDF_WORK, base=tmp_path)
+
+
+def test_export_refs_omits_missing_fields_cleanly(tmp_path):
+    """SAMPLE_CITING_WORKS[2] has doi=None -- the exported ref entry
+    should simply omit the doi key rather than including doi: null."""
+    works = [_classified_work(2)]
+    save_classified(PARALLEL_NETCDF_WORK["openalex_id"], works, base=tmp_path)
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], works[0]["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    cid = works[0]["openalex_id"]
+
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "s1", "title": "Section One", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One",
+        prose=f"A survey paper. [ref:{cid}]", base=tmp_path,
+    )
+    result = narrative.export_refs(PARALLEL_NETCDF_WORK, base=tmp_path)
+    refs = json.loads(Path(result["refs_json_path"]).read_text())
+    assert "doi" not in refs[0]
+
+
+def test_export_refs_writes_no_refs_when_no_markers_used(tmp_path):
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "s1", "title": "Section One", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One", prose="No sources here.", base=tmp_path,
+    )
+    result = narrative.export_refs(PARALLEL_NETCDF_WORK, base=tmp_path)
+    assert result["reference_count"] == 0
+    refs = json.loads(Path(result["refs_json_path"]).read_text())
+    assert refs == []
+
+
+# --- summarize_refs_check ---------------------------------------------------
+
+def _fake_results_sidecar(entries: list[dict]) -> dict:
+    """Build a minimal ref-checker results.json (schema_version 3) shape
+    from a compact list of (index, title, status, **extra) dicts --
+    mirrors the real sidecar structure captured from a live ref-checker
+    run against the Parallel netCDF narrative's own references."""
+    references = {}
+    for e in entries:
+        idx = e["index"]
+        references[str(idx)] = {
+            "ref": {"index": idx, "title": e["title"]},
+            "result": {
+                "status": e["status"],
+                "display_score": e.get("score", 1.0),
+                "best_source": e.get("best_source", "openalex"),
+                "year_mismatch_note": e.get("year_mismatch_note"),
+                "id_notes": e.get("id_notes", []),
+                "dead_urls": e.get("dead_urls", []),
+                "exhausted_sources": e.get("exhausted_sources", []),
+            },
+        }
+    return {"schema_version": 3, "references": references}
+
+
+def test_summarize_refs_check_all_ok(tmp_path):
+    results_path = tmp_path / "refs.results.json"
+    results_path.write_text(json.dumps(_fake_results_sidecar([
+        {"index": 1, "title": "Parallel netCDF", "status": "OK"},
+        {"index": 2, "title": "Supporting Seamless Remote I/O", "status": "OK"},
+    ])))
+
+    result = narrative.summarize_refs_check(
+        PARALLEL_NETCDF_WORK["openalex_id"], results_path, base=tmp_path,
+    )
+    assert result["ok"] is True
+    assert result["total"] == 2
+    assert result["ok_count"] == 2
+    assert result["flagged_count"] == 0
+    assert result["flagged"] == []
+
+
+def test_summarize_refs_check_flags_closest_and_no_match(tmp_path):
+    results_path = tmp_path / "refs.results.json"
+    results_path.write_text(json.dumps(_fake_results_sidecar([
+        {"index": 1, "title": "A Real Paper", "status": "OK"},
+        {"index": 2, "title": "A Fuzzy Match", "status": "CLOSEST", "score": 0.85},
+        {"index": 3, "title": "Nonexistent Paper", "status": "NO MATCH", "score": 0.3},
+    ])))
+
+    result = narrative.summarize_refs_check(
+        PARALLEL_NETCDF_WORK["openalex_id"], results_path, base=tmp_path,
+    )
+    assert result["total"] == 3
+    assert result["ok_count"] == 1
+    assert result["flagged_count"] == 2
+    statuses = {e["index"]: e["status"] for e in result["flagged"]}
+    assert statuses[2] == "CLOSEST"
+    assert statuses[3] == "NO MATCH"
+
+
+def test_summarize_refs_check_flags_ok_status_with_year_mismatch_note(tmp_path):
+    """A status=OK match (identifier-confirmed) can still carry a year-
+    mismatch note -- the match itself is confirmed, but the discrepancy
+    is still worth a human's eye, so it's flagged rather than silently
+    bucketed as a clean OK."""
+    results_path = tmp_path / "refs.results.json"
+    results_path.write_text(json.dumps(_fake_results_sidecar([
+        {"index": 1, "title": "Clean Match", "status": "OK"},
+        {
+            "index": 2, "title": "Year Mismatch Paper", "status": "OK",
+            "year_mismatch_note": "year mismatch (ref year=2019, match year=2020)",
+        },
+    ])))
+
+    result = narrative.summarize_refs_check(
+        PARALLEL_NETCDF_WORK["openalex_id"], results_path, base=tmp_path,
+    )
+    assert result["ok_count"] == 1
+    assert result["flagged_count"] == 1
+    assert result["flagged"][0]["index"] == 2
+    assert result["flagged"][0]["status"] == "OK"
+    assert "year mismatch" in result["flagged"][0]["year_mismatch_note"]
+
+
+def test_summarize_refs_check_missing_file_raises(tmp_path):
+    with pytest.raises(ValueError, match="No ref-checker results file"):
+        narrative.summarize_refs_check(
+            PARALLEL_NETCDF_WORK["openalex_id"], tmp_path / "nope.json", base=tmp_path,
+        )
+
+
+def test_summarize_refs_check_malformed_file_raises(tmp_path):
+    results_path = tmp_path / "bad.json"
+    results_path.write_text("not json at all")
+    with pytest.raises(ValueError, match="not valid JSON"):
+        narrative.summarize_refs_check(
+            PARALLEL_NETCDF_WORK["openalex_id"], results_path, base=tmp_path,
+        )
+
+
+def test_summarize_refs_check_wrong_shape_raises(tmp_path):
+    results_path = tmp_path / "wrong_shape.json"
+    results_path.write_text(json.dumps({"not_a_results_file": True}))
+    with pytest.raises(ValueError, match="doesn't look like a ref-checker results sidecar"):
+        narrative.summarize_refs_check(
+            PARALLEL_NETCDF_WORK["openalex_id"], results_path, base=tmp_path,
+        )

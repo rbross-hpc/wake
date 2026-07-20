@@ -303,6 +303,35 @@ def _build_narrative_parser(sub) -> None:
     show = ssub.add_parser("show", help="Print the assembled top-level narrative.md.")
     show.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
+    refs_check = ssub.add_parser(
+        "refs-check",
+        help="Verify the stitched narrative's References list against live scholarly "
+             "databases using the external ref-checker tool. wake never runs ref-checker "
+             "itself -- 'export' writes ref-checker's input file, 'summarize' reads its "
+             "output. The agent runs `ref-checker check` itself as a subprocess in between.",
+    )
+    refs_check_sub = refs_check.add_subparsers(dest="refs_check_action", required=True, metavar="ACTION")
+
+    refs_check_export = refs_check_sub.add_parser(
+        "export",
+        help="Write narrative/refs.json in the shape `ref-checker check --refs-json` "
+             "expects, numbered identically to narrative.md's [R1]/[R2]/... so a flagged "
+             "index always maps back to the same reference the human sees in the document.",
+    )
+    refs_check_export.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+
+    refs_check_summarize = refs_check_sub.add_parser(
+        "summarize",
+        help="Parse a ref-checker results sidecar (from `ref-checker check --refs-json "
+             "narrative/refs.json --results-json <path>`) into a human-facing report of "
+             "which references are OK vs. flagged for review.",
+    )
+    refs_check_summarize.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    refs_check_summarize.add_argument(
+        "results_path", metavar="RESULTS_JSON",
+        help="Path to the ref-checker results sidecar to summarize.",
+    )
+
 
 def _build_bake_parser(sub) -> None:
     p = sub.add_parser(
@@ -873,6 +902,66 @@ def run_narrative(args) -> None:
         run_narrative_stitch(args)
     elif args.narrative_action == "show":
         run_narrative_show(args)
+    elif args.narrative_action == "refs-check":
+        run_narrative_refs_check(args)
+
+
+def run_narrative_refs_check(args) -> None:
+    if args.refs_check_action == "export":
+        run_narrative_refs_check_export(args)
+    elif args.refs_check_action == "summarize":
+        run_narrative_refs_check_summarize(args)
+
+
+def run_narrative_refs_check_export(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..narrative import export_refs
+    base = _work_dir_base(args)
+
+    try:
+        result = export_refs(work, base=base)
+    except ValueError as exc:
+        emit_error("narrative", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        print(f"Refs exported: {d['refs_json_path']} ({d['reference_count']} reference(s))")
+        print("  Run ref-checker yourself, e.g.:")
+        print(f"    pipx install git+https://github.com/rbross-hpc/ref-checker.git  # once")
+        print(f"    ref-checker check --refs-json {d['refs_json_path']} "
+              f"--results-json {d['refs_json_path'].rsplit('.json', 1)[0]}.results.json")
+        print("  Then: wake narrative refs-check summarize <seed> <results.json>")
+
+    emit("narrative", result, as_json=args.json_out, human=human)
+
+
+def run_narrative_refs_check_summarize(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..narrative import summarize_refs_check
+    base = _work_dir_base(args)
+
+    try:
+        result = summarize_refs_check(work["openalex_id"], args.results_path, base=base)
+    except ValueError as exc:
+        emit_error("narrative", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        print(f"ref-checker results: {d['ok_count']}/{d['total']} OK, {d['flagged_count']} flagged for review.")
+        for entry in d["flagged"]:
+            print(f"  [R{entry['index']}] {entry['status']}: {entry['title']}")
+            if entry.get("year_mismatch_note"):
+                print(f"      {entry['year_mismatch_note']}")
+            for note in entry.get("id_notes", []):
+                print(f"      {note}")
+            for url in entry.get("dead_urls", []):
+                print(f"      dead URL: {url}")
+            for src in entry.get("exhausted_sources", []):
+                print(f"      retries exhausted for {src} — results may be incomplete")
+        if not d["flagged"]:
+            print("  All references resolved cleanly.")
+
+    emit("narrative", result, as_json=args.json_out, human=human)
 
 
 def run_narrative_show(args) -> None:
