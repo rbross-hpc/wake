@@ -471,3 +471,16 @@ classification and are marked `[VERIFIED via ...]` in the brief.
     unverified work was added to it), `wake narrative section confirm`
     will refuse — that's a real inconsistency to fix (re-confirm the
     theme first), not a bug to work around.
+13. **Every `create`/`confirm`/`override` command validates and persists
+    a judgment you already made — it never makes the judgment itself.**
+    `theme create` doesn't decide which works belong together; `narrative
+    section create` doesn't decide what the prose should say; `override`
+    doesn't decide the relationship; `theme confirm`/`section confirm`
+    don't decide whether the evidence is good enough. wake's job in all
+    of these is to check the specific structural facts it can check (are
+    the citing IDs real, is every cited work verified, is the JSON
+    well-formed) and write the result down — the actual thinking already
+    happened, either in your read of the evidence or in the human's
+    sign-off. If you find yourself expecting one of these commands to
+    tell you whether something is a good idea, that's a sign the command
+    is being asked to do a job it doesn't do.
