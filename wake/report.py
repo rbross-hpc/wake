@@ -511,10 +511,22 @@ def bake_and_save(
     if verbose:
         print("[wake] Building impact report...", file=sys.stderr)
 
+    from .dedup import load_duplicates
+
     works = citing_works
     if apply_human_overrides:
         overrides = load_overrides(seed_id, base)
         works = apply_overrides(works, overrides)
+
+    duplicates = load_duplicates(seed_id, base)
+    if duplicates:
+        # A confirmed duplicate is excluded outright rather than merged
+        # into its canonical's entry -- the canonical work is already in
+        # `works` in its own right (it's a real citing ID, just like the
+        # duplicate), so dropping the duplicate is sufficient to avoid
+        # double-counting reach metrics without needing to reconcile two
+        # different relationship classifications into one.
+        works = [w for w in works if w.get("openalex_id") not in duplicates]
 
     metrics = build_metrics(seed_work, works)
     md_text = bake_markdown(seed_work, metrics)

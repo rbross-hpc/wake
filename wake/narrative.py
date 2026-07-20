@@ -183,15 +183,20 @@ def _parse_ref_markers(prose: str) -> list[list[str]]:
 def _validate_ref_ids(seed_id: str, prose: str, base: Path | None = None) -> None:
     """Validate every `[ref:...]` marker in *prose*: each named ID must be
     either `SEED` or a citing work currently human-verified for this seed
-    (see `_verified_ids`). Raises ValueError naming every invalid ID at
-    once, not one at a time.
+    (see `_verified_ids`), and must not be a confirmed duplicate of
+    another work (see `dedup.load_duplicates`) -- cite the canonical
+    work instead. Raises ValueError naming every invalid ID at once, not
+    one at a time.
 
-    This validates only that the referenced source is real and verified
-    -- not that it actually supports the sentence's claim, which remains
-    an agent/human judgment (a future `wake narrative section audit`
-    command is the intended place for that check, kept deliberately
-    separate from this structural validation).
+    This validates only that the referenced source is real, verified,
+    and not a known duplicate -- not that it actually supports the
+    sentence's claim, which remains an agent/human judgment (a future
+    `wake narrative section audit` command is the intended place for
+    that check, kept deliberately separate from this structural
+    validation).
     """
+    from .dedup import load_duplicates
+
     all_ids: set[str] = set()
     for ids in _parse_ref_markers(prose):
         all_ids.update(ids)
@@ -207,6 +212,15 @@ def _validate_ref_ids(seed_id: str, prose: str, base: Path | None = None) -> Non
             "Every [ref:...] marker must name SEED or a citing ID that has "
             "been through `wake evidence` + `wake override` (or a plain "
             "`wake override`) for this seed."
+        )
+
+    duplicates = load_duplicates(seed_id, base)
+    dup_refs = sorted(i for i in all_ids if i in duplicates)
+    if dup_refs:
+        pointers = ", ".join(f"{i} (use {duplicates[i]['canonical_id']} instead)" for i in dup_refs)
+        raise ValueError(
+            f"prose references confirmed duplicate(s): {pointers}. "
+            "Cite the canonical work instead of a work confirmed to be its duplicate."
         )
 
 

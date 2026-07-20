@@ -133,6 +133,7 @@ def create_theme(
     citing_works: [...], needs_evidence: [...]}.
     """
     from .classify import load_classified
+    from .dedup import load_duplicates
     from .report import load_overrides
 
     _validate_slug(slug)
@@ -140,6 +141,17 @@ def create_theme(
 
     if not citing_ids:
         raise ValueError("citing_ids must not be empty.")
+
+    duplicates = load_duplicates(seed_id, base)
+    confirmed_duplicates = [cid for cid in citing_ids if cid in duplicates]
+    if confirmed_duplicates:
+        pointers = ", ".join(
+            f"{cid} (use {duplicates[cid]['canonical_id']} instead)" for cid in confirmed_duplicates
+        )
+        raise ValueError(
+            f"citing_ids includes confirmed duplicate(s): {pointers}. "
+            "Cite the canonical work instead of a work confirmed to be its duplicate."
+        )
 
     classified = load_classified(seed_id, base) or []
     classified_by_id = {w.get("openalex_id"): w for w in classified}
