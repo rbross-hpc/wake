@@ -45,6 +45,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_fetch_pdf_parser(sub)
     _build_evidence_parser(sub)
     _build_theme_parser(sub)
+    _build_narrative_parser(sub)
     _build_bake_parser(sub)
     _build_override_parser(sub)
     _build_cost_parser(sub)
@@ -213,6 +214,64 @@ def _build_theme_parser(sub) -> None:
              "last created/reviewed but haven't been re-confirmed.",
     )
     queue.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+
+
+def _build_narrative_parser(sub) -> None:
+    p = sub.add_parser(
+        "narrative",
+        help="Draft a narrative from confirmed themes, one section at a time, then stitch.",
+    )
+    ssub = p.add_subparsers(dest="narrative_action", required=True, metavar="ACTION")
+
+    outline = ssub.add_parser("outline", help="Plan the narrative's structure before drafting any prose.")
+    outline_sub = outline.add_subparsers(dest="outline_action", required=True, metavar="ACTION")
+
+    outline_create = outline_sub.add_parser(
+        "create",
+        help="Write (or overwrite) the narrative outline: an ordered list of components. "
+             "No LLM call, no confirmation of its own -- it's a plan, not a claim.",
+    )
+    outline_create.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    outline_create.add_argument(
+        "--components", required=True, metavar="JSON",
+        help='JSON list of components, e.g. \'[{"slug":"intro","title":"Introduction","kind":"free"},'
+             '{"slug":"earth-adoption","title":"Earth-System Adoption","kind":"theme",'
+             '"theme_slugs":["earth-system-modeling"]}]\'. kind is "theme" (requires non-empty '
+             'theme_slugs, each an already-existing theme) or "free" (framing prose, no theme_slugs).',
+    )
+
+    section = ssub.add_parser("section", help="Draft or confirm one narrative section's prose.")
+    section_sub = section.add_subparsers(dest="section_action", required=True, metavar="ACTION")
+
+    section_create = section_sub.add_parser(
+        "create",
+        help="Write (or overwrite) one section's prose. Always a draft -- no LLM call; the "
+             "agent writes the prose after reading the underlying theme(s)/dossiers itself.",
+    )
+    section_create.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    section_create.add_argument("slug", help="Section identifier, matching a component in the outline.")
+    section_create.add_argument("--title", required=True, help="Human-readable section title.")
+    section_create.add_argument("--prose", required=True, help="Drafted prose, written by the agent.")
+    section_create.add_argument(
+        "--theme-slugs", default="", metavar="SLUG,SLUG,...",
+        help="Comma-separated theme slugs this section is grounded in (omit for a free-form section).",
+    )
+
+    section_confirm = section_sub.add_parser(
+        "confirm",
+        help="Human-approved sign-off promoting a section from 'draft' to 'confirmed'. Always run "
+             "by the agent on the human's behalf (see SKILL.md). For a theme-backed section, "
+             "refuses unless every referenced theme is currently confirmed.",
+    )
+    section_confirm.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    section_confirm.add_argument("slug", help="Section identifier to confirm.")
+
+    stitch = ssub.add_parser(
+        "stitch",
+        help="Assemble the outline order + every drafted section into the top-level narrative.md. "
+             "Works on partial data -- missing/still-draft sections are clearly labeled, not hidden.",
+    )
+    stitch.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
 
 def _build_bake_parser(sub) -> None:
@@ -751,6 +810,124 @@ def run_theme_queue(args) -> None:
     emit("theme", {"queue": entries}, as_json=args.json_out, human=lambda d: human(d["queue"]))
 
 
+def run_narrative(args) -> None:
+    if args.narrative_action == "outline":
+        run_narrative_outline(args)
+    elif args.narrative_action == "section":
+        run_narrative_section(args)
+    elif args.narrative_action == "stitch":
+        run_narrative_stitch(args)
+
+
+def run_narrative_outline(args) -> None:
+    if args.outline_action == "create":
+        run_narrative_outline_create(args)
+
+
+def run_narrative_outline_create(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..narrative import create_outline
+    base = _work_dir_base(args)
+
+    try:
+        components = json.loads(args.components)
+    except json.JSONDecodeError as exc:
+        emit_error("narrative", ValueError(f"--components must be valid JSON: {exc}"), as_json=args.json_out)
+        sys.exit(1)
+
+    try:
+        result = create_outline(work, components=components, base=base)
+    except ValueError as exc:
+        emit_error("narrative", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        print(f"Outline written: {d['outline_path']}")
+        for c in d["components"]:
+            print(f"  - {c['title']} ({c['slug']}, {c['kind']})")
+        print("  Draft each section with `wake narrative section create`, then "
+              "`wake narrative stitch` to assemble narrative.md.")
+
+    emit("narrative", result, as_json=args.json_out, human=human)
+
+
+def run_narrative_section(args) -> None:
+    if args.section_action == "create":
+        run_narrative_section_create(args)
+    elif args.section_action == "confirm":
+        run_narrative_section_confirm(args)
+
+
+def run_narrative_section_create(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..narrative import create_section
+    base = _work_dir_base(args)
+    theme_slugs = [t.strip() for t in args.theme_slugs.split(",") if t.strip()]
+
+    try:
+        result = create_section(
+            work, args.slug,
+            title=args.title, prose=args.prose, theme_slugs=theme_slugs,
+            base=base,
+        )
+    except ValueError as exc:
+        emit_error("narrative", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        print(f"Section written (draft): {d['section_path']}")
+        if d["theme_slugs"]:
+            print(f"  Grounded in theme(s): {', '.join(d['theme_slugs'])}")
+        print("  Present to the human; run `wake narrative section confirm` on their behalf "
+              "once they approve" + (" (requires every referenced theme to be currently confirmed)."
+              if d["theme_slugs"] else "."))
+
+    emit("narrative", result, as_json=args.json_out, human=human)
+
+
+def run_narrative_section_confirm(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..narrative import confirm_section
+    base = _work_dir_base(args)
+
+    try:
+        result = confirm_section(work, args.slug, base=base)
+    except ValueError as exc:
+        emit_error("narrative", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        if not d["ok"]:
+            print(d["message"])
+            return
+        print(f"Section confirmed: {d['section_path']}")
+
+    emit("narrative", result, as_json=args.json_out, human=human)
+    if not result["ok"]:
+        sys.exit(1)
+
+
+def run_narrative_stitch(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..narrative import stitch
+    base = _work_dir_base(args)
+
+    try:
+        result = stitch(work, base=base)
+    except ValueError as exc:
+        emit_error("narrative", exc, as_json=args.json_out)
+        sys.exit(1)
+
+    def human(d):
+        print(f"Narrative written: {d['narrative_path']}")
+        print(f"  {d['confirmed_sections']} confirmed, {d['draft_sections']} draft, "
+              f"{len(d['missing_sections'])} not yet written.")
+        if d["missing_sections"]:
+            print(f"  Missing: {', '.join(d['missing_sections'])}")
+
+    emit("narrative", result, as_json=args.json_out, human=human)
+
+
 def run_bake(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
     from ..citing import load_citing
@@ -935,6 +1112,8 @@ def main() -> None:
             run_evidence(args)
         elif args.command == "theme":
             run_theme(args)
+        elif args.command == "narrative":
+            run_narrative(args)
         elif args.command == "bake":
             run_bake(args)
         elif args.command == "override":
