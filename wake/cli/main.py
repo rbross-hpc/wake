@@ -1027,6 +1027,14 @@ def run_evidence(args) -> None:
                 print(f"Evidence verification failed: {d.get('message', d['reason'])}")
             return
 
+        title = d.get("citing_title") or args.citing_id
+        authors = d.get("citing_authors") or []
+        author_str = ", ".join(authors[:8]) + (" et al." if len(authors) > 8 else "")
+        print(f"  {title}")
+        if author_str:
+            print(f"  {author_str}")
+        print()
+
         prov = d["provisional"]
         prop = d["proposed"]
         print(f"Provisional (abstract-only): {prov['relationship']} (confidence {prov['confidence']:.2f})")
@@ -1035,15 +1043,32 @@ def run_evidence(args) -> None:
         if not prop["agrees_with_provisional"]:
             print("  -> differs from the provisional guess")
         print()
-        if d["quotes"]:
-            print(f"{len(d['quotes'])} supporting passage(s) — see dossier for full context:")
-            print(f"  {d['dossier_path']}")
+
+        quotes = d.get("quotes") or []
+        if quotes:
+            shown = quotes[:3]
+            remaining = len(quotes) - len(shown)
+            print(f"{len(quotes)} supporting passage(s) — paste verbatim to the human, not a paraphrase:")
+            print()
+            for q in shown:
+                page = q.get("page")
+                page_str = f"p. {page}" if page else "page unknown"
+                print(f"  [{page_str}]")
+                for line in q["text"].splitlines():
+                    print(f"  > {line}")
+                if q.get("note"):
+                    print(f"  ({q['note']})")
+                print()
+            if remaining:
+                print(f"  (+ {remaining} more — see dossier: {d['dossier_path']})")
+                print()
         else:
             print("No supporting passages found in the full text.")
-        print()
+            print()
+
         print(
             "This is a proposed finding, not applied to the brief. Present the "
-            "quoted passages to the human, then run `wake override` yourself "
+            "quoted passages above to the human, then run `wake override` yourself "
             "once they accept or adjust it — never ask the human to run the "
             "override command."
         )
