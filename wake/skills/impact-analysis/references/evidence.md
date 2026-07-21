@@ -62,6 +62,42 @@ is a new finding, not a continuation of the old sign-off.
 Errors (exit 1) with a message naming `wake evidence "<seed>" <citing-id>`
 if no dossier exists yet.
 
+## Supplying a manually-obtained PDF (`wake evidence --from-pdf`)
+
+When `wake fetch-pdf` fails and a human hunts down a PDF manually, pass
+it directly to `wake evidence` instead of copying it in yourself:
+
+```bash
+wake evidence "<seed>" <citing-id> --from-pdf /path/to/paper.pdf
+```
+
+Before copying the PDF into the packet, wake validates that it matches the
+citing work's metadata using three signals:
+- **Title similarity** — SequenceMatcher ratio of the citing work's title
+  against the first ~800 characters of the extracted lead text (threshold
+  ≥0.55, looser than dedup's 0.85 to account for noisy PDF extraction).
+- **Author surname match** — at least one author surname appears in the
+  lead text (whole-word, case-insensitive).
+- **DOI in text** — the citing work's DOI appears literally in the lead
+  text.
+
+At least two signals must fire, and at least one of {title, DOI} must be
+among them (author match alone is insufficient). If the check fails, wake
+refuses to copy the file and returns an error with the signal breakdown.
+
+If you're confident it's the right paper despite the check failing (e.g.
+the title is truncated in the PDF or the DOI is only in the HTML landing
+page), override the refusal:
+
+```bash
+wake evidence "<seed>" <citing-id> --from-pdf /path/to/paper.pdf --force
+```
+
+`--force` bypasses the *copy refusal* but the check still runs and the
+mismatch is logged to `evidence/log.md` as `pdf_forced_despite_mismatch`
+so there's always an audit trail. The dossier verification itself then
+proceeds normally with the supplied PDF.
+
 ## Undoing a mistaken verification (`wake unverify`)
 
 `wake unverify "<seed>" <citing-id> [--reason "..."]` response shape:

@@ -267,9 +267,15 @@ def _build_evidence_parser(sub) -> None:
     p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     p.add_argument("citing_id", help="OpenAlex ID of the citing work to investigate.")
     p.add_argument("--force", action="store_true",
-                   help="Re-run verification even if a dossier already exists (re-fetches "
-                        "the PDF only if not already cached; use `wake fetch-pdf --force` "
-                        "separately to force a fresh PDF download).")
+                   help="Re-run verification even if a dossier already exists. Also: "
+                        "when used with --from-pdf, bypasses the metadata-mismatch "
+                        "refusal but still runs the check and logs any mismatch.")
+    p.add_argument("--from-pdf", metavar="PATH",
+                   help="Path to a locally-obtained PDF for this citing work. "
+                        "wake validates that the PDF matches the citing work's metadata "
+                        "(title similarity, author name, DOI) before copying it into the "
+                        "packet and running full-text verification. Refuses on mismatch "
+                        "unless --force is also given (mismatch is always logged).")
 
 
 def _build_theme_parser(sub) -> None:
@@ -1052,6 +1058,60 @@ def _find_classified_work(seed_id: str, citing_id: str, base) -> dict | None:
     return _find_citing_work(seed_id, citing_id, base)
 
 
+def _run_evidence_from_pdf(args, seed_work, citing_work, pdf_path_str, base, quiet):
+    """Handle `wake evidence --from-pdf PATH`: validate PDF metadata, copy
+    into the packet, then run build_dossier on it. The metadata check always
+    runs; --force bypasses the copy refusal but does not suppress the check."""
+    import shutil
+    from pathlib import Path as _Path
+    from ..evidence import build_dossier
+    from ..evidence_wiki import append_log_entry
+    from ..pdf_fetch import pdf_path as _pdf_dest_path
+    from ..pdf_verify import check_pdf_metadata
+    from ..sources.pdf_abstract import extract_lead_text
+
+    seed_id = seed_work["openalex_id"]
+    citing_id = citing_work["openalex_id"]
+    supplied = _Path(pdf_path_str).expanduser().resolve()
+
+    if not supplied.exists():
+        emit_error("evidence", FileNotFoundError(f"PDF not found: {supplied}"), as_json=args.json_out)
+        sys.exit(1)
+
+    if not quiet:
+        print(f"[wake] Extracting lead text for metadata check: {supplied}", file=sys.stderr)
+    lead_text = extract_lead_text(supplied, max_pages=3)
+
+    check = check_pdf_metadata(citing_work, lead_text)
+
+    log_event = "pdf_supplied_verified" if check["ok"] else "pdf_supplied_mismatch"
+    if not check["ok"] and args.force:
+        log_event = "pdf_forced_despite_mismatch"
+    append_log_entry(
+        seed_id, event=log_event, citing_id=citing_id,
+        detail=(
+            f"title_sim={check['title_similarity']:.2f} "
+            f"author={check['author_matched']} "
+            f"doi={check['doi_found']}"
+        ),
+        seed_title=seed_work.get("title"), base=base,
+    )
+
+    if not check["ok"] and not args.force:
+        emit_error("evidence", ValueError(check["message"]), as_json=args.json_out)
+        sys.exit(1)
+
+    dest = _pdf_dest_path(seed_id, citing_id, base)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(supplied, dest)
+    if not quiet:
+        print(f"[wake] PDF copied to: {dest}", file=sys.stderr)
+        if not check["ok"]:
+            print(f"[wake] WARN: metadata mismatch overridden (--force): {check['message']}", file=sys.stderr)
+
+    return build_dossier(seed_work, citing_work, base=base, force=True, verbose=not quiet)
+
+
 def run_evidence(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
     from ..evidence import build_dossier
@@ -1074,7 +1134,11 @@ def run_evidence(args) -> None:
         ), as_json=args.json_out)
         sys.exit(1)
 
-    result = build_dossier(work, citing_work, base=base, force=args.force, verbose=not quiet)
+    from_pdf = getattr(args, "from_pdf", None)
+    if from_pdf:
+        result = _run_evidence_from_pdf(args, work, citing_work, from_pdf, base, quiet)
+    else:
+        result = build_dossier(work, citing_work, base=base, force=args.force, verbose=not quiet)
 
     def human(d):
         if not d["ok"]:

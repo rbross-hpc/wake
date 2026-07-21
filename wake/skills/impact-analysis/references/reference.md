@@ -33,6 +33,7 @@ wake --json posters keep "<seed>" <citing-id> --reason "..."
 wake --json fetch-pdf "<seed>" <citing-id> [--force]
 wake --json fill-abstract "<seed>" <citing-id> --from-pdf PATH | --text TEXT
 wake --json evidence "<seed>" <citing-id> [--force]
+wake --json evidence "<seed>" <citing-id> --from-pdf PATH [--force]
 wake --json theme create "<seed>" <slug> --title "..." --summary "..." --citing-ids ID,ID,...
 wake --json theme confirm "<seed>" <slug>
 wake --json theme queue "<seed>"

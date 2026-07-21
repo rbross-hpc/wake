@@ -70,6 +70,7 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake fill-abstract <seed> <id>` | Manually resolve one via `--from-pdf` or `--text` |
 | `wake fetch-pdf <seed> <id>` | Try to automatically acquire a PDF (OSTI, Semantic Scholar, Unpaywall, Springer, arXiv, optional CORE) |
 | `wake evidence <seed> <id>` | Full-text verification: reads the whole PDF, proposes a relationship with quoted, page-cited passages |
+| `wake evidence <seed> <id> --from-pdf PATH` | Supply a manually-obtained PDF: validates it matches the citing work's metadata (title similarity, author, DOI) before copying and verifying; `--force` overrides refusal |
 | `wake theme create <seed> <slug>` | Write a combined-evidence theme doc (`--title`, `--summary`, `--citing-ids`); always draft |
 | `wake theme confirm <seed> <slug>` | Human sign-off promoting a theme to confirmed; refuses unless all cited works are verified |
 | `wake theme queue <seed>` | List theme citing-works still needing an evidence dossier, or needing re-review |
