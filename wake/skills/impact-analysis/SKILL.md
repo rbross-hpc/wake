@@ -357,7 +357,19 @@ failed, verified) if you need to reconstruct what happened and when.
 
 If `wake evidence` can't get a PDF, it returns the same human-actionable
 fallback links as `fetch-pdf` (Unpaywall, Google Scholar, publisher DOI,
-CORE) — offer those rather than giving up on verifying that work.
+CORE) — offer those rather than giving up on verifying that work. If a
+human finds a PDF manually (e.g. via the publisher or a preprint server),
+pass it directly instead of copying it yourself:
+
+```bash
+wake --json evidence "<seed>" <citing-id> --from-pdf /path/to/paper.pdf
+```
+
+wake validates that the PDF matches the citing work's metadata (title
+similarity, author surname, DOI in text) before copying it into the packet
+and running verification. On mismatch, it refuses and explains what failed.
+If you're confident it's the right paper despite the check failing, use
+`--force` — the check still runs and the mismatch is logged.
 
 **If a `proposed` finding looks wrong or implausible, check the extraction
 before doubting the reasoning.** The `extracted_text_path` field in the
