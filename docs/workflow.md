@@ -52,7 +52,8 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 
 | Command | Purpose |
 |---------|---------|
-| `wake resolve <seed>` | Resolve seed → canonical OpenAlex work |
+| `wake resolve <seed>` | Resolve seed → canonical OpenAlex work (also auto-attempts to acquire the seed paper's PDF) |
+| `wake seed fetch-pdf <seed>` | Acquire the seed paper's own PDF (auto-tried at resolve; use this to retry or supply one manually with `--from-pdf PATH`) |
 | `wake status <seed>` | Cached-artifact counts + estimated remaining cost — start here |
 | `wake citing <seed>` | Fetch & cache all citing works (`--sort`, `--min-year`, `--limit`) |
 | `wake sample <seed>` | Representative slice of citing works for review (free, no LLM) |

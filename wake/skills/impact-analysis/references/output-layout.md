@@ -2,7 +2,11 @@
 
 ```
 wake-out/<OpenAlex-ID>/
-  seed.json               — resolved seed + LLM description
+  seed.json               — resolved seed + LLM description + seed_pdf sub-object
+  seed.pdf                — the seed paper's own PDF (wake seed fetch-pdf; auto-attempted
+                             at wake resolve time, silently skipped if unavailable)
+  seed.pdf.json           — seed PDF full text, page-tagged (sibling cache, same format
+                             as pdfs/<citing-id>.json)
   citing.json             — all citing works (paginated, cached)
   classified.json         — per-citing-work relationship + evidence
                              (verification_status: "provisional" by default)

@@ -25,7 +25,8 @@ Source chain (config: pdf_fetch.sources, default order):
 
 Mostly API-based (Springer is a direct, predictable URL rather than an
 API lookup); no scraping of publisher landing pages, no sci-hub-style
-sources. On success, saves to wake-out/<seed>/pdfs/<citing-id>.pdf.
+sources. On success, saves to wake-out/<seed>/pdfs/<citing-id>.pdf for
+citing works, or wake-out/<seed>/seed.pdf for the seed itself.
 """
 from __future__ import annotations
 
@@ -52,6 +53,12 @@ def pdfs_dir(seed_id: str, base: Path | None = None) -> Path:
 
 def pdf_path(seed_id: str, citing_id: str, base: Path | None = None) -> Path:
     return pdfs_dir(seed_id, base) / f"{citing_id}.pdf"
+
+
+def seed_pdf_path(seed_id: str, base: Path | None = None) -> Path:
+    """Path for the seed paper's own PDF, distinct from pdfs/ which is
+    exclusively citing-work PDFs."""
+    return work_dir(seed_id, base) / "seed.pdf"
 
 
 def _source_func(name: str) -> Callable[[str], str | None] | None:
@@ -125,44 +132,33 @@ def fallback_links(doi: str | None, title: str | None) -> dict[str, str]:
     return links
 
 
-def fetch_pdf(
-    seed_id: str,
-    citing_id: str,
+def _fetch_pdf_to(
+    dest: Path,
     *,
     doi: str | None,
-    title: str | None = None,
-    seed_title: str | None = None,
-    base: Path | None = None,
-    force: bool = False,
-    verbose: bool = True,
+    title: str | None,
+    log_seed_id: str,
+    log_citing_id: str,
+    log_seed_title: str | None,
+    log_event_success: str,
+    log_event_failure: str,
+    base: Path | None,
+    verbose: bool,
 ) -> dict[str, Any]:
-    """Try the configured source chain to acquire a PDF for a citing work.
+    """Core download loop shared by fetch_pdf (citing works) and
+    fetch_seed_pdf (the seed paper itself). Tries the configured source
+    chain and writes the result to *dest*. Returns a result dict.
 
-    Returns a result dict:
-      {"ok": True, "path": "<local path>", "source": "<source name>"}
-    or
-      {"ok": False, "tried": [...], "fallback_links": {...}}
-
-    If a PDF is already cached at the destination path and force=False,
-    returns immediately without making any network calls.
-
-    Every real attempt (not a cache hit) is logged to evidence/log.md via
-    `evidence_wiki.append_log_entry` so `wake missing-pdfs` can later
-    reconstruct which sources were tried and whether any succeeded.
-    Cache hits are not logged (they are not new attempts).
+    *log_citing_id* is the ID used in evidence/log.md entries —
+    for citing-work fetches it's the citing work's openalex_id; for seed
+    fetches it's the seed's own openalex_id, keeping them distinguishable
+    in the log by the event name.
     """
     cfg = _cfg()
     sources = cfg.get("sources", ["osti", "semanticscholar", "unpaywall", "springer", "arxiv", "core"])
     rate_limits = cfg.get("rate_limit_s", {})
     timeout = cfg.get("download_timeout_s", 30)
     min_bytes = cfg.get("min_valid_pdf_bytes", 2048)
-
-    dest = pdf_path(seed_id, citing_id, base)
-
-    if not force and dest.exists():
-        if verbose:
-            print(f"[wake] PDF already cached: {dest}", file=sys.stderr)
-        return {"ok": True, "path": str(dest), "source": "cache"}
 
     tried: list[str] = []
 
@@ -204,8 +200,8 @@ def fetch_pdf(
         if _download(url, dest, timeout=timeout, min_bytes=min_bytes):
             if verbose:
                 print(f"[wake] PDF acquired via {source_name} -> {dest}", file=sys.stderr)
-            _log_fetch(seed_id, citing_id, event="pdf_fetched",
-                       detail=f"via {source_name}", seed_title=seed_title, base=base)
+            _log_fetch(log_seed_id, log_citing_id, event=log_event_success,
+                       detail=f"via {source_name}", seed_title=log_seed_title, base=base)
             return {"ok": True, "path": str(dest), "source": source_name, "url": url}
 
         if verbose:
@@ -215,13 +211,98 @@ def fetch_pdf(
         print(f"[wake] No PDF acquired automatically (tried: {', '.join(tried) or 'none'}).", file=sys.stderr)
 
     tried_str = ", ".join(tried) if tried else "none applicable"
-    _log_fetch(seed_id, citing_id, event="pdf_fetch_failed",
-               detail=f"tried: {tried_str}", seed_title=seed_title, base=base)
+    _log_fetch(log_seed_id, log_citing_id, event=log_event_failure,
+               detail=f"tried: {tried_str}", seed_title=log_seed_title, base=base)
     return {
         "ok": False,
         "tried": tried,
         "fallback_links": fallback_links(doi, title),
     }
+
+
+def fetch_pdf(
+    seed_id: str,
+    citing_id: str,
+    *,
+    doi: str | None,
+    title: str | None = None,
+    seed_title: str | None = None,
+    base: Path | None = None,
+    force: bool = False,
+    verbose: bool = True,
+) -> dict[str, Any]:
+    """Try the configured source chain to acquire a PDF for a citing work.
+
+    Returns a result dict:
+      {"ok": True, "path": "<local path>", "source": "<source name>"}
+    or
+      {"ok": False, "tried": [...], "fallback_links": {...}}
+
+    If a PDF is already cached at the destination path and force=False,
+    returns immediately without making any network calls.
+
+    Every real attempt (not a cache hit) is logged to evidence/log.md via
+    `evidence_wiki.append_log_entry` so `wake missing-pdfs` can later
+    reconstruct which sources were tried and whether any succeeded.
+    Cache hits are not logged (they are not new attempts).
+    """
+    dest = pdf_path(seed_id, citing_id, base)
+
+    if not force and dest.exists():
+        if verbose:
+            print(f"[wake] PDF already cached: {dest}", file=sys.stderr)
+        return {"ok": True, "path": str(dest), "source": "cache"}
+
+    return _fetch_pdf_to(
+        dest,
+        doi=doi,
+        title=title,
+        log_seed_id=seed_id,
+        log_citing_id=citing_id,
+        log_seed_title=seed_title,
+        log_event_success="pdf_fetched",
+        log_event_failure="pdf_fetch_failed",
+        base=base,
+        verbose=verbose,
+    )
+
+
+def fetch_seed_pdf(
+    seed_work: dict,
+    *,
+    base: Path | None = None,
+    force: bool = False,
+    verbose: bool = True,
+) -> dict[str, Any]:
+    """Try the configured source chain to acquire the seed paper's own PDF.
+
+    Same chain as fetch_pdf for citing works. Stores at
+    wake-out/<seed>/seed.pdf (distinct from pdfs/ which is citing works
+    only). Returns the same result shape as fetch_pdf.
+
+    Log events use seed_pdf_fetched / seed_pdf_fetch_failed so they are
+    distinguishable from citing-work fetch events in evidence/log.md.
+    """
+    seed_id = seed_work["openalex_id"]
+    dest = seed_pdf_path(seed_id, base)
+
+    if not force and dest.exists():
+        if verbose:
+            print(f"[wake] Seed PDF already cached: {dest}", file=sys.stderr)
+        return {"ok": True, "path": str(dest), "source": "cache"}
+
+    return _fetch_pdf_to(
+        dest,
+        doi=seed_work.get("doi"),
+        title=seed_work.get("title"),
+        log_seed_id=seed_id,
+        log_citing_id=seed_id,
+        log_seed_title=seed_work.get("title"),
+        log_event_success="seed_pdf_fetched",
+        log_event_failure="seed_pdf_fetch_failed",
+        base=base,
+        verbose=verbose,
+    )
 
 
 def _log_fetch(

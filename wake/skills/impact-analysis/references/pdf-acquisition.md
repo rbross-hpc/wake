@@ -23,6 +23,38 @@ event `pdf_fetched` (success) or `pdf_fetch_failed` (all sources exhausted),
 so `wake missing-pdfs` can later reconstruct which sources were tried and
 whether any succeeded.
 
+## Seed paper PDF (`wake seed fetch-pdf`)
+
+The same source chain also acquires the seed paper's own PDF, tried
+automatically every time `wake resolve` runs (silently on failure --
+resolve is never blocked). The seed PDF lives at
+`wake-out/<seed>/seed.pdf` (distinct from `pdfs/` which is citing works
+only); extracted text at `wake-out/<seed>/seed.pdf.json`.
+
+```bash
+wake --json seed fetch-pdf "<seed>"
+```
+
+Response on success: `{"ok": true, "data": {"ok": true, "path": "...", "extracted_text_path": "...", "source": "osti"}}`.
+Response on failure: `{"ok": false, "data": {"ok": false, "tried": [...], "fallback_links": {...}}}`.
+
+If the automatic chain can't find it (e.g. the paper is behind a paywall
+not covered by any configured source), the human will have a copy or can
+get one. Once they do:
+
+```bash
+wake --json seed fetch-pdf "<seed>" --from-pdf /path/to/paper.pdf
+```
+
+Same three-signal metadata check as `wake evidence --from-pdf` (title
+similarity, author surname, DOI in text). `--force` bypasses the
+refusal on mismatch but still logs it. `wake status` shows whether the
+seed PDF is cached.
+
+The seed PDF is not yet wired into any command's LLM prompts (Pass 1 --
+acquire and store only). Future passes will feed it into `wake describe`,
+`wake evidence`, and eventually `wake narrative section audit`.
+
 ## Finding works still missing a PDF: `wake missing-pdfs`
 
 `wake missing-pdfs <seed>` response shape:

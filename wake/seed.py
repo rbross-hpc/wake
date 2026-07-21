@@ -101,7 +101,16 @@ def load_seed(openalex_id: str, base: Path | None = None) -> dict[str, Any] | No
 
 
 def resolve_and_cache(seed: str, base: Path | None = None, force: bool = False) -> dict[str, Any]:
-    """Resolve seed and cache the result; return cached if current."""
+    """Resolve seed and cache the result; return cached if current.
+
+    After writing seed.json, automatically attempts to acquire the seed
+    paper's own PDF if `pdf_fetch.seed_pdf_at_resolve` is true in config
+    (the default). The attempt is always silent on failure -- a missing
+    seed PDF is surfaced via wake status and the fallback-links message,
+    not by blocking resolve. This means resolve is idempotent: re-running
+    on a cached seed skips the metadata re-fetch but still tries to get
+    the PDF if it isn't already cached.
+    """
     work = resolve(seed)
     oid = work["openalex_id"]
     wd = work_dir(oid, base)
@@ -109,13 +118,58 @@ def resolve_and_cache(seed: str, base: Path | None = None, force: bool = False) 
     if not force and is_stage_current(wd, _STAGE, seed_id=oid, prompt_version=_VERSION):
         cached = load_seed(oid, base)
         if cached:
+            _maybe_auto_fetch_seed_pdf(cached, base=base, verbose=True)
             return cached
 
     wd.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {**work, "resolved_at": now_iso()}
     atomic_write_json(wd / "seed.json", payload)
     mark_stage_complete(wd, _STAGE, seed_id=oid, prompt_version=_VERSION)
-    return payload
+    _maybe_auto_fetch_seed_pdf(payload, base=base, verbose=True)
+    return load_seed(oid, base) or payload
+
+
+def _maybe_auto_fetch_seed_pdf(
+    seed_work: dict[str, Any],
+    *,
+    base: Path | None = None,
+    verbose: bool = True,
+) -> None:
+    """Auto-attempt the seed PDF fetch if enabled and not already cached.
+    Never raises -- any failure is recorded in seed.json and logged but
+    never propagates to the caller.
+    """
+    cfg = config.pdf_fetch_cfg()
+    if not cfg.get("seed_pdf_at_resolve", True):
+        return
+
+    from .pdf_fetch import seed_pdf_path
+    seed_id = seed_work["openalex_id"]
+    dest = seed_pdf_path(seed_id, base)
+    if dest.exists():
+        return
+
+    existing = load_seed(seed_id, base) or {}
+    if existing.get("seed_pdf", {}).get("path") is None and "attempted_at" in existing.get("seed_pdf", {}):
+        return
+
+    try:
+        from .seed_pdf import acquire_seed_pdf
+        result = acquire_seed_pdf(seed_work, base=base, verbose=verbose)
+        if not result["ok"] and verbose:
+            title = seed_work.get("title", seed_id)
+            tried = ", ".join(result.get("tried", [])) or "none applicable"
+            print(
+                f"[wake] Could not automatically acquire the seed PDF (tried: {tried}).\n"
+                f"       The agent will need your help finding it. Once you have it, run:\n"
+                f"         wake seed fetch-pdf \"{title}\" --from-pdf /path/to/paper.pdf\n"
+                f"       Or try one of these links:",
+                file=sys.stderr,
+            )
+            for label, url in result.get("fallback_links", {}).items():
+                print(f"         {label}: {url}", file=sys.stderr)
+    except Exception:
+        pass
 
 
 def print_seed_table(work: dict[str, Any]) -> None:
