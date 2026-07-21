@@ -401,6 +401,8 @@ def build_dossier(
                 "provisional": cached.get("provisional"),
                 "proposed": cached.get("proposed"),
                 "quotes": cached.get("quotes"),
+                "citing_title": cached.get("citing_title") or citing_work.get("title"),
+                "citing_authors": cached.get("citing_authors") or citing_work.get("authors") or [],
             }
 
     fetch_result = fetch_pdf(
@@ -463,6 +465,8 @@ def build_dossier(
     json_payload = {
         "seed_openalex_id": seed_id,
         "citing_openalex_id": citing_id,
+        "citing_title": citing_work.get("title"),
+        "citing_authors": citing_work.get("authors") or [],
         "generated_at": now_iso(),
         "prompt_version": _prompt_version(),
         "model": _model(),

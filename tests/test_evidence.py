@@ -185,6 +185,11 @@ def test_build_dossier_end_to_end_with_real_fixture_pdf(tmp_path):
     assert loaded["verification_status"] == "pending-human-review"
     assert loaded["author_overlap"] is False
 
+    # Dossier JSON now includes citing_title and citing_authors so agents
+    # rendering the pre-verify summary don't need to cross-reference classified.json.
+    assert loaded["citing_title"] == CLASSIFIED_CITING_WORK["title"]
+    assert loaded["citing_authors"] == CLASSIFIED_CITING_WORK["authors"]
+
 
 def test_build_dossier_flags_author_overlap_in_markdown_and_json(tmp_path):
     seed = {**PARALLEL_NETCDF_WORK, "author_ids": ["A1"]}
