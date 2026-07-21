@@ -24,6 +24,7 @@ wake --json citing "<seed>" [--sort cited-by|recent|oldest|random] [--min-year Y
 wake --json sample "<seed>" [-n N] [--sort ...]
 wake --json classify "<seed>" [--ids ID,ID,...] [--limit N] [--sort ...] [--dry-run] [--force]
 wake --json gaps "<seed>" [--min-cited-by N] [--no-auto-backfill-check]
+wake --json missing-pdfs "<seed>" [--min-cited-by N] [--limit N]
 wake --json dedup candidates "<seed>" [--min-title-similarity F]
 wake --json dedup confirm "<seed>" <duplicate-id> <canonical-id> [--reason "..."]
 wake --json dedup reject "<seed>" <id-a> <id-b> [--reason "..."]
@@ -78,7 +79,7 @@ back to cwd), `--verbose` (keep progress banners on stderr even under `--json`).
 | [`dedup.md`](dedup.md) | `wake dedup candidates`/`confirm`/`reject`, downstream exclusion from bake/theme/narrative |
 | [`posters.md`](posters.md) | `wake posters candidates`/`keep`, surfacing poster/conference-abstract stubs for `wake exclude` |
 | [`exclude.md`](exclude.md) | `wake exclude`/`unexclude`, downstream exclusion from bake/theme/narrative/gaps/theme-queue |
-| [`pdf-acquisition.md`](pdf-acquisition.md) | The `wake fetch-pdf` source chain and fallback behavior |
+| [`pdf-acquisition.md`](pdf-acquisition.md) | The `wake fetch-pdf` source chain and `wake missing-pdfs` and fallback behavior |
 | [`evidence.md`](evidence.md) | `wake evidence`/`wake override`/`wake unverify`, the provisional → proposed → verified lifecycle, diagnosing a surprising finding |
 | [`themes.md`](themes.md) | `wake theme create`/`confirm`/`queue`, draft → confirmed lifecycle |
 | [`narrative.md`](narrative.md) | `wake narrative outline`/`section`/`stitch`, inline `[ref:...]` source references, stitch-time renumbering |

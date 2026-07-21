@@ -17,3 +17,41 @@ A downloaded file that isn't a valid PDF (e.g. a paywall HTML page saved
 with a `.pdf` extension) is rejected and the chain falls through. On total
 failure, returns human-actionable links: Unpaywall lookup page, Google
 Scholar search for the title, publisher DOI link, CORE.ac.uk search URL.
+
+Every real attempt (not a cache hit) is logged to `evidence/log.md` with
+event `pdf_fetched` (success) or `pdf_fetch_failed` (all sources exhausted),
+so `wake missing-pdfs` can later reconstruct which sources were tried and
+whether any succeeded.
+
+## Finding works still missing a PDF: `wake missing-pdfs`
+
+`wake missing-pdfs <seed>` response shape:
+```json
+{
+  "ok": true,
+  "data": {
+    "count": 3,
+    "missing": [
+      {
+        "citing_id": "W111",
+        "title": "...",
+        "year": 2018,
+        "cited_by_count": 42,
+        "doi": "10.1234/...",
+        "fetch_state": "exhausted",
+        "last_attempted": "2026-07-20T05:00:00+00:00",
+        "sources_tried": ["osti", "semanticscholar", "unpaywall", "springer"]
+      }
+    ]
+  }
+}
+```
+`fetch_state` is one of:
+  - `"never-attempted"` — `wake fetch-pdf` has never been run for this work.
+  - `"exhausted"` — tried and all sources failed; `sources_tried` lists what was attempted.
+  - `"fetched-but-gone"` — the PDF was acquired at some point but the cached
+    file is no longer on disk (e.g. manually deleted).
+
+Filters applied: works with a cached PDF, excluded works, confirmed
+duplicates, and works that already have a completed evidence dossier are all
+excluded from the report. Optional `--min-cited-by N` / `--limit N`.

@@ -156,6 +156,15 @@ def append_log_entry(
     verifications); failed investigations (no PDF found, extraction
     failed) have no dossier to link to, so the citing ID is left as
     plain text instead of a dead link.
+
+    Concurrency assumption: wake is designed for single-process serial
+    access per seed. Individual log-line writes are atomic on Linux for
+    the line sizes wake produces (well under PIPE_BUF), so two concurrent
+    wake invocations against the same seed will not corrupt individual
+    lines but may write them in wall-clock-timestamp order rather than
+    invocation order. Running concurrent wake commands against the same
+    seed is not supported and may produce unexpected results in other
+    append-only files (overrides.jsonl, exclusions.jsonl, etc.) as well.
     """
     p = log_path(seed_id, base)
     has_dossier = dossier_path(seed_id, citing_id, base).exists()
