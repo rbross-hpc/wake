@@ -56,6 +56,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_unverify_parser(sub)
     _build_cost_parser(sub)
     _build_show_parser(sub)
+    _build_seed_parser(sub)
     _build_config_parser(sub)
     _build_skill_parser(sub)
 
@@ -545,6 +546,32 @@ def _build_show_parser(sub) -> None:
     sd.add_argument("citing_id", help="OpenAlex ID of the citing work whose dossier to print.")
 
 
+def _build_seed_parser(sub) -> None:
+    p = sub.add_parser(
+        "seed",
+        help="Seed-paper management commands (fetch-pdf, ...).",
+    )
+    ssub = p.add_subparsers(dest="seed_action", required=True, metavar="ACTION")
+
+    fp = ssub.add_parser(
+        "fetch-pdf",
+        help="Acquire the seed paper's own PDF. Tried automatically at wake resolve "
+             "time; use this to retry, supply one manually, or force a re-fetch.",
+    )
+    fp.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    fp.add_argument(
+        "--from-pdf", metavar="PATH",
+        help="Path to a locally-obtained PDF of the seed paper. wake validates it "
+             "matches the seed's metadata (title similarity, author, DOI) before "
+             "copying and extracting. Refuses on mismatch unless --force.",
+    )
+    fp.add_argument(
+        "--force", action="store_true",
+        help="Re-fetch/re-copy even if a seed PDF is already cached. When used with "
+             "--from-pdf, bypasses the metadata-mismatch refusal (mismatch still logged).",
+    )
+
+
 def _build_config_parser(sub) -> None:
     p = sub.add_parser("config", help="Show, validate, or initialise wake configuration.")
     ssub = p.add_subparsers(dest="config_action", required=True, metavar="ACTION")
@@ -592,6 +619,7 @@ def run_status(args) -> None:
     from ..citing import load_citing
     from ..classify import _model as classify_model, load_classified
     from ..describe import _model as describe_model
+    from ..pdf_fetch import seed_pdf_path
 
     work = _resolve_seed_to_work(args.seed, args)
     oid = work["openalex_id"]
@@ -607,6 +635,9 @@ def run_status(args) -> None:
         oid, classify_model(), len(pending), base=base,
     )
 
+    seed_pdf_info = work.get("seed_pdf") or {}
+    seed_pdf_cached = seed_pdf_path(oid, base).exists()
+
     data = {
         "seed": {
             "openalex_id": oid,
@@ -618,6 +649,8 @@ def run_status(args) -> None:
             "citing_available": bool(citing),
             "described": bool(work.get("description")),
             "classified": len(classified_ids),
+            "seed_pdf": seed_pdf_cached,
+            "seed_pdf_path": seed_pdf_info.get("path") if seed_pdf_cached else None,
         },
         "pending_classify": len(pending),
         "cost_so_far": cost_summary,
@@ -628,6 +661,10 @@ def run_status(args) -> None:
         c = d["cached"]
         print(f"Seed: {d['seed']['title']} ({d['seed']['openalex_id']})")
         print(f"  Total citations (OpenAlex): {d['seed']['cited_by_count']:,}")
+        if c["seed_pdf"]:
+            print(f"  Seed PDF                  : {c['seed_pdf_path']}")
+        else:
+            print("  Seed PDF                  : (not available — run 'wake seed fetch-pdf --from-pdf PATH')")
         print(f"  Citing works fetched      : {c['citing_fetched']:,}" if c["citing_available"]
               else "  Citing works fetched      : (not fetched yet — run `wake citing`)")
         print(f"  Description generated     : {'yes' if c['described'] else 'no'}")
@@ -1801,6 +1838,49 @@ def run_skill(args) -> None:
     _run(args)
 
 
+def run_seed(args) -> None:
+    if args.seed_action == "fetch-pdf":
+        run_seed_fetch_pdf(args)
+
+
+def run_seed_fetch_pdf(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    base = _work_dir_base(args)
+    quiet = is_quiet(args)
+
+    from_pdf = getattr(args, "from_pdf", None)
+
+    if from_pdf:
+        from ..seed_pdf import acquire_seed_pdf_from_path
+        try:
+            result = acquire_seed_pdf_from_path(
+                work, from_pdf, base=base, force=args.force, verbose=not quiet,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            emit_error("seed", exc, as_json=args.json_out)
+            sys.exit(1)
+    else:
+        from ..seed_pdf import acquire_seed_pdf
+        result = acquire_seed_pdf(work, base=base, force=args.force, verbose=not quiet)
+
+    def human(d):
+        if d["ok"]:
+            print(f"Seed PDF acquired ({d['source']}): {d['path']}")
+            if d.get("extracted_text_path"):
+                print(f"  Text extracted: {d['extracted_text_path']}")
+            else:
+                print("  Text extraction failed (scanned PDF?). PDF is still cached.")
+        else:
+            tried = ", ".join(d.get("tried", [])) or "(no applicable sources)"
+            print(f"Could not automatically acquire the seed PDF (tried: {tried}).")
+            print("Get one manually and run:")
+            print(f"  wake seed fetch-pdf {args.seed} --from-pdf /path/to/paper.pdf")
+            for label, url in d.get("fallback_links", {}).items():
+                print(f"  {label}: {url}")
+
+    emit("seed", result, as_json=args.json_out, human=human)
+
+
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
@@ -1850,6 +1930,8 @@ def main() -> None:
             run_cost(args)
         elif args.command == "show":
             run_show(args)
+        elif args.command == "seed":
+            run_seed(args)
         elif args.command == "config":
             run_config(args)
         elif args.command == "skill":

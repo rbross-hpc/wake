@@ -85,6 +85,27 @@ wake --json resolve "<seed>"
 Show the human the resolved title/year/venue/OpenAlex ID. **Confirm this is
 the paper they meant** before proceeding — title search can mismatch.
 
+`wake resolve` also automatically tries to acquire the seed paper's own PDF
+(same source chain as `wake fetch-pdf`, stored at `wake-out/<seed>/seed.pdf`).
+This is a silent side effect — resolve never blocks on it. Check the result:
+
+```bash
+wake --json status "<seed>"   # shows "Seed PDF: cached at ..." or "not available"
+```
+
+If the automatic fetch failed (the paper is behind a paywall not covered by
+any configured source), ask the human for a copy — they should have one, or
+can get one from the publisher. Once they do:
+
+```bash
+wake --json seed fetch-pdf "<seed>" --from-pdf /path/to/paper.pdf
+```
+
+wake validates that the supplied PDF matches the seed's metadata before
+accepting it. The seed PDF is not yet used in any LLM prompts (it's acquired
+now so it's on hand when future commands need it); you don't need to take any
+further action with it at this stage.
+
 ### 2. Fetch citing works and report scale
 
 ```bash

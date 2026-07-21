@@ -30,6 +30,11 @@ Reusable on its own (e.g. before `wake fill-abstract --from-pdf`, to skip
 a manual download step) and cached — re-running is a no-op unless `--force`
 is passed.
 
+The same source chain is also used to acquire the **seed paper's own PDF**
+(`wake seed fetch-pdf`, auto-attempted at `wake resolve` time). The seed
+PDF lives at `wake-out/<seed>/seed.pdf` (distinct from `pdfs/` which is
+citing works only).
+
 **Springer PDF validation note:** page counts or file sizes reported by
 external tools (curl `--head`, `pdfinfo`, etc.) for Springer PDFs can be
 misleading — a valid Springer LNCS PDF may report a smaller byte count at

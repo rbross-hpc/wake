@@ -489,6 +489,46 @@ all captured in
 No code, tests, or docs referenced there should change until this has
 been walked through live with the human.
 
+## Built — Theme K: Seed paper PDF acquisition
+
+**Pass 1 (acquire and store) — BUILT.** `wake seed fetch-pdf <seed>
+[--from-pdf PATH] [--force]`. The same open-access source chain used for
+citing-work PDFs (`wake fetch-pdf`) now also acquires the seed paper's
+own PDF, stored at `wake-out/<seed>/seed.pdf` (distinct from `pdfs/`
+which is exclusively citing works). Extracted full text cached at
+`wake-out/<seed>/seed.pdf.json` using the same `extract_pages_cached`
+machinery as citing-work dossiers. `seed.json` gains a `seed_pdf`
+sub-object on success or failure. Attempted automatically at `wake resolve`
+time (config flag `pdf_fetch.seed_pdf_at_resolve`, default `true`); on
+failure, emits human-readable fallback links and records the attempt in
+`seed.json` -- never blocks resolve. `wake status` shows a "Seed PDF"
+line. `--from-pdf PATH` uses the same three-signal metadata check as
+`wake evidence --from-pdf`; `--force` bypasses refusal but still logs.
+`wake/pdf_fetch.py` refactored to extract the shared download loop into
+`_fetch_pdf_to()` so `fetch_pdf` (citing works) and `fetch_seed_pdf`
+(seed) share one implementation. Log events `seed_pdf_fetched` /
+`seed_pdf_fetch_failed` / `seed_pdf_supplied_verified` /
+`seed_pdf_supplied_mismatch` / `seed_pdf_forced_despite_mismatch` keep
+seed-fetch events distinguishable from citing-work fetch events in
+`evidence/log.md`. 22 new tests. Live-validated against the Parallel
+netCDF dry-run packet: automatic chain correctly failed (SC03 ACM paper,
+not in OSTI), recorded fallback links, `wake seed fetch-pdf --from-pdf`
+with the wrong fixture PDF correctly refused; `wake status` shows the
+"not available" banner.
+
+**Pass 2 (wire consumers) — NOT YET DONE.** Each consumer is a separate
+future item requiring its own design decision (prompt changes, cost
+impact per call):
+- `wake describe` — feed seed full text or first-few-pages instead of
+  just the abstract for the contribution paragraph.
+- `wake evidence` — include seed text excerpt in the LLM verification
+  system prompt so the model can better judge claimed extensions.
+- `wake narrative section create` — agent can open seed.pdf directly
+  when drafting seed-contribution sentences; no code change needed, just
+  documentation.
+- `wake narrative section audit` (deferred F) — load seed text for
+  `[ref:SEED]`-marked sentences.
+
 ## Deferred — Theme G: Timeline Generation
 
 Markdown timeline of key developments/uses/adoption (derived from
