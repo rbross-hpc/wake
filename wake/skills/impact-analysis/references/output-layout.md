@@ -25,7 +25,10 @@ wake-out/<OpenAlex-ID>/
     index.md                — OKF catalog: Verified / Pending Review, ranked
                                by score; regenerated automatically, no command
     log.md                  — OKF chronological log of every investigation
-                               (built, rebuilt, failed, verified); append-only
+                               (built, rebuilt, failed, verified, pdf_fetched,
+                               pdf_fetch_failed); append-only. All append-only
+                               files in this directory assume single-process
+                               serial access per seed -- see environment.md.
     themes/                 — combined-evidence syntheses (wake theme create)
       <slug>.md               — OKF concept doc; draft or confirmed
       <slug>.json              — same theme, structured (citing_works, needs_evidence)

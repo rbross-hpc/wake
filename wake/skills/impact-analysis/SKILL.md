@@ -266,6 +266,18 @@ result. If it succeeds, feed the local path straight into `fill-abstract`:
 wake --json fill-abstract "<seed>" <citing-id> --from-pdf wake-out/<seed>/pdfs/<citing-id>.pdf
 ```
 
+Every fetch attempt (success or failure) is logged to `evidence/log.md`, so
+you can always check where things stand without re-running fetches:
+
+```bash
+wake --json missing-pdfs "<seed>" [--min-cited-by N]
+```
+
+Reports every classified work with no cached PDF, its fetch state
+(`never-attempted`, `exhausted`, or `fetched-but-gone`), and which sources
+were tried. Useful before a deep-dive session to know exactly what's left to
+hunt down.
+
 If `fetch-pdf` fails, it returns a set of human-actionable links (Unpaywall
 lookup page, Google Scholar search, publisher DOI, CORE search) — present
 these to the human rather than giving up, or fall back to asking them to

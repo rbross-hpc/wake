@@ -41,6 +41,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_describe_parser(sub)
     _build_classify_parser(sub)
     _build_gaps_parser(sub)
+    _build_missing_pdfs_parser(sub)
     _build_dedup_parser(sub)
     _build_posters_parser(sub)
     _build_fill_abstract_parser(sub)
@@ -134,6 +135,21 @@ def _build_gaps_parser(sub) -> None:
     p.add_argument("--no-auto-backfill-check", action="store_true",
                    help="Skip the OSTI/Semantic Scholar re-check (faster, but may surface "
                         "works that auto-backfill would have resolved anyway).")
+
+
+def _build_missing_pdfs_parser(sub) -> None:
+    p = sub.add_parser(
+        "missing-pdfs",
+        help="Read-only report of classified citing works with no cached PDF. "
+             "Shows fetch state (never-attempted, exhausted, fetched-but-gone) "
+             "and which sources were tried, so you know where to focus manual "
+             "PDF hunting. Complements wake gaps (which is about abstracts).",
+    )
+    p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+    p.add_argument("--min-cited-by", type=int, default=None, metavar="N",
+                   help="Only surface works whose own cited_by_count is >= N.")
+    p.add_argument("-n", "--limit", type=int, default=None, metavar="N",
+                   help="Max number of works to show.")
 
 
 def _build_dedup_parser(sub) -> None:
@@ -779,6 +795,52 @@ def run_gaps(args) -> None:
     emit("gaps", data, as_json=args.json_out, human=human)
 
 
+def run_missing_pdfs(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..missing_pdfs import list_missing_pdfs
+    base = _work_dir_base(args)
+
+    results = list_missing_pdfs(
+        work["openalex_id"],
+        base=base,
+        min_cited_by_count=args.min_cited_by,
+        limit=args.limit,
+    )
+
+    _STATE_LABEL = {
+        "never-attempted": "never tried",
+        "exhausted": "tried, all failed",
+        "fetched-but-gone": "was fetched, file missing",
+    }
+
+    def human(d):
+        items = d["missing"]
+        if not items:
+            print("No classified works are missing a PDF "
+                  "(all have a cached PDF, dossier, or are excluded).")
+            return
+        print(f"{d['count']} classified work(s) with no cached PDF:")
+        print()
+        for r in items:
+            state = _STATE_LABEL.get(r["fetch_state"], r["fetch_state"])
+            tried = ", ".join(r["sources_tried"]) if r["sources_tried"] else ""
+            print(f"  {r['citing_id']}  ({r.get('cited_by_count', 0):,} cites, {r.get('year','?')})  [{state}]")
+            print(f"    {r['title']}")
+            if tried:
+                print(f"    Sources tried: {tried}")
+            if r.get("doi"):
+                print(f"    DOI: https://doi.org/{r['doi']}")
+            if r.get("last_attempted"):
+                print(f"    Last attempted: {r['last_attempted']}")
+            print()
+        print("Next steps:")
+        print(f"  wake fetch-pdf {args.seed} <citing-id>          # try automatic acquisition again")
+        print(f"  wake evidence {args.seed} <citing-id> --from-pdf <path>  # supply a PDF you found manually")
+
+    emit("missing-pdfs", {"count": len(results), "missing": results},
+         as_json=args.json_out, human=human)
+
+
 def run_dedup(args) -> None:
     if args.dedup_action == "candidates":
         run_dedup_candidates(args)
@@ -959,6 +1021,7 @@ def run_fetch_pdf(args) -> None:
         seed_id, args.citing_id,
         doi=citing_work.get("doi"),
         title=citing_work.get("title"),
+        seed_title=work.get("title"),
         base=base,
         force=args.force,
         verbose=not quiet,
@@ -1693,6 +1756,8 @@ def main() -> None:
             run_classify(args)
         elif args.command == "gaps":
             run_gaps(args)
+        elif args.command == "missing-pdfs":
+            run_missing_pdfs(args)
         elif args.command == "dedup":
             run_dedup(args)
         elif args.command == "posters":

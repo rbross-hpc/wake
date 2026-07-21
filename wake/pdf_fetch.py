@@ -131,6 +131,7 @@ def fetch_pdf(
     *,
     doi: str | None,
     title: str | None = None,
+    seed_title: str | None = None,
     base: Path | None = None,
     force: bool = False,
     verbose: bool = True,
@@ -144,6 +145,11 @@ def fetch_pdf(
 
     If a PDF is already cached at the destination path and force=False,
     returns immediately without making any network calls.
+
+    Every real attempt (not a cache hit) is logged to evidence/log.md via
+    `evidence_wiki.append_log_entry` so `wake missing-pdfs` can later
+    reconstruct which sources were tried and whether any succeeded.
+    Cache hits are not logged (they are not new attempts).
     """
     cfg = _cfg()
     sources = cfg.get("sources", ["osti", "semanticscholar", "unpaywall", "springer", "arxiv", "core"])
@@ -198,6 +204,8 @@ def fetch_pdf(
         if _download(url, dest, timeout=timeout, min_bytes=min_bytes):
             if verbose:
                 print(f"[wake] PDF acquired via {source_name} -> {dest}", file=sys.stderr)
+            _log_fetch(seed_id, citing_id, event="pdf_fetched",
+                       detail=f"via {source_name}", seed_title=seed_title, base=base)
             return {"ok": True, "path": str(dest), "source": source_name, "url": url}
 
         if verbose:
@@ -206,8 +214,30 @@ def fetch_pdf(
     if verbose:
         print(f"[wake] No PDF acquired automatically (tried: {', '.join(tried) or 'none'}).", file=sys.stderr)
 
+    tried_str = ", ".join(tried) if tried else "none applicable"
+    _log_fetch(seed_id, citing_id, event="pdf_fetch_failed",
+               detail=f"tried: {tried_str}", seed_title=seed_title, base=base)
     return {
         "ok": False,
         "tried": tried,
         "fallback_links": fallback_links(doi, title),
     }
+
+
+def _log_fetch(
+    seed_id: str,
+    citing_id: str,
+    *,
+    event: str,
+    detail: str,
+    seed_title: str | None,
+    base: Path | None,
+) -> None:
+    try:
+        from .evidence_wiki import append_log_entry
+        append_log_entry(
+            seed_id, event=event, citing_id=citing_id,
+            detail=detail, seed_title=seed_title, base=base,
+        )
+    except Exception:
+        pass

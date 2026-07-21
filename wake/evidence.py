@@ -409,6 +409,7 @@ def build_dossier(
         seed_id, citing_id,
         doi=citing_work.get("doi"),
         title=citing_work.get("title"),
+        seed_title=seed_work.get("title"),
         base=base,
         verbose=verbose,
     )
