@@ -29,3 +29,11 @@ search URL.
 Reusable on its own (e.g. before `wake fill-abstract --from-pdf`, to skip
 a manual download step) and cached — re-running is a no-op unless `--force`
 is passed.
+
+**Springer PDF validation note:** page counts or file sizes reported by
+external tools (curl `--head`, `pdfinfo`, etc.) for Springer PDFs can be
+misleading — a valid Springer LNCS PDF may report a smaller byte count at
+the HTTP layer than its actual rendered content. wake's own validation
+(magic bytes + minimum file size) is reliable for Springer; do not dismiss
+a Springer PDF solely because an external tool reports a suspicious page or
+byte count.
