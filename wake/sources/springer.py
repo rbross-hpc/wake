@@ -19,6 +19,17 @@ HTML paywall/login page instead of a PDF — `pdf_fetch.py`'s
 `_looks_like_pdf` check catches this and the chain falls through to the
 next source), and this only applies to Springer's own DOI prefix
 (10.1007) — other publishers' DOIs are never attempted.
+
+Page-count / file-size note: page counts reported by external tools
+(curl --head Content-Length, pdfinfo, etc.) for Springer PDFs can be
+misleading -- a valid Springer PDF may report a smaller byte count at
+the HTTP layer than its actual content (observed during a 2026 session
+when a real LNCS chapter PDF was dismissed based on a curl-reported
+page count that didn't match the rendered document). wake does not add
+a page-count validation step for Springer specifically; the existing
+`_looks_like_pdf` (magic bytes) + `min_valid_pdf_bytes` checks in
+`pdf_fetch._download` are sufficient. Do not add a page-count gate
+based on external tool output for Springer URLs.
 """
 from __future__ import annotations
 

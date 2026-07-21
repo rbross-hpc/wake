@@ -813,11 +813,16 @@ wanted, just not next):**
   works look highest-value for each theme (by relationship + confidence
   + citation count) — so PDF-fetching effort gets prioritized rather
   than spent uniformly across every provisional work.
-- Investigate Springer PDF page-count validation for false-negative
-  failures — `curl`'s reported page count was observed to be wrong at
-  least once against a real Springer PDF this session; the check should
-  be loosened, replaced with a more reliable method, or removed for
-  Springer specifically if it can't be trusted.
+- ~~Investigate Springer PDF page-count validation for false-negative
+  failures.~~ — **Closed, no wake-side action needed.** The observation
+  was from `curl --head` run externally (not a wake-internal check) —
+  curl reported a misleading byte count for a real Springer LNCS PDF
+  that was actually valid. wake has no page-count validation of its own;
+  the existing `_looks_like_pdf` (magic bytes) + `min_valid_pdf_bytes`
+  checks in `pdf_fetch._download` are sufficient and unaffected by this.
+  A note added to `wake/sources/springer.py` and `docs/pdf-sources.md`
+  to prevent a future contributor from adding a page-count gate based on
+  external tool output for Springer URLs specifically.
 - Interactive review rendering polish — when presenting a citing work to
   the human pre-verify, include authors alongside title, and surface the
   dossier's per-quote text + page numbers inline (not just title +
