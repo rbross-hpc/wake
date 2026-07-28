@@ -231,8 +231,9 @@ def create_theme(
     atomic_write_json(json_path, payload)
     atomic_write_text(md_path, _render_theme_markdown(seed_work, payload, base))
 
-    from .evidence_wiki import rebuild_themes_index
+    from .evidence_wiki import rebuild_themes_index, rebuild_wiki_home
     rebuild_themes_index(seed_id, seed_title=seed_work.get("title"), base=base)
+    rebuild_wiki_home(seed_id, seed_work, base=base)
     _rerender_dossiers_for(seed_work, citing_ids, base)
 
     return {
@@ -304,8 +305,9 @@ def confirm_theme(
     atomic_write_json(json_path, theme)
     atomic_write_text(md_path, _render_theme_markdown(seed_work, theme, base))
 
-    from .evidence_wiki import rebuild_themes_index
+    from .evidence_wiki import rebuild_themes_index, rebuild_wiki_home
     rebuild_themes_index(seed_id, seed_title=seed_work.get("title"), base=base)
+    rebuild_wiki_home(seed_id, seed_work, base=base)
     _rerender_dossiers_for(seed_work, citing_ids, base)
 
     return {

@@ -31,6 +31,7 @@ from typing import Any
 
 from .evidence import evidence_dir, dossier_path
 from .io import atomic_write_text, now_iso
+from .seed import work_dir
 
 _STATUS_SECTION_RE = re.compile(
     r"<!-- status-section:start -->.*?<!-- status-section:end -->",
@@ -48,6 +49,10 @@ def log_path(seed_id: str, base: Path | None = None) -> Path:
 
 def themes_index_path(seed_id: str, base: Path | None = None) -> Path:
     return evidence_dir(seed_id, base) / "themes" / "index.md"
+
+
+def wiki_home_path(seed_id: str, base: Path | None = None) -> Path:
+    return work_dir(seed_id, base) / "README.md"
 
 
 def _score(entry: dict[str, Any]) -> float:
@@ -425,6 +430,80 @@ def rebuild_themes_index(seed_id: str, seed_title: str | None = None, base: Path
     else:
         lines.append("*(none yet)*")
         lines.append("")
+
+    atomic_write_text(p, "\n".join(lines))
+    return p
+
+
+def rebuild_wiki_home(seed_id: str, seed_work: dict[str, Any] | None = None, base: Path | None = None) -> Path:
+    """Regenerate `wake-out/<seed>/README.md`, the wiki's single entry
+    point: a minimal navigation page linking out to the four top-level
+    artifacts (impact brief, narrative, evidence wiki, themes), each with
+    a one-line count, and omitted entirely if its target doesn't exist
+    yet. Like every other wiki file here, this is a derived view --
+    recomputed from whatever's currently on disk, never itself a source
+    of truth -- so it's always safe to regenerate and never goes stale in
+    a way a fresh call can't fix.
+
+    Called as a side effect of the commands that create the artifacts it
+    links to (`wake bake`, `wake evidence`, `wake theme create`/`confirm`,
+    `wake narrative stitch`, `wake override`) -- no separate command
+    needed, same pattern as index.md/log.md/themes/index.md.
+    """
+    from .narrative import narrative_md_path
+
+    wd = work_dir(seed_id, base)
+    p = wiki_home_path(seed_id, base)
+
+    title = (seed_work or {}).get("title") or seed_id
+    doi = (seed_work or {}).get("doi")
+    year = (seed_work or {}).get("year")
+    authors = (seed_work or {}).get("authors") or []
+    author_str = ", ".join(authors[:5]) + (" et al." if len(authors) > 5 else "")
+
+    lines: list[str] = []
+    lines.append("---")
+    lines.append("type: wiki-home")
+    lines.append(f'title: "Wake Wiki: {title}"')
+    lines.append(f"timestamp: {now_iso()}")
+    lines.append("---")
+    lines.append("")
+    lines.append(f"# {title}")
+    lines.append("")
+    meta_parts = [str(year) if year else "", f"DOI: {doi}" if doi else "", f"OpenAlex: {seed_id}"]
+    lines.append(f"**{' · '.join(mp for mp in meta_parts if mp)}**")
+    if author_str:
+        lines.append(f"*{author_str}*")
+    lines.append("")
+
+    if (wd / "impact.md").exists():
+        lines.append("- **[Impact Brief](impact.md)** — reach metrics, top-cited citing works, ranked evidence")
+
+    if narrative_md_path(seed_id, base).exists():
+        lines.append("- **[Narrative](narrative.md)** — assembled prose from confirmed themes")
+
+    dossiers = _load_all_dossiers(seed_id, base)
+    if dossiers:
+        verified = sum(1 for e in dossiers if e.get("verification_status") == "verified")
+        pending = len(dossiers) - verified
+        lines.append(
+            f"- **[Evidence Wiki](evidence/index.md)** — every full-text-verified "
+            f"citing work ({verified} verified / {pending} pending)"
+        )
+
+    all_themes = _load_all_themes(seed_id, base)
+    if all_themes:
+        confirmed = sum(1 for t in all_themes if t.get("theme_status") == "confirmed")
+        draft_n = len(all_themes) - confirmed
+        lines.append(
+            f"- **[Themes](evidence/themes/index.md)** — combined-evidence "
+            f"thematic docs ({confirmed} confirmed / {draft_n} draft)"
+        )
+
+    if dossiers:
+        lines.append("- **[Log](evidence/log.md)** — chronological history of all evidence investigations")
+
+    lines.append("")
 
     atomic_write_text(p, "\n".join(lines))
     return p

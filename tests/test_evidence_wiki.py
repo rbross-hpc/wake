@@ -14,7 +14,8 @@ from unittest.mock import patch
 
 import pytest
 
-from wake import evidence, evidence_wiki, report
+from wake import evidence, evidence_wiki, narrative, report, themes
+from wake.classify import save_classified
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
@@ -335,3 +336,80 @@ def test_force_rerun_resets_verified_dossier_to_pending(tmp_path):
 
     log_text = evidence_wiki.log_path(seed_id, base=tmp_path).read_text()
     assert "dossier_rebuilt" in log_text
+
+
+# --- rebuild_wiki_home -------------------------------------------------
+
+def test_rebuild_wiki_home_omits_links_for_missing_targets(tmp_path):
+    p = evidence_wiki.rebuild_wiki_home(
+        PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
+    )
+    assert p.exists()
+    text = p.read_text()
+    assert "type: wiki-home" in text
+    assert PARALLEL_NETCDF_WORK["title"] in text
+    assert "[Impact Brief]" not in text
+    assert "[Narrative]" not in text
+    assert "[Evidence Wiki]" not in text
+    assert "[Themes]" not in text
+    assert "[Log]" not in text
+
+
+def test_wiki_home_created_as_side_effect_of_build_dossier(tmp_path):
+    _build(tmp_path)
+    p = evidence_wiki.wiki_home_path(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
+    assert p.exists()
+    text = p.read_text()
+    assert "[Evidence Wiki](evidence/index.md)" in text
+    assert "[Log](evidence/log.md)" in text
+    assert "0 verified / 1 pending" in text
+
+
+def test_wiki_home_created_as_side_effect_of_bake(tmp_path):
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    save_classified(seed_id, [_classified_work()], base=tmp_path)
+    report.bake_and_save(PARALLEL_NETCDF_WORK, [_classified_work()], base=tmp_path, verbose=False)
+    p = evidence_wiki.wiki_home_path(seed_id, base=tmp_path)
+    assert p.exists()
+    assert "[Impact Brief](impact.md)" in p.read_text()
+
+
+def test_wiki_home_created_as_side_effect_of_theme_create(tmp_path):
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    work = _classified_work()
+    save_classified(seed_id, [work], base=tmp_path)
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="T", summary="S",
+        citing_ids=[work["openalex_id"]], base=tmp_path,
+    )
+    text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
+    assert "[Themes](evidence/themes/index.md)" in text
+    assert "0 confirmed / 1 draft" in text
+
+
+def test_wiki_home_created_as_side_effect_of_narrative_stitch(tmp_path):
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "intro", "title": "Intro", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "intro", title="Intro", prose="Framing prose.", base=tmp_path,
+    )
+    narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
+    assert "[Narrative](narrative.md)" in text
+
+
+def test_wiki_home_created_as_side_effect_of_add_override(tmp_path):
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    citing_work = _classified_work(0)
+    _build(tmp_path, citing_work=citing_work)
+    report.add_override(
+        seed_id, citing_work["openalex_id"], relationship="extends", justification="confirmed",
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+        base=tmp_path,
+    )
+    text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
+    assert "1 verified / 0 pending" in text

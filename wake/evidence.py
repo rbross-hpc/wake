@@ -593,7 +593,7 @@ def build_dossier(
     if verbose:
         print(f"[wake] Dossier written: {md_path}", file=sys.stderr)
 
-    from .evidence_wiki import append_log_entry, rebuild_index
+    from .evidence_wiki import append_log_entry, rebuild_index, rebuild_wiki_home
     event = "dossier_rebuilt" if force else "dossier_built"
     append_log_entry(
         seed_id, event=event, citing_id=citing_id,
@@ -601,6 +601,7 @@ def build_dossier(
         seed_title=seed_work.get("title"), base=base,
     )
     rebuild_index(seed_id, seed_title=seed_work.get("title"), base=base)
+    rebuild_wiki_home(seed_id, seed_work, base=base)
 
     return {
         "ok": True,

@@ -671,6 +671,9 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
     md_path = narrative_md_path(seed_id, base)
     atomic_write_text(md_path, "\n".join(lines))
 
+    from .evidence_wiki import rebuild_wiki_home
+    rebuild_wiki_home(seed_id, seed_work, base=base)
+
     return {
         "ok": True,
         "narrative_path": str(md_path),
