@@ -89,3 +89,29 @@ just a re-emit, same as `wake show brief` re-emits `impact.md`:
 Errors (non-existent slug) the same way `wake show brief` does when
 `impact.md` doesn't exist yet — a clear message naming the exact command
 to run first, exit 1.
+
+## Cross-link: "## Referenced By" in the rendered theme
+
+Every theme `.md` shows a `## Referenced By` section listing every
+narrative section grounded in it (i.e. naming this slug in its own
+`theme_slugs`), plus a permanent `**See also:** [themes index](index.md)`
+back-link. The "Referenced By" section is omitted entirely if no
+narrative section grounds in this theme yet. Like the evidence dossier's
+"Referenced by" line, this is a derived view, recomputed at render time
+from narrative section JSON sidecars — never itself a separate thing to
+maintain. `wake narrative section create`/`confirm` for a theme-backed
+section automatically re-render every theme it names, so this stays
+fresh without any extra step.
+
+## Re-rendering every theme (`wake theme rerender-all`)
+
+```bash
+wake --json theme rerender-all "<seed>"
+```
+Response shape: `{"ok": true, "data": {"ok": true, "rerendered": ["slug1", "slug2", ...], "count": N}}`.
+
+A rendering-only pass over every `evidence/themes/<slug>.json` sidecar
+already on disk: no change to any theme's own status, summary, or
+citing-works list. Re-emits each `.md` from its `.json`, recomputing
+derived content like the "Referenced By" section above. Use this after a
+`wake` upgrade changes how themes render, to backfill an existing wiki.

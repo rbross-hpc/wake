@@ -35,15 +35,18 @@ wake --json fetch-pdf "<seed>" <citing-id> [--force]
 wake --json fill-abstract "<seed>" <citing-id> --from-pdf PATH | --text TEXT
 wake --json evidence "<seed>" <citing-id> [--force]
 wake --json evidence "<seed>" <citing-id> --from-pdf PATH [--force]
+wake --json evidence "<seed>" --rerender-all
 wake --json theme create "<seed>" <slug> --title "..." --summary "..." --citing-ids ID,ID,...
 wake --json theme confirm "<seed>" <slug>
 wake --json theme queue "<seed>"
 wake --json theme show "<seed>" <slug>
+wake --json theme rerender-all "<seed>"
 wake --json narrative outline create "<seed>" --components '[{"slug":"...","title":"...","kind":"theme|free","theme_slugs":[...]}]'
 wake --json narrative outline show "<seed>"
 wake --json narrative section create "<seed>" <slug> --title "..." --prose "..." [--theme-slugs SLUG,SLUG,...]
 wake --json narrative section confirm "<seed>" <slug>
 wake --json narrative section show "<seed>" <slug>
+wake --json narrative section rerender-all "<seed>"
 wake --json narrative stitch "<seed>"
 wake --json narrative show "<seed>"
 wake --json narrative refs-check export "<seed>"

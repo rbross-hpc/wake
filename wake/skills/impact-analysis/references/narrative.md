@@ -85,11 +85,32 @@ judgment when drafting and confirming. A future `wake narrative section
 audit` command (not yet built) is the intended place for a
 claim-vs-dossier semantic check, kept deliberately separate.
 
-The raw `[ref:...]` marker form is what's stored and shown everywhere
-except the final stitched document: `section.json`'s `prose` field, the
-per-section preview `section.md`, and `outline.md`'s status column all
-keep markers as-written, so an agent/human iterating on one section can
-see exactly which sources it cites.
+The raw `[ref:...]` marker form is always what's *stored*:
+`section.json`'s `prose` field keeps every marker exactly as written,
+regardless of what the rendered `.md` does with it — this is what
+`_validate_ref_ids`/`_parse_ref_markers` and the stitched document's
+`[R<n>]` renumbering both operate on, so it must never drift from what
+the agent actually typed.
+
+What's *shown*, however, differs by document: `outline.md`'s status
+column shows theme slugs as plain text, and the final stitched
+`narrative.md` renumbers every marker to `[R1]`/`[R2]`/... linked to the
+References section (see below). The per-section preview
+(`narrative/sections/<slug>.md`) sits in between — it renders each
+`[ref:ID]` as a link straight to that source's own OKF document
+(`../../evidence/<citing-id>.md` for a citing work, `../../impact.md`
+for `SEED`) when a dossier exists on disk for it, or leaves the raw
+`[ref:ID]` text in place otherwise (e.g. a work verified via a plain
+human-judgment override, with no dossier to link to). This is a
+display-only convenience for browsing one section in isolation before
+the whole narrative is stitched; it has no effect on validation or on
+stitch's own `[R<n>]` numbering.
+
+If a section's links look stale (e.g. a dossier appeared after the
+section was drafted and hasn't been re-saved since), `wake narrative
+section rerender-all "<seed>"` re-emits every section's `.md` from its
+`.json` with fresh links — no change to any section's own prose or
+status.
 
 `wake narrative section confirm "<seed>" <slug>` response shape on success:
 ```json
@@ -245,3 +266,18 @@ with no computation (same convention as `wake show brief`/`metrics`/
 All three respond `{"ok": true, "data": {"markdown": "..."}}` on success
 and error (exit 1) with a message naming the exact command to run first
 if the file doesn't exist yet.
+
+## Re-rendering every section (`wake narrative section rerender-all`)
+
+```bash
+wake --json narrative section rerender-all "<seed>"
+```
+Response shape: `{"ok": true, "data": {"ok": true, "rerendered": ["slug1", "slug2", ...], "count": N}}`.
+
+A rendering-only pass over every `narrative/sections/<slug>.json`
+sidecar already on disk: no change to any section's own status or
+prose. Re-emits each `.md` from its `.json`, recomputing the
+`[ref:...]` → dossier-link rendering described above. Use this after a
+`wake` upgrade changes how sections render, to backfill an existing
+wiki, or any time a section's own dossier links look stale relative to
+what's currently on disk.
