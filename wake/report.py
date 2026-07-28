@@ -585,11 +585,18 @@ def bake_markdown(
     )
     lines.append("")
 
+    from .evidence import dossier_path
+
     for i, ev in enumerate(metrics.get("top_evidence", []), 1):
         ev_authors = ev.get("authors", [])
         author_tag = ev_authors[0].split()[-1] if ev_authors else "Unknown"
+        ev_title = ev.get("title", "Unknown")
+        ev_id = ev.get("openalex_id")
+        title_display = ev_title
+        if base is not None and oid and ev_id and dossier_path(oid, ev_id, base).exists():
+            title_display = f"[{ev_title}](evidence/{ev_id}.md)"
         lines.append(
-            f"**{i}. {ev.get('title', 'Unknown')}** — "
+            f"**{i}. {title_display}** — "
             f"{author_tag} et al., {ev.get('year', '?')} "
             f"| {ev.get('cited_by_count', 0):,} citations"
         )
@@ -608,10 +615,13 @@ def bake_markdown(
         if ev.get("author_overlap"):
             status_tag += " [SELF-EXTENSION — seed's own team]"
         lines.append(f"> *{rel}*{status_tag} (confidence: {conf:.2f}) — {just}")
+        id_parts = []
         if ev.get("doi"):
-            lines.append(f"> DOI: {ev['doi']}")
-        elif ev.get("openalex_id"):
-            lines.append(f"> OpenAlex: {ev['openalex_id']}")
+            id_parts.append(f"DOI: [{ev['doi']}](https://doi.org/{ev['doi']})")
+        if ev_id:
+            id_parts.append(f"OpenAlex: [{ev_id}](https://openalex.org/{ev_id})")
+        if id_parts:
+            lines.append(f"> {' · '.join(id_parts)}")
         lines.append("")
 
     return "\n".join(lines)
