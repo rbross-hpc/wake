@@ -28,7 +28,7 @@ wake-out/<OpenAlex-ID>/
   .cost.jsonl             — per-LLM-call estimated token/cost log
   overrides.jsonl         — human-reviewed relationship overrides
                              (verification_status: "verified")
-  .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
+  manual_abstracts.jsonl  — human/PDF-recovered abstracts (wake fill-abstract)
   pdfs/                   — locally-cached PDFs (wake fetch-pdf / wake evidence)
     <citing-id>.pdf         — the PDF itself
     <citing-id>.json        — its extracted text, cached (pdf_sha256-keyed;

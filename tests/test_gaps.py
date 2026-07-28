@@ -12,11 +12,48 @@ from .conftest import SAMPLE_CITING_WORKS
 
 def test_manual_abstracts_path(tmp_path):
     p = gaps.manual_abstracts_path("W123", base=tmp_path)
-    assert p.name == ".manual_abstracts.jsonl"
+    assert p.name == "manual_abstracts.jsonl"
 
 
 def test_load_manual_abstracts_missing_returns_empty(tmp_path):
     assert gaps.load_manual_abstracts("W999", base=tmp_path) == {}
+
+
+def test_load_manual_abstracts_falls_back_to_legacy_dotfile(tmp_path):
+    """A packet built before the .manual_abstracts.jsonl ->
+    manual_abstracts.jsonl rename should still be readable without any
+    migration ceremony."""
+    import json as _json
+
+    seed_id, citing_id = "W123", "W456"
+    legacy_path = gaps._legacy_manual_abstracts_path(seed_id, base=tmp_path)
+    legacy_path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"citing_id": citing_id, "abstract": "Legacy abstract.", "abstract_source": "human-text"}
+    legacy_path.write_text(_json.dumps(entry) + "\n", encoding="utf-8")
+
+    assert not gaps.manual_abstracts_path(seed_id, base=tmp_path).exists()
+    loaded = gaps.load_manual_abstracts(seed_id, base=tmp_path)
+    assert loaded[citing_id]["abstract"] == "Legacy abstract."
+
+
+def test_add_manual_abstract_migrates_legacy_dotfile_in_place(tmp_path):
+    """The first `wake fill-abstract` call after the rename should move
+    existing legacy entries over rather than starting a fresh, empty
+    manual_abstracts.jsonl next to the stale .manual_abstracts.jsonl."""
+    import json as _json
+
+    seed_id = "W123"
+    legacy_path = gaps._legacy_manual_abstracts_path(seed_id, base=tmp_path)
+    legacy_path.parent.mkdir(parents=True, exist_ok=True)
+    legacy_entry = {"citing_id": "W_old", "abstract": "Old.", "abstract_source": "human-text"}
+    legacy_path.write_text(_json.dumps(legacy_entry) + "\n", encoding="utf-8")
+
+    gaps.add_manual_abstract(seed_id, "W_new", abstract="New.", source="human-text", base=tmp_path)
+
+    assert not legacy_path.exists()
+    loaded = gaps.load_manual_abstracts(seed_id, base=tmp_path)
+    assert "W_old" in loaded
+    assert "W_new" in loaded
 
 
 def test_add_and_load_manual_abstract(tmp_path):
