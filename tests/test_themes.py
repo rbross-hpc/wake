@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from wake import evidence, evidence_wiki, themes
+from wake import evidence, evidence_wiki, narrative, themes
 from wake.classify import save_classified
 from wake.report import add_override
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
@@ -383,6 +383,112 @@ def test_theme_markdown_verified_no_dossier_has_no_dead_link_or_hint(tmp_path):
     assert f"](../{wid}.md)" not in md
     assert "no full-text dossier yet" not in md
     assert "[VERIFIED]" in md
+
+
+def test_theme_markdown_always_links_back_to_themes_index(tmp_path):
+    works = _seed_two_classified(tmp_path)
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="T", summary="S",
+        citing_ids=[works[0]["openalex_id"]], base=tmp_path,
+    )
+    md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
+    assert "[themes index](index.md)" in md
+
+
+# --- theme "Referenced By" back-link to narrative sections -----------------
+
+def test_theme_markdown_no_referenced_by_when_no_section_grounds_in_it(tmp_path):
+    works = _seed_two_classified(tmp_path)
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="T", summary="S",
+        citing_ids=[works[0]["openalex_id"]], base=tmp_path,
+    )
+    md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
+    assert "Referenced By" not in md
+
+
+def test_theme_markdown_referenced_by_grounded_section(tmp_path):
+    works = _seed_two_classified(tmp_path)
+    wid = works[0]["openalex_id"]
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="T", summary="S", citing_ids=[wid], base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One", prose="Framing prose.",
+        theme_slugs=["t1"], base=tmp_path,
+    )
+    md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
+    assert "## Referenced By" in md
+    assert "[Section One](../../narrative/sections/s1.md)" in md
+
+
+def test_theme_markdown_not_referenced_by_unrelated_section(tmp_path):
+    works = _seed_two_classified(tmp_path)
+    wid = works[0]["openalex_id"]
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="T", summary="S", citing_ids=[wid], base=tmp_path,
+    )
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t2", title="T2", summary="S2", citing_ids=[wid], base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One", prose="Framing prose.",
+        theme_slugs=["t2"], base=tmp_path,
+    )
+    md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
+    assert "Referenced By" not in md
+
+
+# --- rerender_all_themes ----------------------------------------------------
+
+def test_rerender_all_themes_empty_when_no_themes_dir(tmp_path):
+    result = themes.rerender_all_themes(PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path)
+    assert result == []
+
+
+def test_rerender_all_themes_picks_up_new_section_grounding(tmp_path):
+    """A theme rendered before any section referenced it has no
+    "Referenced By" block; rerender_all_themes picks up a section added
+    afterwards without needing `wake theme create` re-run."""
+    works = _seed_two_classified(tmp_path)
+    wid = works[0]["openalex_id"]
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="T", summary="S", citing_ids=[wid], base=tmp_path,
+    )
+    md_before = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
+    assert "Referenced By" not in md_before
+
+    # Directly write a section JSON sidecar naming this theme, bypassing
+    # create_section()'s own hook (which already re-renders themes), to
+    # isolate rerender_all_themes() as the thing under test.
+    from wake.io import atomic_write_json
+    section_payload = {
+        "seed_openalex_id": PARALLEL_NETCDF_WORK["openalex_id"],
+        "slug": "s1", "title": "Section One", "kind": "theme",
+        "theme_slugs": ["t1"], "prose": "Framing prose.",
+        "section_status": "draft", "created_at": "x", "updated_at": "x",
+    }
+    sections_dir = narrative.sections_dir(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
+    sections_dir.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(sections_dir / "s1.json", section_payload)
+
+    result = themes.rerender_all_themes(PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path)
+    assert result == ["t1"]
+    md_after = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
+    assert "[Section One](../../narrative/sections/s1.md)" in md_after
+
+
+# --- create_theme/confirm_theme rerender the dossiers they affect ----------
+
+def test_create_theme_rerenders_affected_dossier(tmp_path):
+    works = _seed_two_classified(tmp_path)
+    wid = works[0]["openalex_id"]
+    _build_dossier_for(tmp_path, works[0])
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="Theme One", summary="S", citing_ids=[wid], base=tmp_path,
+    )
+    dossier_md = evidence.dossier_path(PARALLEL_NETCDF_WORK["openalex_id"], wid, base=tmp_path).read_text()
+    assert "theme [Theme One](themes/t1.md)" in dossier_md
 
 
 # --- evidence_wiki.rebuild_themes_index ----------------------------------

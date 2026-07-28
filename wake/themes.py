@@ -77,6 +77,20 @@ def load_theme(seed_id: str, slug: str, base: Path | None = None) -> dict[str, A
     return read_json(p)
 
 
+def _rerender_dossiers_for(seed_work: dict[str, Any], citing_ids: list[str], base: Path | None = None) -> None:
+    """Re-render every named citing work's evidence dossier .md (if one
+    exists) so its "Referenced by" back-link picks up this theme -- a
+    rendering-only pass, no LLM/PDF/state change. Called after
+    `create_theme()` writes/overwrites a theme, since that's the only
+    time a dossier's theme membership can change. A citing work with no
+    dossier yet (background-mention, or not yet evidenced) has nothing to
+    re-render and is silently skipped."""
+    from .evidence import rerender_dossier_md
+
+    for cid in citing_ids:
+        rerender_dossier_md(seed_work, cid, base=base)
+
+
 def _resolve_work_status(
     seed_id: str,
     citing_id: str,
@@ -215,10 +229,11 @@ def create_theme(
     md_path = theme_path(seed_id, slug, base)
 
     atomic_write_json(json_path, payload)
-    atomic_write_text(md_path, _render_theme_markdown(seed_work, payload))
+    atomic_write_text(md_path, _render_theme_markdown(seed_work, payload, base))
 
     from .evidence_wiki import rebuild_themes_index
     rebuild_themes_index(seed_id, seed_title=seed_work.get("title"), base=base)
+    _rerender_dossiers_for(seed_work, citing_ids, base)
 
     return {
         "ok": True,
@@ -287,10 +302,11 @@ def confirm_theme(
     json_path = theme_json_path(seed_id, slug, base)
     md_path = theme_path(seed_id, slug, base)
     atomic_write_json(json_path, theme)
-    atomic_write_text(md_path, _render_theme_markdown(seed_work, theme))
+    atomic_write_text(md_path, _render_theme_markdown(seed_work, theme, base))
 
     from .evidence_wiki import rebuild_themes_index
     rebuild_themes_index(seed_id, seed_title=seed_work.get("title"), base=base)
+    _rerender_dossiers_for(seed_work, citing_ids, base)
 
     return {
         "ok": True,
@@ -298,6 +314,28 @@ def confirm_theme(
         "theme_json_path": str(json_path),
         "theme_status": "confirmed",
     }
+
+
+def rerender_all_themes(seed_id: str, seed_work: dict[str, Any], base: Path | None = None) -> list[str]:
+    """Re-emit every theme .md in this seed's evidence/themes/ directory
+    from its .json sidecar -- a rendering-only pass, no LLM call, no
+    change to any theme's own status or citing-works list. Used two ways:
+    (1) a targeted hook, called by narrative.py's create_section()/
+    confirm_section() right after a theme-kind section is written, so
+    every referenced theme's "Referenced By" back-link picks up the new/
+    changed section; (2) bulk, via `wake theme rerender-all`, to backfill
+    an existing wiki after a rendering-code upgrade. Returns the sorted
+    list of theme slugs re-rendered."""
+    d = themes_dir(seed_id, base)
+    if not d.exists():
+        return []
+    slugs = sorted(p.stem for p in d.glob("*.json"))
+    for slug in slugs:
+        theme = load_theme(seed_id, slug, base)
+        if theme is None:
+            continue
+        atomic_write_text(theme_path(seed_id, slug, base), _render_theme_markdown(seed_work, theme, base))
+    return slugs
 
 
 def list_theme_needs_evidence(seed_id: str, base: Path | None = None) -> list[dict[str, Any]]:
@@ -342,7 +380,30 @@ def list_theme_needs_evidence(seed_id: str, base: Path | None = None) -> list[di
     return entries
 
 
-def _render_theme_markdown(seed_work: dict[str, Any], theme: dict[str, Any]) -> str:
+def _narrative_sections_grounded_in(seed_id: str, slug: str, base: Path | None = None) -> list[dict[str, Any]]:
+    """Every narrative section (any status) whose `theme_slugs` names this
+    theme, for the theme's own "Referenced By" back-link. A lightweight
+    scan of section JSON sidecars -- narrative.py owns the concept of a
+    section, but this stays a plain file scan here (rather than importing
+    a themes-aware loader from narrative.py) to avoid a circular import,
+    matching evidence.py's own `_sections_citing` scan."""
+    from .narrative import sections_dir
+
+    d = sections_dir(seed_id, base)
+    if not d.exists():
+        return []
+    hits = []
+    for p in sorted(d.glob("*.json")):
+        try:
+            section = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if slug in (section.get("theme_slugs") or []):
+            hits.append(section)
+    return hits
+
+
+def _render_theme_markdown(seed_work: dict[str, Any], theme: dict[str, Any], base: Path | None = None) -> str:
     """Render the theme as an OKF concept document."""
     slug = theme["slug"]
     title = theme["title"]
@@ -417,5 +478,18 @@ def _render_theme_markdown(seed_work: dict[str, Any], theme: dict[str, Any]) -> 
         for cid in needs_evidence:
             lines.append(f"- {cid}")
         lines.append("")
+
+    grounded_sections = _narrative_sections_grounded_in(theme["seed_openalex_id"], slug, base)
+    if grounded_sections:
+        lines.append("## Referenced By")
+        lines.append("")
+        for s in grounded_sections:
+            s_slug = s.get("slug", "")
+            s_title = s.get("title", s_slug)
+            lines.append(f"- Narrative section [{s_title}](../../narrative/sections/{s_slug}.md)")
+        lines.append("")
+
+    lines.append("**See also:** [themes index](index.md)")
+    lines.append("")
 
     return "\n".join(lines)

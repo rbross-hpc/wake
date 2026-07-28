@@ -24,6 +24,7 @@ off by default.
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -212,6 +213,73 @@ def verify_full_text(
     }
 
 
+def _themes_citing(seed_id: str, citing_id: str, base: Path | None = None) -> list[dict[str, Any]]:
+    """Every theme (any status) whose `citing_works` list names this
+    citing work, for the dossier's "Referenced by" back-link line. Reads
+    theme JSON sidecars directly -- no import of themes.py's own loaders
+    needed beyond the directory helper, since this is a lightweight scan,
+    not a themes.py-owned operation."""
+    from .themes import themes_dir
+
+    d = themes_dir(seed_id, base)
+    if not d.exists():
+        return []
+    hits = []
+    for p in sorted(d.glob("*.json")):
+        try:
+            theme = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if any(w.get("citing_id") == citing_id for w in theme.get("citing_works", [])):
+            hits.append(theme)
+    return hits
+
+
+def _sections_citing(seed_id: str, citing_id: str, base: Path | None = None) -> list[dict[str, Any]]:
+    """Every narrative section (any status) whose prose contains a
+    `[ref:...]` marker naming this citing work, for the dossier's
+    "Referenced by" back-link line."""
+    from .narrative import _parse_ref_markers, sections_dir
+
+    d = sections_dir(seed_id, base)
+    if not d.exists():
+        return []
+    hits = []
+    for p in sorted(d.glob("*.json")):
+        try:
+            section = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        cited_ids = {i for ids in _parse_ref_markers(section.get("prose", "")) for i in ids}
+        if citing_id in cited_ids:
+            hits.append(section)
+    return hits
+
+
+def _referenced_by_line(seed_id: str, citing_id: str, base: Path | None = None) -> str | None:
+    """One-line back-link summary naming every theme and narrative section
+    that currently cites this work, or None if it appears in neither (a
+    plain background-mention dossier with no downstream synthesis yet).
+    Purely a derived view over already-persisted theme/section sidecars --
+    recomputed at render time, never itself persisted, so it can never go
+    silently stale in a way that survives a re-render."""
+    themes = _themes_citing(seed_id, citing_id, base)
+    sections = _sections_citing(seed_id, citing_id, base)
+    if not themes and not sections:
+        return None
+
+    parts = []
+    for t in themes:
+        slug = t.get("slug", "")
+        title = t.get("title", slug)
+        parts.append(f"theme [{title}](themes/{slug}.md)")
+    for s in sections:
+        slug = s.get("slug", "")
+        title = s.get("title", slug)
+        parts.append(f"narrative section [{title}](../narrative/sections/{slug}.md)")
+    return "**Referenced by:** " + "; ".join(parts)
+
+
 def _render_dossier_markdown(
     seed_work: dict[str, Any],
     citing_work: dict[str, Any],
@@ -220,8 +288,22 @@ def _render_dossier_markdown(
     pdf_path: Path | None,
     pdf_source: str | None,
     extracted_text_path_str: str | None = None,
+    base: Path | None = None,
+    verification_status: str = "pending-human-review",
 ) -> str:
-    """Render the evidence dossier as an OKF concept document."""
+    """Render the evidence dossier as an OKF concept document.
+
+    *verification_status* controls the frontmatter `status:` tag and
+    which "## Status" block is written. It defaults to
+    "pending-human-review" (every fresh `build_dossier()` call always
+    starts there); `rerender_dossier_md()` passes the dossier's actual
+    current status so a re-render of an already-verified dossier doesn't
+    regress its status back to pending. This function never itself
+    decides verification status -- that remains evidence_wiki.py's
+    mark_verified()/mark_pending()'s job; this only needs to know which
+    of the two static blocks to print.
+    """
+    seed_id = seed_work.get("openalex_id", "")
     citing_id = citing_work.get("openalex_id", "")
     title = citing_work.get("title") or "Unknown"
     doi = citing_work.get("doi")
@@ -237,7 +319,7 @@ def _render_dossier_markdown(
     lines.append(f'title: "{title}"')
     lines.append(f'description: "{finding["proposed"]["justification"][:150]}"')
     lines.append(f"resource: \"{resource}\"")
-    tags = [f"provisional:{provisional_rel}", f"proposed:{proposed_rel}", "status:pending-human-review"]
+    tags = [f"provisional:{provisional_rel}", f"proposed:{proposed_rel}", f"status:{verification_status}"]
     if author_overlap:
         tags.append("author-overlap:true")
     lines.append(f"tags: [{', '.join(tags)}]")
@@ -262,6 +344,11 @@ def _render_dossier_markdown(
             "the original team's own follow-on work, not an independent third party."
         )
     lines.append("")
+
+    referenced_by = _referenced_by_line(seed_id, citing_id, base) if seed_id and citing_id else None
+    if referenced_by:
+        lines.append(referenced_by)
+        lines.append("")
 
     if citing_work.get("abstract"):
         lines.append("## Abstract")
@@ -317,18 +404,40 @@ def _render_dossier_markdown(
         lines.append("")
 
     # Marked with HTML comments (invisible when rendered) rather than
-    # matched by literal prose, so evidence_wiki.py::mark_verified() can
-    # replace this whole block without depending on the exact wording
-    # above staying byte-for-byte identical forever.
+    # matched by literal prose, so evidence_wiki.py::mark_verified()/
+    # mark_pending() can replace this whole block without depending on
+    # the exact wording above staying byte-for-byte identical forever.
+    # rerender_dossier_md() re-derives this same block from the dossier's
+    # persisted human_verification data (rather than calling
+    # mark_verified/mark_pending, which are meant for an actual status
+    # *transition*, not a plain re-render), so a bulk rendering-only pass
+    # never regresses an already-verified dossier back to pending.
     lines.append("<!-- status-section:start -->")
-    lines.append("## Status: pending your review")
-    lines.append("")
-    lines.append(
-        "This finding has not been applied to the impact brief. An agent "
-        "should present the passages above to a human, then run "
-        "`wake override` on their behalf once the human accepts or adjusts "
-        "the reading — see SKILL.md."
-    )
+    if verification_status == "verified":
+        hv = finding.get("human_verification") or {}
+        verified_at = hv.get("verified_at", "")
+        status_note = f"Verified by a human on {verified_at}"
+        corrected_from = hv.get("corrected_from")
+        if corrected_from:
+            status_note += (
+                f" — human corrected the model's reading from "
+                f"*{corrected_from}* to *{proposed_rel}*"
+            )
+        justification = hv.get("justification")
+        if justification:
+            status_note += f" — {justification}"
+        lines.append("## Status: verified")
+        lines.append("")
+        lines.append(f"{status_note}.")
+    else:
+        lines.append("## Status: pending your review")
+        lines.append("")
+        lines.append(
+            "This finding has not been applied to the impact brief. An agent "
+            "should present the passages above to a human, then run "
+            "`wake override` on their behalf once the human accepts or adjusts "
+            "the reading — see SKILL.md."
+        )
     lines.append("<!-- status-section:end -->")
     lines.append("")
 
@@ -454,6 +563,7 @@ def build_dossier(
         seed_work, citing_work, finding,
         pdf_path=Path(pdf_path_str), pdf_source=pdf_source,
         extracted_text_path_str=extracted_text_path_str,
+        base=base,
     )
 
     wd = evidence_dir(seed_id, base)
@@ -516,6 +626,85 @@ def _log_investigation(
         seed_work["openalex_id"], event=event, citing_id=citing_id,
         detail=detail, seed_title=seed_work.get("title"), base=base,
     )
+
+
+def rerender_dossier_md(
+    seed_work: dict[str, Any],
+    citing_id: str,
+    *,
+    base: Path | None = None,
+) -> Path | None:
+    """Re-emit one dossier's .md from its already-persisted .json sidecar,
+    with a fresh back-link scan (`_referenced_by_line`) -- no LLM call, no
+    PDF fetch, no state change. This is purely a rendering pass: the
+    finding itself (provisional/proposed/quotes/verification_status) is
+    read as-is from the sidecar and written back out unchanged, only the
+    markdown's derived "Referenced by" line (and any other future
+    rendering-only content) is recomputed.
+
+    Used two ways: (1) targeted, from themes.py/narrative.py hooks right
+    after a theme or section is written, to refresh just the dossiers it
+    affects; (2) bulk, via `wake evidence rerender-all`, to backfill every
+    dossier in a wiki after a rendering-code upgrade.
+
+    Returns the .md path, or None if no dossier exists for this citing_id
+    (nothing to re-render).
+    """
+    seed_id = seed_work["openalex_id"]
+    payload = load_dossier(seed_id, citing_id, base)
+    if payload is None:
+        return None
+
+    from .citing import load_citing
+
+    citing_work = {
+        "openalex_id": citing_id,
+        "title": payload.get("citing_title"),
+        "authors": payload.get("citing_authors") or [],
+        "cited_by_count": payload.get("citing_cited_by_count", 0),
+    }
+    for w in load_citing(seed_id, base) or []:
+        if w.get("openalex_id") == citing_id:
+            citing_work = {**w, **citing_work, "abstract": w.get("abstract")}
+            break
+
+    finding = {
+        "provisional": payload.get("provisional", {}),
+        "proposed": payload.get("proposed", {}),
+        "quotes": payload.get("quotes", []),
+        "author_overlap": payload.get("author_overlap", False),
+        "overlapping_authors": payload.get("overlapping_authors", []),
+        "human_verification": payload.get("human_verification", {}),
+    }
+
+    pdf_path_str = payload.get("pdf_path")
+    md_text = _render_dossier_markdown(
+        seed_work, citing_work, finding,
+        pdf_path=Path(pdf_path_str) if pdf_path_str else None,
+        pdf_source=payload.get("pdf_source"),
+        extracted_text_path_str=payload.get("extracted_text_path"),
+        base=base,
+        verification_status=payload.get("verification_status", "pending-human-review"),
+    )
+
+    md_path = dossier_path(seed_id, citing_id, base)
+    atomic_write_text(md_path, md_text)
+    return md_path
+
+
+def rerender_all_dossiers(seed_id: str, seed_work: dict[str, Any], base: Path | None = None) -> list[str]:
+    """Re-emit every dossier .md in this seed's evidence/ directory from
+    its .json sidecar -- the bulk counterpart to `rerender_dossier_md()`,
+    used by `wake evidence rerender-all` to backfill an existing wiki
+    after a rendering-code upgrade. No LLM call, no PDF fetch, no state
+    change. Returns the sorted list of citing IDs re-rendered."""
+    d = evidence_dir(seed_id, base)
+    if not d.exists():
+        return []
+    citing_ids = sorted(p.stem for p in d.glob("*.json"))
+    for cid in citing_ids:
+        rerender_dossier_md(seed_work, cid, base=base)
+    return citing_ids
 
 
 def load_dossier(seed_id: str, citing_id: str, base: Path | None = None) -> dict[str, Any] | None:
