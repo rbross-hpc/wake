@@ -625,6 +625,13 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
     still-draft prose (shown but flagged), or not yet written at all,
     rather than silently omitting or overstating what's actually there.
 
+    The document opens with an OKF-style YAML frontmatter block (type,
+    seed_openalex_id, confirmed/draft/missing section counts,
+    reference_count, timestamp) -- the same coverage summary returned
+    below, surfaced as structured metadata for a human/tool skimming the
+    file, matching every other rendered wiki document (dossiers, themes,
+    sections, impact.md).
+
     Every `[ref:ID,...]` marker across the whole document is renumbered
     to `[R1]`, `[R2]`, ... in reading (outline) order, stable across
     reuse -- the same source cited in two different sections keeps one
@@ -652,9 +659,25 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
 
     lines: list[str] = []
     title = seed_work.get("title") or seed_id
+    generated_at = now_iso()
+
+    lines.append("---")
+    lines.append("type: narrative")
+    lines.append(f'title: "Narrative: {title}"')
+    lines.append(f"seed_openalex_id: {seed_id}")
+    lines.append(f"confirmed_sections: {confirmed_count}")
+    lines.append(f"draft_sections: {draft_count}")
+    missing_list = ", ".join(missing)
+    lines.append(f"missing_sections: [{missing_list}]")
+    lines.append(f"reference_count: {len(ref_numbers)}")
+    lines.append(f"timestamp: {generated_at}")
+    lines.append("tags: [type:narrative]")
+    lines.append("---")
+    lines.append("")
+
     lines.append(f"# Narrative: {title}")
     lines.append("")
-    lines.append(f"*Assembled by wake on {now_iso()}*")
+    lines.append(f"*Assembled by wake on {generated_at}*")
     lines.append("")
     if missing or draft_count:
         notes = []

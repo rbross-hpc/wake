@@ -449,6 +449,79 @@ def test_stitch_marks_partial_narrative_for_draft_and_missing_sections(tmp_path)
     assert "not yet drafted" in text
 
 
+# --- stitch: YAML frontmatter -----------------------------------------------
+
+def test_stitch_writes_yaml_frontmatter(tmp_path):
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "intro", "title": "Introduction", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "intro", title="Introduction", prose="Opening paragraph.", base=tmp_path,
+    )
+    narrative.confirm_section(PARALLEL_NETCDF_WORK, "intro", base=tmp_path)
+
+    result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = Path(result["narrative_path"]).read_text()
+
+    assert text.startswith("---\n")
+    assert "type: narrative" in text
+    assert f"seed_openalex_id: {PARALLEL_NETCDF_WORK['openalex_id']}" in text
+    assert "confirmed_sections: 1" in text
+    assert "draft_sections: 0" in text
+    assert "missing_sections: []" in text
+    assert "reference_count: 0" in text
+    assert "tags: [type:narrative]" in text
+    # frontmatter closes before the H1
+    frontmatter, _, rest = text.partition("---\n")[2].partition("\n---\n")
+    assert rest.lstrip().startswith("# Narrative")
+
+
+def test_stitch_frontmatter_reflects_draft_and_missing_sections(tmp_path):
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[
+            {"slug": "intro", "title": "Introduction", "kind": "free"},
+            {"slug": "outro", "title": "Conclusion", "kind": "free"},
+        ],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "intro", title="Introduction", prose="Opening paragraph.", base=tmp_path,
+    )
+    result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = Path(result["narrative_path"]).read_text()
+
+    assert "confirmed_sections: 0" in text
+    assert "draft_sections: 1" in text
+    assert "missing_sections: [outro]" in text
+
+
+def test_stitch_frontmatter_reference_count_matches_r_numbering(tmp_path):
+    works = _seed_classified(tmp_path, 1)
+    cid = works[0]["openalex_id"]
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], cid,
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "intro", "title": "Introduction", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "intro", title="Introduction",
+        prose=f"This work extends PnetCDF. [ref:{cid}]", base=tmp_path,
+    )
+    result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = Path(result["narrative_path"]).read_text()
+    assert "reference_count: 1" in text
+    assert result["reference_count"] == 1
+
+
 def test_stitch_preserves_outline_order(tmp_path):
     narrative.create_outline(
         PARALLEL_NETCDF_WORK,
