@@ -658,16 +658,22 @@ def rerender_dossier_md(
 
     from .citing import load_citing
 
-    citing_work = {
-        "openalex_id": citing_id,
-        "title": payload.get("citing_title"),
-        "authors": payload.get("citing_authors") or [],
-        "cited_by_count": payload.get("citing_cited_by_count", 0),
-    }
+    # Prefer the full record from citing.json (has abstract, venue, DOI,
+    # etc.) when available; the dossier's own citing_title/citing_authors
+    # sidecar fields are only a fallback for the (unlikely) case where
+    # citing.json has been pruned/rotated out from under an old dossier.
+    citing_work = None
     for w in load_citing(seed_id, base) or []:
         if w.get("openalex_id") == citing_id:
-            citing_work = {**w, **citing_work, "abstract": w.get("abstract")}
+            citing_work = w
             break
+    if citing_work is None:
+        citing_work = {
+            "openalex_id": citing_id,
+            "title": payload.get("citing_title"),
+            "authors": payload.get("citing_authors") or [],
+            "cited_by_count": payload.get("citing_cited_by_count", 0),
+        }
 
     finding = {
         "provisional": payload.get("provisional", {}),
