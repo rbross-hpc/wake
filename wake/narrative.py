@@ -584,11 +584,23 @@ def _render_refs_in_prose(prose: str, ref_numbers: dict[str, int]) -> str:
     References section, using the already-assigned *ref_numbers* map.
     Each `R<n>` is individually linked; a multi-ID marker is rendered as
     several comma-separated links rather than nested inside one extra
-    pair of brackets."""
+    pair of brackets.
+
+    Links target `#^r<n>` -- Obsidian's block-reference fragment syntax
+    (see the matching `^r<n>` block ID appended to each entry in the
+    stitched References list, `stitch()` below) -- rather than a plain
+    `#r<n>` fragment. A bare `#r<n>` fragment only resolves against an
+    auto-generated heading anchor; the References list renders each
+    entry as a numbered paragraph, not a heading, and Obsidian does not
+    treat an HTML `<a name="...">` anchor as a navigable fragment target
+    at all, so neither of those got a working in-app jump. `#^r<n>`
+    renders as an ordinary link in any other Markdown viewer (it just
+    won't jump there), same graceful-degradation tradeoff the old form
+    already had outside Obsidian."""
 
     def _replace(m: re.Match) -> str:
         ids = [part.strip() for part in m.group(1).split(",") if part.strip()]
-        links = [f"[R{ref_numbers[i]}](#r{ref_numbers[i]})" for i in ids if i in ref_numbers]
+        links = [f"[R{ref_numbers[i]}](#^r{ref_numbers[i]})" for i in ids if i in ref_numbers]
         return ", ".join(links)
 
     return _REF_RE.sub(_replace, prose)
@@ -636,9 +648,15 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
     to `[R1]`, `[R2]`, ... in reading (outline) order, stable across
     reuse -- the same source cited in two different sections keeps one
     number -- and a Chicago-style "## References" section is appended,
-    one entry per distinct ID, in R-order. This renumbering only happens
-    here, once the whole document is available; the raw `[ref:...]`
-    marker form is preserved in each section's own .json/.md.
+    one entry per distinct ID, in R-order. Each in-prose `[R<n>]` links
+    to `#^r<n>`, and each References entry carries a matching trailing
+    `^r<n>` block ID, so the link actually jumps to its reference when
+    opened in Obsidian (Obsidian's fragment navigation doesn't follow a
+    plain `#r<n>` slug against a numbered-list entry, and ignores HTML
+    `<a name>` anchors entirely -- see `_render_refs_in_prose`). This
+    renumbering only happens here, once the whole document is available;
+    the raw `[ref:...]` marker form is preserved in each section's own
+    .json/.md.
 
     Raises ValueError if no outline has been created yet.
     """
@@ -708,7 +726,11 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
         lines.append("")
         for ref_id, n in sorted(ref_numbers.items(), key=lambda kv: kv[1]):
             work = _work_metadata_for_ref(ref_id, seed_work, base)
-            lines.append(f'<a name="r{n}"></a>{n}. {_chicago_entry(work, ref_id)}')
+            # Trailing `^r<n>` is an Obsidian block ID -- must be the last
+            # token on the paragraph's own line (no blank line before it)
+            # for Obsidian to recognize it. Paired with the `#^r<n>`
+            # fragment links in _render_refs_in_prose() above.
+            lines.append(f'{n}. {_chicago_entry(work, ref_id)} ^r{n}')
             lines.append("")
 
     md_path = narrative_md_path(seed_id, base)

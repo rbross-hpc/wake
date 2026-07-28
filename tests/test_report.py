@@ -382,6 +382,66 @@ def test_bake_markdown_shows_verified_via_evidence_dossier():
     assert "[VERIFIED via full-text reading]" in md
 
 
+def test_bake_markdown_top_evidence_doi_and_openalex_both_linked():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    md = bake_markdown(seed, metrics)
+    top = metrics["top_evidence"][0]
+    assert f"DOI: [{top['doi']}](https://doi.org/{top['doi']})" in md
+    assert f"OpenAlex: [{top['openalex_id']}](https://openalex.org/{top['openalex_id']})" in md
+
+
+def test_bake_markdown_top_evidence_no_doi_still_shows_openalex_link():
+    works = [{**SAMPLE_CITING_WORKS[0], "doi": None}, SAMPLE_CITING_WORKS[1], SAMPLE_CITING_WORKS[2]]
+    classified = _make_classified(works, ["extends", "uses-as-tool", "background-mention"])
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    md = bake_markdown(seed, metrics)
+    top = metrics["top_evidence"][0]
+    assert top["doi"] is None
+    top_entry_start = md.index(f"**1. {top['title']}**")
+    top_entry_end = md.index("\n\n", top_entry_start)
+    top_entry = md[top_entry_start:top_entry_end]
+    assert "DOI:" not in top_entry
+    assert f"OpenAlex: [{top['openalex_id']}](https://openalex.org/{top['openalex_id']})" in top_entry
+
+
+def test_bake_markdown_top_evidence_title_plain_when_no_dossier(tmp_path):
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    md = bake_markdown(seed, metrics, base=tmp_path)
+    top = metrics["top_evidence"][0]
+    assert f"**1. {top['title']}**" in md
+    assert f"[{top['title']}]" not in md
+
+
+def test_bake_markdown_top_evidence_title_links_to_dossier_when_present(tmp_path):
+    from wake.evidence import dossier_path
+
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
+    metrics = build_metrics(seed, classified)
+    top = metrics["top_evidence"][0]
+
+    p = dossier_path(seed["openalex_id"], top["openalex_id"], base=tmp_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("stub dossier")
+
+    md = bake_markdown(seed, metrics, base=tmp_path)
+    assert f"**1. [{top['title']}](evidence/{top['openalex_id']}.md)**" in md
+
+
 def test_bake_markdown_shows_verified_via_human_judgment():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,

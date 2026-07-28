@@ -22,7 +22,10 @@ wake-out/<OpenAlex-ID>/
                              themes/narrative status) + a "See also" nav line to the
                              evidence wiki/themes/narrative (each conditional on
                              existing); notes coverage if partial; per-entry
-                             [PROVISIONAL]/[VERIFIED via ...] tags
+                             [PROVISIONAL]/[VERIFIED via ...] tags. Each "Strongest
+                             Evidence" entry's title links to its evidence dossier
+                             (when one exists), and its DOI/OpenAlex ID are both
+                             rendered as links
   .state.json             — stage cache keys
   classify/               — per-work classification sidecars (resumable)
   .cost.jsonl             — per-LLM-call estimated token/cost log

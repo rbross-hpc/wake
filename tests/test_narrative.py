@@ -836,6 +836,45 @@ def test_stitch_renumbers_refs_and_builds_reference_list(tmp_path):
     assert works[0]["doi"] in text
 
 
+def test_stitch_uses_obsidian_block_id_anchors_not_html_anchors(tmp_path):
+    """Obsidian ignores HTML <a name> anchors as fragment-navigation
+    targets and doesn't resolve a plain #rN fragment against a numbered
+    list entry -- only its own ^blockid convention actually jumps. Every
+    [R<n>] must link to #^r<n>, and every References entry must carry a
+    matching trailing ^r<n> block ID, with no leftover <a name> anchors."""
+    works = _seed_classified(tmp_path, 1)
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], works[0]["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    cid = works[0]["openalex_id"]
+
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK,
+        components=[{"slug": "s1", "title": "Section One", "kind": "free"}],
+        base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One",
+        prose=f"PnetCDF was introduced in 2003. [ref:SEED] This work extends it. [ref:{cid}]",
+        base=tmp_path,
+    )
+    result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = Path(result["narrative_path"]).read_text()
+
+    assert "<a name" not in text
+    assert "[R1](#^r1)" in text
+    assert "[R2](#^r2)" in text
+    assert text.count(" ^r1") == 1
+    assert text.count(" ^r2") == 1
+    # Block ID is the last token on its own References-entry line.
+    for line in text.splitlines():
+        if line.startswith("1. ") or line.startswith("2. "):
+            assert line.rstrip().endswith(" ^r1") or line.rstrip().endswith(" ^r2")
+
+
 def test_stitch_ref_numbers_are_stable_across_reuse(tmp_path):
     """The same source cited in two different sections keeps one number,
     assigned on its first appearance in outline order."""
@@ -872,9 +911,9 @@ def test_stitch_ref_numbers_are_stable_across_reuse(tmp_path):
     text = Path(result["narrative_path"]).read_text()
     # cid0 got R1 (first section, first appearance); reused unchanged in
     # section two; cid1 got R2 (first appears in section two).
-    assert "First mention. [R1](#r1)" in text
-    assert "same source again. [R1](#r1)" in text
-    assert "a new one. [R2](#r2)" in text
+    assert "First mention. [R1](#^r1)" in text
+    assert "same source again. [R1](#^r1)" in text
+    assert "a new one. [R2](#^r2)" in text
 
 
 def test_stitch_multi_id_marker_renders_multiple_ref_links(tmp_path):
@@ -899,7 +938,7 @@ def test_stitch_multi_id_marker_renders_multiple_ref_links(tmp_path):
     )
     result = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
     text = Path(result["narrative_path"]).read_text()
-    assert "[R1](#r1), [R2](#r2)" in text
+    assert "[R1](#^r1), [R2](#^r2)" in text
 
 
 def test_stitch_no_references_section_when_no_markers_used(tmp_path):
@@ -983,8 +1022,8 @@ def test_export_refs_writes_numbered_json_matching_stitch_order(tmp_path):
     # Same R-numbering as stitch() would produce for the same document.
     stitched = narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
     text = Path(stitched["narrative_path"]).read_text()
-    assert "[R1](#r1)" in text
-    assert "[R2](#r2)" in text
+    assert "[R1](#^r1)" in text
+    assert "[R2](#^r2)" in text
 
 
 def test_export_refs_raises_without_outline(tmp_path):
