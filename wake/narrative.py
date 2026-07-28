@@ -501,6 +501,26 @@ def confirm_section(
     }
 
 
+def rerender_all_sections(seed_id: str, seed_work: dict[str, Any], base: Path | None = None) -> list[str]:
+    """Re-emit every narrative section's .md in this seed's narrative/
+    sections/ directory from its .json sidecar -- a rendering-only pass,
+    no change to any section's own status or prose. Used by `wake
+    narrative section rerender-all` to backfill an existing wiki after a
+    rendering-code upgrade (e.g. so every section's [ref:...] markers
+    pick up dossier links that didn't exist yet at draft time). Returns
+    the sorted list of section slugs re-rendered."""
+    d = sections_dir(seed_id, base)
+    if not d.exists():
+        return []
+    slugs = sorted(p.stem for p in d.glob("*.json"))
+    for slug in slugs:
+        section = load_section(seed_id, slug, base)
+        if section is None:
+            continue
+        atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, section, base))
+    return slugs
+
+
 def _work_metadata_for_ref(ref_id: str, seed_work: dict[str, Any], base: Path | None = None) -> dict[str, Any] | None:
     """Bibliographic fields for one reference ID, for the Chicago-style
     entry: SEED resolves to the seed work itself; any other ID resolves

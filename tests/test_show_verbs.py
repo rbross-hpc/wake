@@ -220,3 +220,59 @@ def test_show_dossier_missing_errors(tmp_path, capsys):
     assert code == 1
     envelope = json.loads(captured.out)
     assert envelope["ok"] is False
+
+
+# --- rerender-all verbs ------------------------------------------------
+
+def test_evidence_rerender_all_cli(tmp_path, capsys):
+    _seed_cached(tmp_path)
+    work = _classified_work(0)
+    save_classified(PARALLEL_NETCDF_WORK["openalex_id"], [work], base=tmp_path)
+    _build_dossier_for(tmp_path, work, pdf_name="w.pdf")
+
+    code, captured = _run_cli(["evidence", "W2156077349", "--rerender-all"], tmp_path, capsys)
+    assert code == 0
+    assert "Re-rendered 1 dossier(s)." in captured.out
+
+
+def test_evidence_rerender_all_cli_json_mode(tmp_path, capsys):
+    _seed_cached(tmp_path)
+    work = _classified_work(0)
+    save_classified(PARALLEL_NETCDF_WORK["openalex_id"], [work], base=tmp_path)
+    _build_dossier_for(tmp_path, work, pdf_name="w.pdf")
+
+    code, captured = _run_cli(["--json", "evidence", "W2156077349", "--rerender-all"], tmp_path, capsys)
+    assert code == 0
+    envelope = json.loads(captured.out)
+    assert envelope["ok"] is True
+    assert envelope["data"]["count"] == 1
+    assert envelope["data"]["rerendered"] == [work["openalex_id"]]
+
+
+def test_evidence_without_citing_id_or_rerender_all_errors(tmp_path, capsys):
+    _seed_cached(tmp_path)
+    code, captured = _run_cli(["--json", "evidence", "W2156077349"], tmp_path, capsys)
+    assert code == 1
+    envelope = json.loads(captured.out)
+    assert envelope["ok"] is False
+
+
+def test_theme_rerender_all_cli(tmp_path, capsys):
+    _seed_cached(tmp_path)
+    _make_confirmed_theme(tmp_path)
+
+    code, captured = _run_cli(["theme", "rerender-all", "W2156077349"], tmp_path, capsys)
+    assert code == 0
+    assert "Re-rendered 1 theme(s)." in captured.out
+
+
+def test_narrative_section_rerender_all_cli(tmp_path, capsys):
+    _seed_cached(tmp_path)
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK, components=[{"slug": "intro", "title": "Intro", "kind": "free"}], base=tmp_path,
+    )
+    narrative.create_section(PARALLEL_NETCDF_WORK, "intro", title="Intro", prose="Framing.", base=tmp_path)
+
+    code, captured = _run_cli(["narrative", "section", "rerender-all", "W2156077349"], tmp_path, capsys)
+    assert code == 0
+    assert "Re-rendered 1 section(s)." in captured.out
