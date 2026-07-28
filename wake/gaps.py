@@ -18,7 +18,7 @@ Two escalation paths, both explicit and human-driven (never automatic):
   2. `wake fill-abstract <seed> <id> --text "..."` — the human pastes the
      abstract directly (cheapest possible path, no LLM call at all).
 
-Manually-filled abstracts are stored in a `.manual_abstracts.jsonl` sidecar
+Manually-filled abstracts are stored in a `manual_abstracts.jsonl` sidecar
 (same append-only, last-write-wins pattern as report.py's overrides) so
 they survive re-fetching citing.json and are picked up by classify.py on
 the next run.
@@ -34,22 +34,53 @@ from .backfill import is_enabled as _backfill_enabled, backfill_one
 from .io import atomic_write_text, now_iso, read_json
 from .seed import work_dir
 
-_MANUAL_ABSTRACTS_FILE = ".manual_abstracts.jsonl"
+_MANUAL_ABSTRACTS_FILE = "manual_abstracts.jsonl"
+_LEGACY_MANUAL_ABSTRACTS_FILE = ".manual_abstracts.jsonl"
 
 
 def manual_abstracts_path(seed_id: str, base: Path | None = None) -> Path:
     return work_dir(seed_id, base) / _MANUAL_ABSTRACTS_FILE
 
 
+def _legacy_manual_abstracts_path(seed_id: str, base: Path | None = None) -> Path:
+    """Pre-rename dotfile location. A working directory the human is
+    explicitly expected to inspect shouldn't hide a human's own supplied
+    data (abstracts they pasted or extracted from a PDF) behind a dotfile
+    convention meant for user-home/config directories -- same rationale
+    as report.py's overrides.jsonl rename. Kept only for read-compat with
+    packets built before the rename; see
+    `_migrate_legacy_manual_abstracts_if_needed`."""
+    return work_dir(seed_id, base) / _LEGACY_MANUAL_ABSTRACTS_FILE
+
+
+def _migrate_legacy_manual_abstracts_if_needed(seed_id: str, base: Path | None = None) -> None:
+    """Rename `.manual_abstracts.jsonl` -> `manual_abstracts.jsonl` in
+    place the first time this seed's manual abstracts are written to
+    after the rename. No-op if the new-named file already exists (never
+    overwrites) or if there's nothing to migrate."""
+    new_path = manual_abstracts_path(seed_id, base)
+    old_path = _legacy_manual_abstracts_path(seed_id, base)
+    if old_path.exists() and not new_path.exists():
+        old_path.rename(new_path)
+
+
 def load_manual_abstracts(seed_id: str, base: Path | None = None) -> dict[str, dict[str, Any]]:
     """Load human-supplied abstracts, keyed by citing OpenAlex ID.
 
     Later entries for the same ID win (append-only log; last write wins) —
-    same pattern as report.py's overrides.
+    same pattern as report.py's overrides. Reads the current
+    `manual_abstracts.jsonl` name; falls back to the pre-rename
+    `.manual_abstracts.jsonl` dotfile if the new name doesn't exist yet
+    (a packet built before the rename that hasn't had a fresh
+    `wake fill-abstract` call to trigger migration). This is read-only
+    compat -- migration to the new filename happens in
+    `add_manual_abstract`, the write path, not here.
     """
     p = manual_abstracts_path(seed_id, base)
     if not p.exists():
-        return {}
+        p = _legacy_manual_abstracts_path(seed_id, base)
+        if not p.exists():
+            return {}
     entries: dict[str, dict[str, Any]] = {}
     with open(p, encoding="utf-8") as f:
         for line in f:
@@ -85,6 +116,7 @@ def add_manual_abstract(
         "abstract_source": source,
         "filled_at": now_iso(),
     }
+    _migrate_legacy_manual_abstracts_if_needed(seed_id, base)
     p = manual_abstracts_path(seed_id, base)
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "a", encoding="utf-8") as f:

@@ -28,7 +28,7 @@ wake-out/<OpenAlex-ID>/
   .cost.jsonl             — per-LLM-call estimated token/cost log
   overrides.jsonl         — human-reviewed relationship overrides
                              (verification_status: "verified")
-  .manual_abstracts.jsonl — human/PDF-recovered abstracts (wake fill-abstract)
+  manual_abstracts.jsonl  — human/PDF-recovered abstracts (wake fill-abstract)
   pdfs/                   — locally-cached PDFs (wake fetch-pdf / wake evidence)
     <citing-id>.pdf         — the PDF itself
     <citing-id>.json        — its extracted text, cached (pdf_sha256-keyed;
@@ -65,9 +65,38 @@ wake-out/<OpenAlex-ID>/
                                  impact.md for SEED) when the dossier exists;
                                  otherwise left as the raw marker
       <slug>.json               — same section, structured (kind, theme_slugs, prose)
-  narrative.md             — assembled narrative (wake narrative stitch);
-                              notes coverage if partial, same as impact.md
+  narrative.md             — assembled narrative (wake narrative stitch): OKF-style
+                              YAML frontmatter (seed + confirmed/draft/missing
+                              section counts, reference_count) + the R-numbered
+                              stitched prose; notes coverage if partial, same as
+                              impact.md
 ```
 
 Use `--work-dir DIR` (or `WAKE_WORK_DIR` env var) to control where
 `wake-out/` is created — useful when running from a scratch directory.
+
+## File format conventions
+
+Every wiki concept doc (dossier, theme, narrative section, `impact.md`,
+`narrative.md`) is a **`.md` + `.json` pair**: the `.json` is the source
+of truth (structured, safe to regenerate the `.md` from — see each
+subsystem's `rerender-all` verb), the `.md` is the derived human view,
+opening with an OKF-style YAML frontmatter block (`type`, `status`/
+counts, `timestamp`) so a human or tool can skim structured metadata
+without parsing prose. `README.md` and the `index.md`/`log.md`/
+`themes/index.md` catalogs are the only `.md` files with no `.json`
+sidecar of their own — they're 100% derived from other files that
+already have one, so a sidecar would just duplicate data.
+
+Append-only human/agent decisions (`overrides.jsonl`, `duplicates.jsonl`,
+`exclusions.jsonl`, `manual_abstracts.jsonl`) use `.jsonl`, one JSON
+object per line, last-write-wins on replay — never rewritten in place,
+only appended to.
+
+A working directory under `wake-out/<seed>/` is explicitly meant for a
+human to inspect directly, so anything **human-facing** (the human's own
+verification decisions, human-supplied data, debuggable raw per-work LLM
+output) is a plain, visible filename — never hidden behind a dotfile.
+Only genuinely internal bookkeeping the human isn't expected to read
+directly (`.state.json`'s stage-cache keys, `.cost.jsonl`'s per-call
+token/cost ledger) stays a dotfile.
