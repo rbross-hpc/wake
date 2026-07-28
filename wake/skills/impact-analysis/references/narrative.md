@@ -177,6 +177,18 @@ source, never written back into `classified.json`), so no OSTI suffix is
 ever rendered. If no section uses any `[ref:...]` marker, no References
 section is appended at all.
 
+Each in-prose `[R<n>]` links to `#^r<n>`, and each References entry
+carries a matching trailing `^r<n>` — Obsidian's block-reference
+convention, so the link actually jumps to its reference when the file is
+opened in Obsidian. This wasn't always true: an earlier version used a
+plain `#r<n>` fragment against an HTML `<a name="r<n>">` anchor, which
+works in GitHub-flavored Markdown but not Obsidian (Obsidian ignores
+`<a name>` anchors as navigation targets, and doesn't resolve a bare
+`#r<n>` fragment against a numbered-list paragraph — only against an
+auto-generated heading slug or one of its own `^blockid` anchors). The
+`^r<n>` form still renders as an ordinary (non-jumping) link in any
+other Markdown viewer, same graceful-degradation tradeoff as before.
+
 ## Verifying the References list (`wake narrative refs-check`)
 
 wake's own R-numbering guarantees every citation in the stitched
