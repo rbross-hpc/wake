@@ -15,10 +15,11 @@ from unittest.mock import patch
 
 import pytest
 
-from wake import evidence
+from wake import evidence, narrative, themes
 from wake.classify import save_classified
 from wake.cli.main import main
 from wake.io import atomic_write_json
+from wake.report import add_override
 from wake.seed import work_dir
 from wake.state import mark_stage_complete
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
@@ -196,3 +197,152 @@ def test_evidence_human_output_graceful_without_title_authors(tmp_path, capsys):
     )
     assert code == 0
     assert "Some evidence." in captured.out
+
+
+# --- dossier "Referenced by" back-links -------------------------------------
+
+def test_dossier_md_has_no_referenced_by_line_when_orphan(tmp_path):
+    work = _classified_work()
+    _build_dossier(tmp_path, citing_work=work)
+    text = evidence.dossier_path(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,
+    ).read_text()
+    assert "Referenced by" not in text
+
+
+def test_dossier_md_referenced_by_theme(tmp_path):
+    work = _classified_work()
+    save_classified(PARALLEL_NETCDF_WORK["openalex_id"], [work], base=tmp_path)
+    _build_dossier(tmp_path, citing_work=work)
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="Theme One", summary="Summary.",
+        citing_ids=[work["openalex_id"]], base=tmp_path,
+    )
+    text = evidence.dossier_path(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,
+    ).read_text()
+    assert "**Referenced by:**" in text
+    assert "theme [Theme One](themes/t1.md)" in text
+
+
+def test_dossier_md_referenced_by_narrative_section(tmp_path):
+    work = _classified_work()
+    save_classified(PARALLEL_NETCDF_WORK["openalex_id"], [work], base=tmp_path)
+    _build_dossier(tmp_path, citing_work=work)
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One",
+        prose=f"This work extends PnetCDF. [ref:{work['openalex_id']}]", base=tmp_path,
+    )
+    text = evidence.dossier_path(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,
+    ).read_text()
+    assert "**Referenced by:**" in text
+    assert "narrative section [Section One](../narrative/sections/s1.md)" in text
+
+
+def test_dossier_md_referenced_by_both_theme_and_section(tmp_path):
+    work = _classified_work()
+    save_classified(PARALLEL_NETCDF_WORK["openalex_id"], [work], base=tmp_path)
+    _build_dossier(tmp_path, citing_work=work)
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="Theme One", summary="Summary.",
+        citing_ids=[work["openalex_id"]], base=tmp_path,
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="Section One",
+        prose=f"This work extends PnetCDF. [ref:{work['openalex_id']}]", base=tmp_path,
+    )
+    text = evidence.dossier_path(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,
+    ).read_text()
+    assert "theme [Theme One](themes/t1.md)" in text
+    assert "narrative section [Section One](../narrative/sections/s1.md)" in text
+
+
+# --- rerender_dossier_md / rerender_all_dossiers ----------------------------
+
+def test_rerender_dossier_md_missing_dossier_returns_none(tmp_path):
+    result = evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, "W_NOPE", base=tmp_path)
+    assert result is None
+
+
+def test_rerender_dossier_md_picks_up_new_theme_membership(tmp_path):
+    """A dossier rendered before a theme existed has no back-link; a
+    targeted re-render after the theme is created picks it up without
+    re-running the LLM or re-fetching the PDF."""
+    work = _classified_work()
+    save_classified(PARALLEL_NETCDF_WORK["openalex_id"], [work], base=tmp_path)
+    _build_dossier(tmp_path, citing_work=work)
+    text_before = evidence.dossier_path(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,
+    ).read_text()
+    assert "Referenced by" not in text_before
+
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"],
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="Theme One", summary="Summary.",
+        citing_ids=[work["openalex_id"]], base=tmp_path,
+    )
+    # create_theme's own hook already re-renders affected dossiers (see
+    # test below for that end-to-end behavior); call rerender directly
+    # here to test the primitive in isolation.
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, work["openalex_id"], base=tmp_path)
+    text_after = evidence.dossier_path(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,
+    ).read_text()
+    assert "theme [Theme One](themes/t1.md)" in text_after
+
+
+def test_rerender_dossier_md_preserves_verified_status_block(tmp_path):
+    work = _classified_work()
+    _build_dossier(tmp_path, citing_work=work)
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"],
+        relationship="extends", justification="human accepted the finding", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, work["openalex_id"], base=tmp_path)
+    text = evidence.dossier_path(
+        PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,
+    ).read_text()
+    assert "## Status: verified" in text
+    assert "Verified by a human on" in text
+    assert "human accepted the finding" in text
+    assert "status:verified" in text
+
+
+def test_rerender_all_dossiers_returns_sorted_ids(tmp_path):
+    w1 = _classified_work(0)
+    w2 = {**_classified_work(1)}
+    _build_dossier(tmp_path, citing_work=w1, pdf_name="w1.pdf")
+    _build_dossier(tmp_path, citing_work=w2, pdf_name="w2.pdf")
+    result = evidence.rerender_all_dossiers(
+        PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
+    )
+    assert result == sorted([w1["openalex_id"], w2["openalex_id"]])
+
+
+def test_rerender_all_dossiers_empty_when_no_evidence_dir(tmp_path):
+    result = evidence.rerender_all_dossiers(
+        PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
+    )
+    assert result == []

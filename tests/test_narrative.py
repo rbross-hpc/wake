@@ -577,6 +577,153 @@ def test_create_section_no_markers_still_works(tmp_path):
     assert result["ok"] is True
 
 
+# --- section markdown: [ref:...] -> dossier links -------------------------
+
+def test_section_md_links_ref_marker_to_dossier_when_one_exists(tmp_path):
+    works = _seed_classified(tmp_path, 1)
+    cid = works[0]["openalex_id"]
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], cid,
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="S",
+        prose=f"This work extends PnetCDF. [ref:{cid}]", base=tmp_path,
+    )
+    text = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
+    assert f"[[{cid}]](../../evidence/{cid}.md)" in text
+    assert "[ref:" not in text
+
+
+def test_section_md_leaves_ref_marker_raw_when_no_dossier(tmp_path):
+    """A cited ID with no dossier on disk (e.g. a plain human-judgment
+    override with nothing to link to) is left as the raw `[ref:ID]` text
+    in the rendered section .md rather than a dead link. Exercised via
+    the private render helper directly: `_check_packet_consistency`
+    means `create_section` itself can never reach this state through its
+    public path (every currently-verified work must have a dossier on
+    disk), so this covers the render function's own defensive fallback."""
+    text = narrative._render_refs_in_section_prose(
+        "This work extends PnetCDF. [ref:W_NO_DOSSIER]",
+        PARALLEL_NETCDF_WORK["openalex_id"], tmp_path,
+    )
+    assert "[ref:W_NO_DOSSIER]" in text
+
+
+def test_section_md_links_seed_ref_to_impact_md(tmp_path):
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="S",
+        prose="PnetCDF was introduced in 2003. [ref:SEED]", base=tmp_path,
+    )
+    text = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
+    assert "[[SEED]](../../impact.md)" in text
+
+
+def test_section_md_links_each_id_in_multi_id_marker(tmp_path):
+    works = _seed_classified(tmp_path, 2)
+    for w in works:
+        _build_dossier_for(tmp_path, w, pdf_name=f"{w['openalex_id']}.pdf")
+        add_override(
+            PARALLEL_NETCDF_WORK["openalex_id"], w["openalex_id"],
+            relationship="extends", justification="accepted", base=tmp_path,
+            verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+        )
+    ids = ",".join(w["openalex_id"] for w in works)
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="S",
+        prose=f"Both works extend PnetCDF. [ref:{ids}]", base=tmp_path,
+    )
+    text = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
+    for w in works:
+        assert f"[[{w['openalex_id']}]](../../evidence/{w['openalex_id']}.md)" in text
+
+
+def test_section_json_prose_field_keeps_raw_ref_markers(tmp_path):
+    """The rewrite into links is a rendering-only concern of the section's
+    own .md -- the persisted JSON `prose` field (which stitch()'s [R<n>]
+    renumbering and _validate_ref_ids both operate on) must stay exactly
+    as the agent wrote it."""
+    works = _seed_classified(tmp_path, 1)
+    cid = works[0]["openalex_id"]
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], cid,
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="S",
+        prose=f"This work extends PnetCDF. [ref:{cid}]", base=tmp_path,
+    )
+    loaded = narrative.load_section(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path)
+    assert loaded["prose"] == f"This work extends PnetCDF. [ref:{cid}]"
+
+
+# --- rerender_all_sections --------------------------------------------------
+
+def test_rerender_all_sections_empty_when_no_sections_dir(tmp_path):
+    result = narrative.rerender_all_sections(
+        PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
+    )
+    assert result == []
+
+
+def test_rerender_all_sections_returns_sorted_slugs(tmp_path):
+    narrative.create_section(PARALLEL_NETCDF_WORK, "b-section", title="B", prose="B prose.", base=tmp_path)
+    narrative.create_section(PARALLEL_NETCDF_WORK, "a-section", title="A", prose="A prose.", base=tmp_path)
+    result = narrative.rerender_all_sections(
+        PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
+    )
+    assert result == ["a-section", "b-section"]
+
+
+def test_rerender_all_sections_picks_up_dossier_appearing_after_draft(tmp_path):
+    """A section's own .md is a rendered snapshot -- if the underlying
+    dossier .md is later moved/rebuilt in a way that changes only its own
+    existence check timing (e.g. a wiki restored from a partial backup),
+    rerender_all_sections recomputes the [ref:ID] -> dossier link fresh
+    from what's on disk right now, rather than trusting whatever the
+    section's own .md happened to say at draft time."""
+    works = _seed_classified(tmp_path, 1)
+    cid = works[0]["openalex_id"]
+    _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
+    add_override(
+        PARALLEL_NETCDF_WORK["openalex_id"], cid,
+        relationship="extends", justification="accepted", base=tmp_path,
+        verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
+    )
+    narrative.create_section(
+        PARALLEL_NETCDF_WORK, "s1", title="S",
+        prose=f"This work extends PnetCDF. [ref:{cid}]", base=tmp_path,
+    )
+    text_before = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
+    assert f"[[{cid}]](../../evidence/{cid}.md)" in text_before
+
+    # Simulate the dossier .md having gone missing (e.g. a hand-edited/
+    # partially-restored wiki) and then reappearing -- rerender_all_sections
+    # should reflect whatever's actually on disk right now, not whatever
+    # was true the last time the section was rendered.
+    dossier_md = evidence.dossier_path(PARALLEL_NETCDF_WORK["openalex_id"], cid, base=tmp_path)
+    saved = dossier_md.read_text()
+    dossier_md.unlink()
+
+    result = narrative.rerender_all_sections(
+        PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
+    )
+    assert result == ["s1"]
+    text_missing = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
+    assert f"[ref:{cid}]" in text_missing
+
+    dossier_md.write_text(saved)
+    narrative.rerender_all_sections(
+        PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
+    )
+    text_restored = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
+    assert f"[[{cid}]](../../evidence/{cid}.md)" in text_restored
+
+
 # --- stitch: R-numbering and Chicago references -------------------------
 
 def test_stitch_renumbers_refs_and_builds_reference_list(tmp_path):

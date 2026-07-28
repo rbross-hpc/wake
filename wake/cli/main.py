@@ -266,7 +266,9 @@ def _build_evidence_parser(sub) -> None:
              "on their behalf once accepted.",
     )
     p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
-    p.add_argument("citing_id", help="OpenAlex ID of the citing work to investigate.")
+    p.add_argument("citing_id", nargs="?", default=None,
+                   help="OpenAlex ID of the citing work to investigate. Omit when using "
+                        "--rerender-all.")
     p.add_argument("--force", action="store_true",
                    help="Re-run verification even if a dossier already exists. Also: "
                         "when used with --from-pdf, bypasses the metadata-mismatch "
@@ -277,6 +279,13 @@ def _build_evidence_parser(sub) -> None:
                         "(title similarity, author name, DOI) before copying it into the "
                         "packet and running full-text verification. Refuses on mismatch "
                         "unless --force is also given (mismatch is always logged).")
+    p.add_argument("--rerender-all", action="store_true",
+                   help="Re-emit every evidence dossier's .md from its .json sidecar -- "
+                        "a rendering-only pass (no LLM call, no PDF fetch, no state "
+                        "change) that refreshes derived content like the \"Referenced "
+                        "by\" back-link line. Use after a wake upgrade changes dossier "
+                        "rendering, to backfill an existing wiki. Mutually exclusive "
+                        "with citing_id/--force/--from-pdf.")
 
 
 def _build_theme_parser(sub) -> None:
@@ -324,6 +333,16 @@ def _build_theme_parser(sub) -> None:
     show = ssub.add_parser("show", help="Print an already-written theme document.")
     show.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     show.add_argument("slug", help="Theme identifier to print.")
+
+    rerender_all = ssub.add_parser(
+        "rerender-all",
+        help="Re-emit every theme's .md from its .json sidecar -- a rendering-only "
+             "pass (no change to any theme's status or citing-works list) that "
+             "refreshes derived content like the \"Referenced By\" narrative-section "
+             "back-link. Use after a wake upgrade changes theme rendering, to "
+             "backfill an existing wiki.",
+    )
+    rerender_all.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
 
 def _build_narrative_parser(sub) -> None:
@@ -394,6 +413,15 @@ def _build_narrative_parser(sub) -> None:
     section_show = section_sub.add_parser("show", help="Print one already-drafted section's prose.")
     section_show.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
     section_show.add_argument("slug", help="Section identifier to print.")
+
+    section_rerender_all = section_sub.add_parser(
+        "rerender-all",
+        help="Re-emit every section's .md from its .json sidecar -- a rendering-only "
+             "pass (no change to any section's status or prose) that refreshes derived "
+             "content like [ref:...] -> evidence-dossier links. Use after a wake "
+             "upgrade changes section rendering, to backfill an existing wiki.",
+    )
+    section_rerender_all.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
     stitch = ssub.add_parser(
         "stitch",
@@ -1156,6 +1184,22 @@ def run_evidence(args) -> None:
     seed_id = work["openalex_id"]
     quiet = is_quiet(args)
 
+    if getattr(args, "rerender_all", False):
+        from ..evidence import rerender_all_dossiers
+        rerendered = rerender_all_dossiers(seed_id, work, base=base)
+        emit(
+            "evidence", {"ok": True, "rerendered": rerendered, "count": len(rerendered)},
+            as_json=args.json_out,
+            human=lambda d: print(f"Re-rendered {d['count']} dossier(s)."),
+        )
+        return
+
+    if not args.citing_id:
+        emit_error("evidence", ValueError(
+            "citing_id is required unless --rerender-all is given."
+        ), as_json=args.json_out)
+        sys.exit(1)
+
     citing_work = _find_classified_work(seed_id, args.citing_id, base)
     if citing_work is None:
         emit_error("evidence", RuntimeError(
@@ -1249,6 +1293,8 @@ def run_theme(args) -> None:
         run_theme_queue(args)
     elif args.theme_action == "show":
         run_theme_show(args)
+    elif args.theme_action == "rerender-all":
+        run_theme_rerender_all(args)
 
 
 def run_theme_create(args) -> None:
@@ -1341,6 +1387,19 @@ def run_theme_show(args) -> None:
 
     text = p.read_text(encoding="utf-8")
     emit("theme", {"markdown": text}, as_json=args.json_out, human=lambda d: print(d["markdown"]))
+
+
+def run_theme_rerender_all(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..themes import rerender_all_themes
+    base = _work_dir_base(args)
+
+    rerendered = rerender_all_themes(work["openalex_id"], work, base=base)
+    emit(
+        "theme", {"ok": True, "rerendered": rerendered, "count": len(rerendered)},
+        as_json=args.json_out,
+        human=lambda d: print(f"Re-rendered {d['count']} theme(s)."),
+    )
 
 
 def run_narrative(args) -> None:
@@ -1489,6 +1548,8 @@ def run_narrative_section(args) -> None:
         run_narrative_section_confirm(args)
     elif args.section_action == "show":
         run_narrative_section_show(args)
+    elif args.section_action == "rerender-all":
+        run_narrative_section_rerender_all(args)
 
 
 def run_narrative_section_create(args) -> None:
@@ -1555,6 +1616,19 @@ def run_narrative_section_show(args) -> None:
 
     text = p.read_text(encoding="utf-8")
     emit("narrative", {"markdown": text}, as_json=args.json_out, human=lambda d: print(d["markdown"]))
+
+
+def run_narrative_section_rerender_all(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..narrative import rerender_all_sections
+    base = _work_dir_base(args)
+
+    rerendered = rerender_all_sections(work["openalex_id"], work, base=base)
+    emit(
+        "narrative", {"ok": True, "rerendered": rerendered, "count": len(rerendered)},
+        as_json=args.json_out,
+        human=lambda d: print(f"Re-rendered {d['count']} section(s)."),
+    )
 
 
 def run_narrative_stitch(args) -> None:

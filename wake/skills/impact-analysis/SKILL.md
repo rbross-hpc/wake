@@ -375,6 +375,17 @@ it if you want a sense of what's already been checked before spending
 another `wake evidence` call on a work you may have already covered.
 `evidence/log.md` is the full chronological record (built, rebuilt,
 failed, verified) if you need to reconstruct what happened and when.
+`wake-out/<seed>/README.md` is the wiki's single entry point — a short
+navigation page linking to `impact.md`, `narrative.md`, and both
+indexes, with counts; regenerated automatically alongside the artifacts
+it links to, worth pointing a human at when a packet is largely done. A
+dossier, theme, and narrative section also cross-link each other
+directly: a dossier's own `.md` shows a "Referenced by:" line naming
+every theme and section that currently cites it, and a theme's `.md`
+shows a "## Referenced By" section naming every narrative section
+grounded in it — useful for jumping from a specific finding to the
+higher-level synthesis built on it, or vice versa, without re-deriving
+that mapping yourself.
 
 If `wake evidence` can't get a PDF, it returns the same human-actionable
 fallback links as `fetch-pdf` (Unpaywall, Google Scholar, publisher DOI,

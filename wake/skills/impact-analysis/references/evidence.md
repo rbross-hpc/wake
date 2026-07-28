@@ -131,6 +131,40 @@ recorded at or after that timestamp, `--last N` reverts the N
 most-recently-recorded overrides. Response shape: `{"ok": true, "count":
 N, "reverted": [{"ok": true, "citing_id": "...", ...}, ...]}`.
 
+## Cross-links: the dossier's "Referenced by" line
+
+Every dossier `.md` shows a `**Referenced by:**` line right after the
+byline naming every theme and narrative section that currently cites
+this work, e.g. `theme [PnetCDF's own evolution](themes/pnetcdf-
+evolution.md); narrative section [...](../narrative/sections/....md)`.
+It's omitted entirely for a work not (yet) pulled into any theme or
+narrative section — most `background-mention` dossiers stay this way.
+
+This is a derived view, recomputed at render time from the theme/section
+JSON sidecars — nothing new to maintain by hand. It's kept fresh
+automatically: `wake theme create`/`confirm` re-render every dossier
+they cite, and `wake narrative section create`/`confirm` re-render every
+dossier cited in the section's `[ref:...]` markers. If it ever looks
+stale (e.g. after hand-editing a theme/section JSON directly, which you
+shouldn't normally do), `wake evidence "<seed>" --rerender-all` rescans
+every dossier and refreshes this line for all of them at once.
+
+## Re-rendering every dossier (`wake evidence --rerender-all`)
+
+```bash
+wake --json evidence "<seed>" --rerender-all
+```
+Response shape: `{"ok": true, "data": {"ok": true, "rerendered": ["W111", "W222", ...], "count": N}}`.
+
+A rendering-only pass over every `evidence/<citing-id>.json` sidecar
+already on disk: no LLM call, no PDF fetch, no change to any dossier's
+finding or verification status. Re-emits each `.md` from its `.json`,
+recomputing derived content like the "Referenced by" line above. Use
+this after a `wake` upgrade changes how dossiers render, to backfill an
+existing wiki without re-running any expensive step. `citing_id` is
+omitted (mutually exclusive with `--rerender-all`, `--force`, and
+`--from-pdf`).
+
 ## Diagnosing a surprising finding: check the extraction first
 
 `extracted_text_path` (also linked from the dossier's "Source" section)

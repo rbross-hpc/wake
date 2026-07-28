@@ -94,6 +94,85 @@ def test_bake_markdown_contains_sections():
     assert "PnetCDF" in md
 
 
+def test_bake_markdown_has_okf_frontmatter():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-as-tool", "background-mention"],
+    )
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    md = bake_markdown(PARALLEL_NETCDF_WORK, metrics)
+    assert md.startswith("---\n")
+    assert "type: impact-brief" in md
+    assert f'seed_openalex_id: {PARALLEL_NETCDF_WORK["openalex_id"]}' in md
+    assert f"seed_doi: {PARALLEL_NETCDF_WORK['doi']}" in md
+    assert f"seed_year: {PARALLEL_NETCDF_WORK['year']}" in md
+    assert "citing_count: 3" in md
+    assert "themes_confirmed: 0" in md
+    assert "themes_draft: 0" in md
+    assert "narrative_status: none" in md
+    # frontmatter closes before the H1
+    frontmatter, _, rest = md.partition("---\n")[2].partition("\n---\n")
+    assert rest.lstrip().startswith("# Impact Brief")
+
+
+def test_bake_markdown_no_nav_line_without_base():
+    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-as-tool", "background-mention"])
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    md = bake_markdown(PARALLEL_NETCDF_WORK, metrics)
+    assert "See also:" not in md
+
+
+def test_bake_markdown_nav_line_reflects_existing_wiki_artifacts(tmp_path):
+    import shutil
+    from pathlib import Path as _Path
+    from unittest.mock import patch
+    from wake import evidence, narrative, themes
+    from wake.classify import save_classified
+    from wake.report import add_override
+
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    work = SAMPLE_CITING_WORKS[0]
+    save_classified(seed_id, [{**work, "relationship": "extends", "confidence": 0.9, "justification": "x"}], base=tmp_path)
+
+    fixture = _Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
+    dest = tmp_path / "pdfs" / "citing.pdf"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(fixture, dest)
+    fake_response = {
+        "relationship": "extends", "confidence": 0.9, "justification": "j",
+        "agrees_with_provisional": False,
+        "quotes": [{"page": 1, "text": "Directly extends the seed.", "note": ""}],
+    }
+    with patch("wake.evidence.fetch_pdf", return_value={"ok": True, "path": str(dest), "source": "osti"}), \
+         patch("wake.evidence.chat_json", return_value=fake_response):
+        evidence.build_dossier(PARALLEL_NETCDF_WORK, work, base=tmp_path, verbose=False)
+
+    add_override(
+        seed_id, work["openalex_id"], relationship="extends", justification="ok",
+        verification_source="evidence-dossier", base=tmp_path,
+    )
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="T", summary="S",
+        citing_ids=[work["openalex_id"]], base=tmp_path,
+    )
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK, components=[{"slug": "intro", "title": "Intro", "kind": "free"}], base=tmp_path,
+    )
+    narrative.create_section(PARALLEL_NETCDF_WORK, "intro", title="Intro", prose="Framing.", base=tmp_path)
+    narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+
+    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-as-tool", "background-mention"])
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
+    assert "themes_confirmed: 0" in md
+    assert "themes_draft: 1" in md
+    assert "narrative_status: assembled" in md
+    assert "See also:" in md
+    assert "[full evidence wiki](evidence/index.md)" in md
+    assert "[themes](evidence/themes/index.md)" in md
+    assert "[narrative](narrative.md)" in md
+
+
 def test_score_higher_for_stronger_relationship():
     w_extends = {"cited_by_count": 100, "strength": RELATIONSHIP_STRENGTH["extends"]}
     w_mention = {"cited_by_count": 100, "strength": RELATIONSHIP_STRENGTH["background-mention"]}

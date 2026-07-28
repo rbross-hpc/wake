@@ -328,6 +328,25 @@ def create_outline(
     }
 
 
+def _rerender_dependents(
+    seed_work: dict[str, Any], prose: str, theme_slugs: list[str], base: Path | None = None,
+) -> None:
+    """After a section is written/re-confirmed, re-render every OKF
+    document whose "Referenced by"/"Referenced By" back-link section may
+    now be stale: each citing work's evidence dossier named in *prose*'s
+    `[ref:...]` markers, and every theme named in *theme_slugs*. Purely a
+    rendering-only pass -- no LLM/PDF/state change on either side."""
+    from .evidence import rerender_dossier_md
+    from .themes import rerender_all_themes
+
+    cited_ids = {i for ids in _parse_ref_markers(prose) for i in ids if i != _SEED_REF}
+    seed_id = seed_work["openalex_id"]
+    for cid in cited_ids:
+        rerender_dossier_md(seed_work, cid, base=base)
+    if theme_slugs:
+        rerender_all_themes(seed_id, seed_work, base=base)
+
+
 def create_section(
     seed_work: dict[str, Any],
     slug: str,
@@ -401,9 +420,10 @@ def create_section(
     d = sections_dir(seed_id, base)
     d.mkdir(parents=True, exist_ok=True)
     atomic_write_json(section_json_path(seed_id, slug, base), payload)
-    atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, payload))
+    atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, payload, base))
 
     _refresh_outline_md(seed_work, base)
+    _rerender_dependents(seed_work, prose, theme_slugs, base)
 
     return {
         "ok": True,
@@ -468,9 +488,10 @@ def confirm_section(
     section["updated_at"] = now_iso()
 
     atomic_write_json(section_json_path(seed_id, slug, base), section)
-    atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, section))
+    atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, section, base))
 
     _refresh_outline_md(seed_work, base)
+    _rerender_dependents(seed_work, section["prose"], theme_slugs, base)
 
     return {
         "ok": True,
@@ -478,6 +499,26 @@ def confirm_section(
         "section_json_path": str(section_json_path(seed_id, slug, base)),
         "section_status": "confirmed",
     }
+
+
+def rerender_all_sections(seed_id: str, seed_work: dict[str, Any], base: Path | None = None) -> list[str]:
+    """Re-emit every narrative section's .md in this seed's narrative/
+    sections/ directory from its .json sidecar -- a rendering-only pass,
+    no change to any section's own status or prose. Used by `wake
+    narrative section rerender-all` to backfill an existing wiki after a
+    rendering-code upgrade (e.g. so every section's [ref:...] markers
+    pick up dossier links that didn't exist yet at draft time). Returns
+    the sorted list of section slugs re-rendered."""
+    d = sections_dir(seed_id, base)
+    if not d.exists():
+        return []
+    slugs = sorted(p.stem for p in d.glob("*.json"))
+    for slug in slugs:
+        section = load_section(seed_id, slug, base)
+        if section is None:
+            continue
+        atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, section, base))
+    return slugs
 
 
 def _work_metadata_for_ref(ref_id: str, seed_work: dict[str, Any], base: Path | None = None) -> dict[str, Any] | None:
@@ -649,6 +690,9 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
 
     md_path = narrative_md_path(seed_id, base)
     atomic_write_text(md_path, "\n".join(lines))
+
+    from .evidence_wiki import rebuild_wiki_home
+    rebuild_wiki_home(seed_id, seed_work, base=base)
 
     return {
         "ok": True,
@@ -838,7 +882,39 @@ def _refresh_outline_md(seed_work: dict[str, Any], base: Path | None = None) -> 
     atomic_write_text(outline_md_path(seed_id, base), _render_outline_markdown(seed_work, outline, sections))
 
 
-def _render_section_markdown(seed_work: dict[str, Any], section: dict[str, Any]) -> str:
+def _render_refs_in_section_prose(prose: str, seed_id: str, base: Path | None = None) -> str:
+    """Rewrite every `[ref:ID,ID,...]` marker in one section's *own*
+    rendered markdown into a link to that source's own OKF document --
+    `../../evidence/<citing-id>.md` for a citing work with a dossier on
+    disk, `../../impact.md` for `[ref:SEED]`. This is a *display-only*
+    convenience distinct from stitch()'s `[R<n>]` renumbering: it never
+    touches the section's own `prose` field (the raw `[ref:...]` marker
+    form is what `_parse_ref_markers`/`_validate_ref_ids` and the stitched
+    top-level narrative.md's numbering both operate on), and it only
+    fires for a citing ID that actually has a dossier -- a marker naming
+    a verified-but-dossier-less work (a plain human-judgment override)
+    is left as the raw `[ref:ID]` text, since there is nothing to link to.
+    """
+    from .evidence import dossier_path
+
+    def _replace(m: re.Match) -> str:
+        ids = [part.strip() for part in m.group(1).split(",") if part.strip()]
+        rendered = []
+        for i in ids:
+            if i == _SEED_REF:
+                rendered.append(f"[[{i}]](../../impact.md)")
+            elif dossier_path(seed_id, i, base).exists():
+                rendered.append(f"[[{i}]](../../evidence/{i}.md)")
+            else:
+                rendered.append(f"[ref:{i}]")
+        return ", ".join(rendered)
+
+    return _REF_RE.sub(_replace, prose)
+
+
+def _render_section_markdown(
+    seed_work: dict[str, Any], section: dict[str, Any], base: Path | None = None,
+) -> str:
     status = section["section_status"]
     lines: list[str] = []
     lines.append("---")
@@ -878,7 +954,7 @@ def _render_section_markdown(seed_work: dict[str, Any], section: dict[str, Any])
 
     lines.append("## Prose")
     lines.append("")
-    lines.append(section["prose"])
+    lines.append(_render_refs_in_section_prose(section["prose"], section["seed_openalex_id"], base))
     lines.append("")
 
     return "\n".join(lines)
