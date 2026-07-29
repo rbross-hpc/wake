@@ -9,16 +9,18 @@ from pathlib import Path
 from unittest.mock import patch
 
 from wake.classify import (
+    CANONICAL_RELATIONSHIPS,
     RELATIONSHIPS,
-    RELATIONSHIP_STRENGTH,
     _legacy_sidecar_dir,
     _legacy_sidecar_path,
     _sidecar_dir,
     _sidecar_path,
+    _validate_relationship_strength,
     _write_sidecar,
     _load_sidecar,
     classify_all,
     classify_one,
+    relationship_strength,
     select_for_classification,
 )
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
@@ -29,9 +31,105 @@ def test_relationships_ordered():
     assert RELATIONSHIPS[-1] == "background-mention"
 
 
-def test_relationship_strength():
-    assert RELATIONSHIP_STRENGTH["extends"] > RELATIONSHIP_STRENGTH["background-mention"]
-    assert RELATIONSHIP_STRENGTH["builds-on"] > RELATIONSHIP_STRENGTH["uses-as-tool"]
+def test_relationship_strength_default():
+    strength = relationship_strength()
+    assert strength["extends"] > strength["background-mention"]
+    assert strength["builds-on"] > strength["uses-as-tool"]
+
+
+def test_relationship_strength_reads_from_config(monkeypatch):
+    """Reranking is a config-only operation: editing
+    classify.relationship_strength changes the scores relationship_strength()
+    returns with no re-classification."""
+    custom = {
+        "extends": 1, "builds-on": 2, "uses-as-tool": 3, "benchmarks": 4,
+        "applies-to-domain": 9, "related-infrastructure": 5, "background-mention": 1,
+    }
+    monkeypatch.setattr(
+        "wake.classify.config.classify_cfg",
+        lambda: {"relationship_strength": custom},
+    )
+    strength = relationship_strength()
+    assert strength == custom
+    assert strength["applies-to-domain"] > strength["extends"]
+
+
+def test_relationship_strength_falls_back_to_default_when_config_omits_it(monkeypatch):
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
+    strength = relationship_strength()
+    assert strength["extends"] == 7
+    assert strength["background-mention"] == 1
+
+
+def test_validate_relationship_strength_rejects_unknown_label():
+    with pytest.raises(ValueError, match="unknown relationship label 'uses_as_tool'"):
+        _validate_relationship_strength({
+            "extends": 7, "builds-on": 6, "uses_as_tool": 5, "benchmarks": 4,
+            "applies-to-domain": 3, "related-infrastructure": 2, "background-mention": 1,
+        })
+
+
+def test_validate_relationship_strength_unknown_label_suggests_closest_match():
+    with pytest.raises(ValueError, match="did you mean 'uses-as-tool'"):
+        _validate_relationship_strength({
+            "extends": 7, "builds-on": 6, "uses_as_tool": 5, "benchmarks": 4,
+            "applies-to-domain": 3, "related-infrastructure": 2, "background-mention": 1,
+        })
+
+
+def test_validate_relationship_strength_rejects_missing_label():
+    incomplete = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8)) if k != "related-infrastructure"}
+    with pytest.raises(ValueError, match="missing required label.*related-infrastructure"):
+        _validate_relationship_strength(incomplete)
+
+
+def test_validate_relationship_strength_rejects_zero():
+    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8))}
+    bad["extends"] = 0
+    with pytest.raises(ValueError, match="must be a positive number"):
+        _validate_relationship_strength(bad)
+
+
+def test_validate_relationship_strength_rejects_negative():
+    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8))}
+    bad["extends"] = -3
+    with pytest.raises(ValueError, match="must be a positive number"):
+        _validate_relationship_strength(bad)
+
+
+def test_validate_relationship_strength_rejects_non_numeric():
+    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8))}
+    bad["extends"] = "high"
+    with pytest.raises(ValueError, match="must be a positive number"):
+        _validate_relationship_strength(bad)
+
+
+def test_validate_relationship_strength_rejects_bool():
+    """bool is a subclass of int in Python -- must be explicitly excluded
+    or `True`/`False` would silently pass as strength 1/0."""
+    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8))}
+    bad["extends"] = True
+    with pytest.raises(ValueError, match="must be a positive number"):
+        _validate_relationship_strength(bad)
+
+
+def test_validate_relationship_strength_accepts_float():
+    ok = {k: float(v) for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8))}
+    result = _validate_relationship_strength(ok)
+    assert result["extends"] == 1.0
+
+
+def test_validate_relationship_strength_reports_every_error_at_once():
+    bad = {
+        "extends": 0, "builds-on": 6, "uses_as_tool": 5, "benchmarks": 4,
+        "applies-to-domain": 3, "related-infrastructure": 2,
+    }
+    with pytest.raises(ValueError) as exc_info:
+        _validate_relationship_strength(bad)
+    msg = str(exc_info.value)
+    assert "unknown relationship label" in msg
+    assert "missing required label" in msg
+    assert "must be a positive number" in msg
 
 
 def test_sidecar_write_and_load(tmp_path):
@@ -124,6 +222,18 @@ def test_classify_one_tags_author_overlap_false_by_default(tmp_path):
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
         result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
     assert result["author_overlap"] is False
+
+
+def test_classify_one_does_not_persist_a_strength_field():
+    """Strength is a derived ranking score, recomputed at bake time from
+    the relationship label and the current config (see
+    relationship_strength()/report.relationship_score()) -- classify_one's
+    output must never carry a "strength" field, so a later config edit to
+    classify.relationship_strength can rerank without stale, baked-in
+    scores winning over the new config."""
+    with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
+        result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
+    assert "strength" not in result
     assert result["overlapping_authors"] == []
 
 

@@ -125,3 +125,16 @@ the whole seed directory stays self-consistent if it's ever moved,
 copied, or shared as a zip. `wake evidence --rerender-all` opportunistically
 normalizes any older, absolute-path dossier JSON it encounters the next
 time it re-renders that dossier.
+
+**Persisted JSON records evidence, not derived scores.** A classify
+sidecar or an override records the relationship *label* the LLM/human
+assigned — never a "strength" or rank score computed from that label.
+Anything computable from a label plus the current config
+(`classify.relationship_strength`) is recomputed fresh every time it's
+needed (`report.relationship_score()`), not baked into the stored
+record. This is what makes reweighting relationship strengths a pure
+config edit: change `classify.relationship_strength` in
+`wake.config.yaml`, re-run `wake bake`, and every ranking (impact.md's
+"Strongest Evidence" table, the evidence wiki's Verified/Pending
+ordering) reflects the new weights immediately — no re-classification,
+no touching a single sidecar on disk.

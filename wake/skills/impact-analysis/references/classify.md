@@ -2,7 +2,7 @@
 
 ## Relationship Classes
 
-Ordered by strength, strongest first:
+Ordered by default strength, strongest first:
 
 | Class | Meaning |
 |-------|---------|
@@ -13,6 +13,19 @@ Ordered by strength, strongest first:
 | `applies-to-domain` | Applies the seed's approach to a new domain |
 | `related-infrastructure` | Complementary tooling in the same ecosystem, no direct dependency |
 | `background-mention` | Cites only as background/related work (including unclear/indirect relationships) |
+
+This exact set of seven labels is fixed — the LLM prompts spell each one
+out verbatim, so the label set itself isn't configurable. What IS
+configurable is how much each label counts when ranking citing works
+(the "strength" in `strength × log(1 + cited_by_count)`, used by
+`impact.md`'s "Strongest Evidence" and the evidence wiki's Verified/
+Pending ordering — see `wake.config.yaml`'s
+`classify.relationship_strength`). If an analysis cares more about
+domain reach than tooling adoption, weight `applies-to-domain` above
+`uses-as-tool` there and re-run `wake bake` — no re-classification
+needed, since strength is always recomputed from the stored relationship
+label, never persisted alongside it. `wake config validate` catches a
+typo'd or incomplete strength map before it silently misranks anything.
 
 ### Author-Overlap Tag (orthogonal to relationship)
 

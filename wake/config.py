@@ -184,13 +184,23 @@ def show() -> str:
 
 
 def validate() -> list[str]:
-    """Return a list of blocking errors (missing required env vars only).
-    Recommended/optional gaps are never validation failures — surface those
-    via env_status() instead."""
+    """Return a list of blocking errors: missing required env vars, plus
+    any config-file problems that would silently produce wrong behavior
+    rather than a clean failure (currently: classify.relationship_strength
+    -- see classify.py's _validate_relationship_strength)."""
     errors: list[str] = []
     for env, desc in _REQUIRED_ENVS.items():
         if not os.environ.get(env):
             errors.append(f"Missing required env var {env}: {desc}")
+
+    # Lazy import: classify.py imports this module, so importing it back
+    # at module level here would be circular.
+    from .classify import relationship_strength
+    try:
+        relationship_strength()
+    except ValueError as exc:
+        errors.append(str(exc))
+
     return errors
 
 

@@ -13,6 +13,19 @@ Relationship classes (ordered by strength, strongest first):
                            seed), without a direct usage/extension dependency
   background-mention   – cites as background/related work without direct use
 
+This exact set of seven labels is fixed in code (CANONICAL_RELATIONSHIPS
+below) because the LLM prompts in this module and in evidence.py spell
+each one out as prose the model must copy verbatim -- the label set can't
+be extended purely through config without also rewriting those prompts.
+What IS configurable is how much each label counts for when ranking
+citing works (see relationship_strength() below and
+`classify.relationship_strength` in config.yaml) -- e.g. an analysis
+where domain reach matters more than tooling adoption can weight
+`applies-to-domain` above `uses-as-tool` without re-running any
+classification: edit config.yaml, then re-run `wake bake` (no LLM calls,
+no re-classification -- ranking is always recomputed from the stored
+relationship label, never from a persisted score).
+
 Each classification is written atomically as a sidecar JSON file, so the
 pipeline is safely resumable after Ctrl-C.
 """
@@ -36,7 +49,9 @@ from .state import is_stage_current, mark_stage_complete
 
 _STAGE = "classify"
 
-RELATIONSHIPS = [
+# The fixed, canonical set of relationship labels -- see module docstring
+# for why this list itself is not configurable (only the strengths are).
+CANONICAL_RELATIONSHIPS = (
     "extends",
     "builds-on",
     "uses-as-tool",
@@ -44,9 +59,13 @@ RELATIONSHIPS = [
     "applies-to-domain",
     "related-infrastructure",
     "background-mention",
-]
+)
 
-RELATIONSHIP_STRENGTH: dict[str, int] = {
+# Default strengths, used when config.yaml has no
+# classify.relationship_strength override (or a local wake.config.yaml
+# predates this feature and doesn't set one). Ordered strongest-first,
+# matching CANONICAL_RELATIONSHIPS.
+_DEFAULT_RELATIONSHIP_STRENGTH: dict[str, int] = {
     "extends": 7,
     "builds-on": 6,
     "uses-as-tool": 5,
@@ -55,6 +74,101 @@ RELATIONSHIP_STRENGTH: dict[str, int] = {
     "related-infrastructure": 2,
     "background-mention": 1,
 }
+
+
+def _closest_match(label: str, candidates: tuple[str, ...]) -> str | None:
+    """Return the candidate label within edit distance 2 of *label*, or
+    None -- a cheap typo hint for config validation error messages (e.g.
+    'uses_as_tool' -> suggest 'uses-as-tool'). Not a general spellchecker;
+    just enough to catch the common hyphen/underscore/dropped-letter slip."""
+    best = None
+    best_dist = 3
+    for cand in candidates:
+        dist = _edit_distance(label, cand)
+        if dist < best_dist:
+            best = cand
+            best_dist = dist
+    return best
+
+
+def _edit_distance(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cost = 0 if ca == cb else 1
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost))
+        prev = cur
+    return prev[-1]
+
+
+def _validate_relationship_strength(strength_map: dict[str, Any]) -> dict[str, int]:
+    """Validate a `classify.relationship_strength` config mapping against
+    CANONICAL_RELATIONSHIPS. Enforces (see BACKLOG.md/PLAN.md discussion):
+      A. no unknown labels (the prompts can't emit a label config invents)
+      B. no missing labels (every canonical label needs a strength to rank by)
+      C. every strength is a positive number (zero/negative would silently
+         hide or invert a whole relationship class in every ranking)
+    Raises ValueError naming every problem at once, not just the first.
+    """
+    canonical = set(CANONICAL_RELATIONSHIPS)
+    given = set(strength_map.keys())
+
+    errors: list[str] = []
+
+    unknown = given - canonical
+    for label in sorted(unknown):
+        hint = _closest_match(label, CANONICAL_RELATIONSHIPS)
+        suggestion = f" (did you mean {hint!r}?)" if hint else ""
+        errors.append(f"unknown relationship label {label!r} in classify.relationship_strength{suggestion}")
+
+    missing = canonical - given
+    if missing:
+        errors.append(
+            f"classify.relationship_strength is missing required label(s): {sorted(missing)}"
+        )
+
+    for label in sorted(given & canonical):
+        value = strength_map[label]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+            errors.append(
+                f"classify.relationship_strength[{label!r}] = {value!r} must be a positive number"
+            )
+
+    if errors:
+        raise ValueError(
+            "Invalid classify.relationship_strength in config:\n  " + "\n  ".join(errors)
+        )
+
+    return {label: strength_map[label] for label in CANONICAL_RELATIONSHIPS}
+
+
+def relationship_strength() -> dict[str, int]:
+    """The active label -> strength mapping: `classify.relationship_strength`
+    from config if present (validated against CANONICAL_RELATIONSHIPS),
+    else the hardcoded default. This is the single source of truth
+    report.relationship_score() reads -- editing config.yaml's
+    classify.relationship_strength and re-running `wake bake` reranks the
+    impact brief with no LLM calls and no re-classification, because
+    ranking is always recomputed from the stored relationship label,
+    never from a persisted score.
+
+    Re-validates against config on every call rather than caching --
+    validation is a handful of dict lookups over 7 known labels, cheap
+    enough that a config.reload() (e.g. after `wake config init` or in
+    tests) is always picked up immediately with no stale-cache risk."""
+    cfg = config.classify_cfg().get("relationship_strength")
+    if not cfg:
+        return dict(_DEFAULT_RELATIONSHIP_STRENGTH)
+    return _validate_relationship_strength(cfg)
+
+
+# Fixed label set -- never config-driven, see module docstring. Kept as a
+# plain module-level list for existing import sites
+# (`from .classify import RELATIONSHIPS`).
+RELATIONSHIPS = list(CANONICAL_RELATIONSHIPS)
 
 _SYSTEM = """\
 You are a bibliometric analyst classifying how a citing paper uses a seed paper.
@@ -204,7 +318,13 @@ def classify_one(
         "confidence": float(result.get("confidence", 0.5)),
         "justification": result.get("justification", ""),
         "has_abstract": bool(citing_work.get("abstract")),
-        "strength": RELATIONSHIP_STRENGTH.get(relationship, 1),
+        # No "strength" field here, deliberately: strength is a derived
+        # score (see relationship_strength()/report.relationship_score()),
+        # recomputed at ranking time from the relationship label and the
+        # current config -- not persisted, so editing
+        # classify.relationship_strength in wake.config.yaml and
+        # re-running `wake bake` reranks the impact brief without
+        # re-classifying anything.
         # Always "provisional": classify_one only ever sees title/abstract/
         # venue, never the citing paper's actual text. This is a weak,
         # unverified guess — not a finding. It can only be promoted to
