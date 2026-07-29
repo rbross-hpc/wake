@@ -423,9 +423,9 @@ def bake_markdown(
     wake-out/<seed>/ path in this codebase (see seed.work_dir()), not
     "skip this section if base is None". It's used to compute the
     OKF-style frontmatter's wiki-navigation properties
-    (themes_confirmed/draft, narrative_status) and the "See also" nav
-    line right under the byline -- both purely derived views over
-    whatever's currently on disk, same convention as
+    (themes_confirmed/draft, narrative_status, seed_pdf_status) and the
+    "See also" nav line right under the byline -- both purely derived
+    views over whatever's currently on disk, same convention as
     evidence_wiki.rebuild_wiki_orientation(). Only when *oid* itself is
     empty (a pure metrics-only caller with no real seed, or a test
     exercising this function directly with a minimal fixture) do those
@@ -447,7 +447,9 @@ def bake_markdown(
     narrative_exists = False
     themes_exist = False
     evidence_exists = False
+    seed_pdf_status_value = "not-attempted"
     if oid:
+        from .evidence_wiki import seed_pdf_status
         from .narrative import narrative_md_path
         from .themes import themes_dir
 
@@ -471,6 +473,8 @@ def bake_markdown(
         ed = evidence_dir(oid, base)
         evidence_exists = ed.exists() and any(ed.glob("*.json"))
 
+        seed_pdf_status_value = seed_pdf_status(oid, base)["status"]
+
     lines.append("---")
     lines.append("type: impact-brief")
     lines.append(f'title: "{title}"')
@@ -489,6 +493,7 @@ def bake_markdown(
     lines.append(f"themes_confirmed: {themes_confirmed}")
     lines.append(f"themes_draft: {themes_draft}")
     lines.append(f"narrative_status: {narrative_status}")
+    lines.append(f"seed_pdf_status: {seed_pdf_status_value}")
     lines.append(f"generated_at: {now_iso()}")
     lines.append("tags: [type:impact-brief]")
     lines.append("---")

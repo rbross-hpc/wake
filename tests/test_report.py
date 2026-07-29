@@ -113,9 +113,32 @@ def test_bake_markdown_has_okf_frontmatter():
     assert "themes_confirmed: 0" in md
     assert "themes_draft: 0" in md
     assert "narrative_status: none" in md
+    assert "seed_pdf_status: not-attempted" in md
     # frontmatter closes before the H1
     frontmatter, _, rest = md.partition("---\n")[2].partition("\n---\n")
     assert rest.lstrip().startswith("# Impact Brief")
+
+
+def test_bake_markdown_seed_pdf_status_reflects_seed_json(tmp_path):
+    from wake.io import atomic_write_json
+    from wake.seed import work_dir
+
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    wd = work_dir(seed_id, base=tmp_path)
+    wd.mkdir(parents=True)
+    atomic_write_json(wd / "seed.json", {
+        "openalex_id": seed_id, "title": "x",
+        "seed_pdf": {"path": None, "tried": ["osti"], "fallback_links": {}},
+    })
+
+    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-as-tool", "background-mention"])
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
+    assert "seed_pdf_status: attempted-failed" in md
+
+    (wd / "seed.pdf").write_bytes(b"%PDF-1.4 fake")
+    md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
+    assert "seed_pdf_status: cached" in md
 
 
 def test_bake_markdown_no_nav_line_without_base():
