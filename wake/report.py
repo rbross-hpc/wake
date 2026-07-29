@@ -418,15 +418,19 @@ def bake_markdown(
 ) -> str:
     """Bake the impact brief into a Markdown string.
 
-    *base* (the wake-out work-dir root) is optional and used only to
-    compute the OKF-style frontmatter's wiki-navigation properties
+    *base* (the wake-out work-dir root) is optional -- same "explicit
+    base, else WAKE_WORK_DIR, else cwd" resolution as every other
+    wake-out/<seed>/ path in this codebase (see seed.work_dir()), not
+    "skip this section if base is None". It's used to compute the
+    OKF-style frontmatter's wiki-navigation properties
     (themes_confirmed/draft, narrative_status) and the "See also" nav
     line right under the byline -- both purely derived views over
     whatever's currently on disk, same convention as
-    evidence_wiki.rebuild_wiki_orientation(). When omitted (e.g. a pure
-    metrics-only caller, or a test exercising this function directly),
-    those fields default to zero/"none" and the corresponding nav links
-    are simply omitted, exactly as if nothing existed yet.
+    evidence_wiki.rebuild_wiki_orientation(). Only when *oid* itself is
+    empty (a pure metrics-only caller with no real seed, or a test
+    exercising this function directly with a minimal fixture) do those
+    fields default to zero/"none" and the corresponding nav links are
+    simply omitted, exactly as if nothing existed yet.
     """
     lines: list[str] = []
     title = seed_work.get("title") or "Unknown Paper"
@@ -443,7 +447,7 @@ def bake_markdown(
     narrative_exists = False
     themes_exist = False
     evidence_exists = False
-    if base is not None and oid:
+    if oid:
         from .narrative import narrative_md_path
         from .themes import themes_dir
 
@@ -645,7 +649,7 @@ def bake_markdown(
         ev_title = ev.get("title", "Unknown")
         ev_id = ev.get("openalex_id")
         title_display = ev_title
-        if base is not None and oid and ev_id and dossier_path(oid, ev_id, base).exists():
+        if oid and ev_id and dossier_path(oid, ev_id, base).exists():
             title_display = f"[{ev_title}](evidence/{ev_id}.md)"
         lines.append(
             f"**{i}. {title_display}** — "
