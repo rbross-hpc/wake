@@ -103,3 +103,25 @@ output) is a plain, visible filename — never hidden behind a dotfile.
 Only genuinely internal bookkeeping the human isn't expected to read
 directly (`.state.json`'s stage-cache keys, `.cost.jsonl`'s per-call
 token/cost ledger) stays a dotfile.
+
+**`.md` is the human surface, `.json` is the agent surface.** An agent
+should always read a subsystem's `.json` (or a verb's `--json` response),
+never scrape prose out of a rendered `.md` — the `.md` exists so a human
+can browse the wiki (in a plain editor or Obsidian) without needing to
+run any tooling. The one deliberate exception is an evidence dossier's
+extraction cache (`pdfs/<citing-id>.json`): it's linked directly from the
+dossier's "## Source" section because it's the only artifact that
+answers "did the model see garbled text?", and there's no separate
+human-readable rendering of it to link instead (the PDF itself is
+already linked as a *different* bullet in the same section). Every other
+`.json` in the tree is agent-only.
+
+**Cross-file paths inside `wake-out/<seed>/` are always relative to the
+file that contains them**, both in a `.md`'s frontmatter/body links and
+in a `.json` sidecar's own path-valued fields (e.g. an evidence
+dossier's frontmatter `pdf:` key and its `.json` sidecar's `pdf_path`
+field both read `../pdfs/<citing-id>.pdf`, relative to `evidence/`) — so
+the whole seed directory stays self-consistent if it's ever moved,
+copied, or shared as a zip. `wake evidence --rerender-all` opportunistically
+normalizes any older, absolute-path dossier JSON it encounters the next
+time it re-renders that dossier.

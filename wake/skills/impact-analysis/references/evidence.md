@@ -16,9 +16,9 @@
     "ok": true,
     "dossier_path": "wake-out/<seed>/evidence/<citing-id>.md",
     "dossier_json_path": "wake-out/<seed>/evidence/<citing-id>.json",
-    "pdf_path": "wake-out/<seed>/pdfs/<citing-id>.pdf",
+    "pdf_path": "/abs/path/to/wake-out/<seed>/pdfs/<citing-id>.pdf",
     "pdf_source": "semanticscholar",
-    "extracted_text_path": "wake-out/<seed>/pdfs/<citing-id>.json",
+    "extracted_text_path": "/abs/path/to/wake-out/<seed>/pdfs/<citing-id>.json",
     "provisional": {"relationship": "uses-as-tool", "confidence": 0.4, "justification": "..."},
     "proposed": {
       "relationship": "extends",
@@ -32,6 +32,13 @@
   }
 }
 ```
+`pdf_path`/`extracted_text_path` in this CLI response are always
+absolute, ready to open directly. The `evidence/<citing-id>.json`
+sidecar written to disk stores the same two paths *relative to its own
+directory* instead (e.g. `"../pdfs/<citing-id>.pdf"`), so the wiki stays
+self-consistent if `wake-out/<seed>/` is ever moved or shared — see
+"Diagnosing a surprising finding" below.
+
 On failure to acquire a PDF: `{"ok": false, "reason": "no_pdf", "fetch_result": {...}}`
 (same shape as `fetch-pdf`'s failure — includes `fallback_links`). See
 `pdf-acquisition.md` for the source chain.
@@ -167,13 +174,23 @@ omitted (mutually exclusive with `--rerender-all`, `--force`, and
 
 ## Diagnosing a surprising finding: check the extraction first
 
-`extracted_text_path` (also linked from the dossier's "Source" section)
-points at the raw page-tagged text the LLM was actually given — cached
-next to the PDF (`wake-out/<seed>/pdfs/<citing-id>.json`), keyed by the
-PDF's sha256 so a re-fetched PDF invalidates it automatically. If a
-`proposed` finding looks implausible, read this file **before** concluding
-the model reasoned poorly — multi-column academic layouts are a known
-source of garbled extraction (see `pdf-acquisition.md`), and a bad
-extraction looks very different from a bad inference once you see the raw
-text. `wake evidence --force` re-runs extraction too, not just the LLM
-call, so a garbled extraction can be retried without needing a fresh PDF.
+The extraction cache — the raw page-tagged text the LLM was actually
+given, cached next to the PDF (`wake-out/<seed>/pdfs/<citing-id>.json`),
+keyed by the PDF's sha256 so a re-fetched PDF invalidates it
+automatically — is where to look if a `proposed` finding looks
+implausible. Read it **before** concluding the model reasoned poorly:
+multi-column academic layouts are a known source of garbled extraction
+(see `pdf-acquisition.md`), and a bad extraction looks very different
+from a bad inference once you see the raw text. `wake evidence --force`
+re-runs extraction too, not just the LLM call, so a garbled extraction
+can be retried without needing a fresh PDF.
+
+An agent reads `extracted_text_path` from the dossier's `.json` sidecar
+(or from `build_dossier()`'s own return value) to get there
+programmatically. A human reviewing the rendered dossier in Obsidian
+instead clicks the "Raw extracted text" link under the dossier's
+"## Source" heading — the one deliberate case where a wiki `.md` links
+directly to a `.json` file, because the extraction cache is the only
+artifact that answers "did the model see garbled text?" and there is no
+separate human-readable rendering of it (see `output-layout.md`'s "File
+format conventions").
