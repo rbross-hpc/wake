@@ -666,7 +666,7 @@ def test_section_md_links_ref_marker_to_dossier_when_one_exists(tmp_path):
         prose=f"This work extends PnetCDF. [ref:{cid}]", base=tmp_path,
     )
     text = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
-    assert f"[[{cid}]](../../evidence/{cid}.md)" in text
+    assert f"[{cid}](../../evidence/{cid}.md)" in text
     assert "[ref:" not in text
 
 
@@ -691,7 +691,7 @@ def test_section_md_links_seed_ref_to_impact_md(tmp_path):
         prose="PnetCDF was introduced in 2003. [ref:SEED]", base=tmp_path,
     )
     text = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
-    assert "[[SEED]](../../impact.md)" in text
+    assert "[SEED](../../impact.md)" in text
 
 
 def test_section_md_links_each_id_in_multi_id_marker(tmp_path):
@@ -710,7 +710,7 @@ def test_section_md_links_each_id_in_multi_id_marker(tmp_path):
     )
     text = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
     for w in works:
-        assert f"[[{w['openalex_id']}]](../../evidence/{w['openalex_id']}.md)" in text
+        assert f"[{w['openalex_id']}](../../evidence/{w['openalex_id']}.md)" in text
 
 
 def test_section_json_prose_field_keeps_raw_ref_markers(tmp_path):
@@ -772,7 +772,7 @@ def test_rerender_all_sections_picks_up_dossier_appearing_after_draft(tmp_path):
         prose=f"This work extends PnetCDF. [ref:{cid}]", base=tmp_path,
     )
     text_before = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
-    assert f"[[{cid}]](../../evidence/{cid}.md)" in text_before
+    assert f"[{cid}](../../evidence/{cid}.md)" in text_before
 
     # Simulate the dossier .md having gone missing (e.g. a hand-edited/
     # partially-restored wiki) and then reappearing -- rerender_all_sections
@@ -794,7 +794,7 @@ def test_rerender_all_sections_picks_up_dossier_appearing_after_draft(tmp_path):
         PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
     )
     text_restored = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
-    assert f"[[{cid}]](../../evidence/{cid}.md)" in text_restored
+    assert f"[{cid}](../../evidence/{cid}.md)" in text_restored
 
 
 # --- stitch: R-numbering and Chicago references -------------------------

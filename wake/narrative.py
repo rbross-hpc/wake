@@ -947,9 +947,9 @@ def _render_refs_in_section_prose(prose: str, seed_id: str, base: Path | None = 
         rendered = []
         for i in ids:
             if i == _SEED_REF:
-                rendered.append(f"[[{i}]](../../impact.md)")
+                rendered.append(f"[{i}](../../impact.md)")
             elif dossier_path(seed_id, i, base).exists():
-                rendered.append(f"[[{i}]](../../evidence/{i}.md)")
+                rendered.append(f"[{i}](../../evidence/{i}.md)")
             else:
                 rendered.append(f"[ref:{i}]")
         return ", ".join(rendered)
