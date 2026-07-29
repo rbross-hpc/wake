@@ -25,6 +25,7 @@ off by default.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -137,6 +138,35 @@ def dossier_json_path(seed_id: str, citing_id: str, base: Path | None = None) ->
     the dossier, or feeding a later `wake override` call without re-running
     the LLM verification pass)."""
     return evidence_dir(seed_id, base) / f"{citing_id}.json"
+
+
+def _relpath_from(path: Path, from_dir: Path) -> str:
+    """Render *path* relative to *from_dir*, e.g. a dossier's evidence/
+    directory pointing at a sibling pdfs/ file as `../pdfs/<id>.pdf`.
+
+    Both wake-out/ paths are always on the same filesystem, so this never
+    needs to fall back to an absolute path -- unlike os.path.relpath, which
+    can raise on Windows across drives, this is safe unconditionally here.
+    """
+    return os.path.relpath(path, from_dir)
+
+
+def _resolve_sidecar_path(value: str | None, sidecar_dir: Path) -> str | None:
+    """Resolve a `pdf_path`/`extracted_text_path` JSON field to an
+    absolute path string, for callers that need to open the file.
+
+    New dossiers store these fields relative to the JSON sidecar's own
+    directory (see build_dossier()); dossiers written before this
+    convention store an absolute path. Handling both means old, unrerendered
+    wikis keep working without forcing a migration before their next
+    `wake evidence --rerender-all` normalizes them.
+    """
+    if not value:
+        return None
+    p = Path(value)
+    if p.is_absolute():
+        return str(p)
+    return str((sidecar_dir / p).resolve())
 
 
 def verify_full_text(
@@ -313,12 +343,17 @@ def _render_dossier_markdown(
 
     author_overlap = bool(finding.get("author_overlap"))
 
+    dossier_dir = evidence_dir(seed_id, base) if seed_id else None
+    pdf_rel = _relpath_from(pdf_path, dossier_dir) if pdf_path is not None and dossier_dir is not None else None
+
     lines: list[str] = []
     lines.append("---")
     lines.append("type: citing-work-evidence")
     lines.append(f'title: "{title}"')
     lines.append(f'description: "{finding["proposed"]["justification"][:150]}"')
     lines.append(f"resource: \"{resource}\"")
+    if pdf_rel:
+        lines.append(f'pdf: "{pdf_rel}"')
     tags = [f"provisional:{provisional_rel}", f"proposed:{proposed_rel}", f"status:{verification_status}"]
     if author_overlap:
         tags.append("author-overlap:true")
@@ -441,15 +476,18 @@ def _render_dossier_markdown(
     lines.append("<!-- status-section:end -->")
     lines.append("")
 
-    if pdf_path is not None:
+    if pdf_path is not None and dossier_dir is not None:
         lines.append("## Source")
         lines.append("")
-        lines.append(f"- Local PDF: `{pdf_path}`" + (f" (via {pdf_source})" if pdf_source else ""))
+        lines.append(f"- [Cached PDF]({pdf_rel})" + (f" (via {pdf_source})" if pdf_source else ""))
         if extracted_text_path_str:
+            extracted_rel = _relpath_from(Path(extracted_text_path_str), dossier_dir)
             lines.append(
-                f"- Raw extracted text (what the model actually read): `{extracted_text_path_str}` — "
-                "open this if a finding looks wrong, to check whether the extraction was "
-                "garbled before assuming the reasoning was."
+                f"- [Raw extracted text]({extracted_rel}) — the exact page-tagged text "
+                "the model was given, as a JSON cache. Read this first if a finding looks "
+                "wrong: multi-column academic layouts are a known source of garbled "
+                "extraction, and a bad extraction looks very different from a bad "
+                "inference once you see the raw text."
             )
         lines.append("")
 
@@ -500,13 +538,14 @@ def build_dossier(
         if cached is not None:
             if verbose:
                 print(f"[wake] Dossier already exists: {dossier_path(seed_id, citing_id, base)}", file=sys.stderr)
+            wd = evidence_dir(seed_id, base)
             return {
                 "ok": True,
                 "dossier_path": str(dossier_path(seed_id, citing_id, base)),
                 "dossier_json_path": str(dossier_json_path(seed_id, citing_id, base)),
-                "pdf_path": cached.get("pdf_path"),
+                "pdf_path": _resolve_sidecar_path(cached.get("pdf_path"), wd),
                 "pdf_source": cached.get("pdf_source"),
-                "extracted_text_path": cached.get("extracted_text_path"),
+                "extracted_text_path": _resolve_sidecar_path(cached.get("extracted_text_path"), wd),
                 "provisional": cached.get("provisional"),
                 "proposed": cached.get("proposed"),
                 "quotes": cached.get("quotes"),
@@ -573,6 +612,11 @@ def build_dossier(
 
     atomic_write_text(md_path, md_text)
 
+    # Stored relative to this sidecar's own directory (evidence/), not
+    # absolute -- so the whole wake-out/<seed>/ tree stays self-consistent
+    # if it's ever moved or shared. See _relpath_from()/rerender_dossier_md()
+    # for the read side, which resolves these back to absolute paths before
+    # re-rendering the markdown.
     json_payload = {
         "seed_openalex_id": seed_id,
         "citing_openalex_id": citing_id,
@@ -581,9 +625,9 @@ def build_dossier(
         "generated_at": now_iso(),
         "prompt_version": _prompt_version(),
         "model": _model(),
-        "pdf_path": pdf_path_str,
+        "pdf_path": _relpath_from(Path(pdf_path_str), wd),
         "pdf_source": pdf_source,
-        "extracted_text_path": extracted_text_path_str,
+        "extracted_text_path": _relpath_from(Path(extracted_text_path_str), wd),
         "citing_cited_by_count": citing_work.get("cited_by_count", 0),
         "verification_status": "pending-human-review",
         **finding,
@@ -684,18 +728,39 @@ def rerender_dossier_md(
         "human_verification": payload.get("human_verification", {}),
     }
 
-    pdf_path_str = payload.get("pdf_path")
+    wd = evidence_dir(seed_id, base)
+    pdf_path_str = _resolve_sidecar_path(payload.get("pdf_path"), wd)
+    extracted_text_path_str = _resolve_sidecar_path(payload.get("extracted_text_path"), wd)
     md_text = _render_dossier_markdown(
         seed_work, citing_work, finding,
         pdf_path=Path(pdf_path_str) if pdf_path_str else None,
         pdf_source=payload.get("pdf_source"),
-        extracted_text_path_str=payload.get("extracted_text_path"),
+        extracted_text_path_str=extracted_text_path_str,
         base=base,
         verification_status=payload.get("verification_status", "pending-human-review"),
     )
 
     md_path = dossier_path(seed_id, citing_id, base)
     atomic_write_text(md_path, md_text)
+
+    # Opportunistic migration: normalize a legacy absolute pdf_path/
+    # extracted_text_path in the JSON sidecar to relative-from-sidecar
+    # form, so a --rerender-all pass across an older wiki also fixes up
+    # its JSON, not just its markdown. Idempotent (no-op once already
+    # relative); skipped entirely if there's nothing to normalize.
+    normalized = dict(payload)
+    changed = False
+    if pdf_path_str and payload.get("pdf_path") != (rel := _relpath_from(Path(pdf_path_str), wd)):
+        normalized["pdf_path"] = rel
+        changed = True
+    if extracted_text_path_str and payload.get("extracted_text_path") != (
+        rel := _relpath_from(Path(extracted_text_path_str), wd)
+    ):
+        normalized["extracted_text_path"] = rel
+        changed = True
+    if changed:
+        atomic_write_json(dossier_json_path(seed_id, citing_id, base), normalized)
+
     return md_path
 
 
