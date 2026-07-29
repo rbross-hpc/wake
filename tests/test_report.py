@@ -214,6 +214,103 @@ def test_relationship_score_reranks_when_config_strength_changes(monkeypatch):
     assert relationship_score("applies-to-domain", 10) > relationship_score("extends", 10)
 
 
+# --- multi-facet scoring (MAX across facets) ------------------------------
+
+def test_relationship_score_multi_facet_uses_max_strength():
+    """A work with facets ["uses-as-tool", "applies-to-domain"] scores by
+    whichever facet's configured strength is highest (MAX, not sum or
+    average -- see Q1 of the multi-facet design discussion)."""
+    facets = [{"label": "uses-as-tool"}, {"label": "applies-to-domain"}]
+    single_stronger = relationship_score("uses-as-tool", 10)  # uses-as-tool has higher default strength
+    assert relationship_score(facets, 10) == single_stronger
+
+
+def test_relationship_score_multi_facet_does_not_exceed_its_strongest_single_facet():
+    """MAX means a second (weaker) facet never inflates the score beyond
+    what the strongest facet alone would produce."""
+    weak_facets = [{"label": "background-mention"}, {"label": "related-infrastructure"}]
+    assert relationship_score(weak_facets, 10) == relationship_score("related-infrastructure", 10)
+
+
+def test_score_prefers_relationships_list_over_legacy_scalar():
+    work = {
+        "cited_by_count": 10,
+        "relationship": "background-mention",  # legacy scalar, should be ignored
+        "relationships": [{"label": "extends"}],
+    }
+    assert _score(work) == relationship_score("extends", 10)
+
+
+def test_score_falls_back_to_legacy_scalar_when_no_relationships_list():
+    work = {"cited_by_count": 10, "relationship": "extends"}
+    assert _score(work) == relationship_score("extends", 10)
+
+
+# --- by_relationship counts every facet -----------------------------------
+
+def test_build_metrics_by_relationship_counts_every_facet():
+    """A work with two facets increments both rows -- rows can therefore
+    sum to more than classified_count (see Q2 of the multi-facet design
+    discussion)."""
+    classified = [{
+        **SAMPLE_CITING_WORKS[0],
+        "relationship": "uses-as-tool",
+        "relationships": [{"label": "uses-as-tool"}, {"label": "applies-to-domain"}],
+        "confidence": 0.9, "justification": "x", "has_abstract": True,
+        "verification_status": "provisional",
+    }]
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    assert metrics["classified_count"] == 1
+    assert metrics["by_relationship"]["uses-as-tool"] == 1
+    assert metrics["by_relationship"]["applies-to-domain"] == 1
+    assert sum(metrics["by_relationship"].values()) == 2
+
+
+def test_build_metrics_by_relationship_single_facet_work_counts_once():
+    classified = _make_classified(SAMPLE_CITING_WORKS[:1], ["extends"])
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    assert sum(metrics["by_relationship"].values()) == 1
+
+
+def test_bake_markdown_footnotes_relationship_table_when_facets_overlap(tmp_path):
+    classified = [{
+        **SAMPLE_CITING_WORKS[0],
+        "relationship": "uses-as-tool",
+        "relationships": [{"label": "uses-as-tool"}, {"label": "applies-to-domain"}],
+        "confidence": 0.9, "justification": "x", "has_abstract": True,
+        "verification_status": "provisional",
+    }]
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
+    assert "Rows may sum to more than the total classified count" in md
+
+
+def test_bake_markdown_no_footnote_when_all_single_facet(tmp_path):
+    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-as-tool", "background-mention"])
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
+    assert "Rows may sum to more than the total classified count" not in md
+
+
+def test_bake_markdown_strongest_evidence_shows_every_facet(tmp_path):
+    classified = [{
+        **SAMPLE_CITING_WORKS[0],
+        "relationship": "uses-as-tool",
+        "confidence": 0.95,
+        "relationships": [
+            {"label": "uses-as-tool", "confidence": 0.95},
+            {"label": "applies-to-domain", "confidence": 0.8},
+        ],
+        "justification": "Uses PnetCDF and applies it to flood modeling.",
+        "has_abstract": True,
+        "verification_status": "provisional",
+    }]
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
+    assert "*uses-as-tool*" in md
+    assert "*applies-to-domain*" in md
+
+
 def test_build_metrics_partial_coverage():
     """Reach metrics use the full citing set; relationship stats only the classified subset."""
     classified_first = {

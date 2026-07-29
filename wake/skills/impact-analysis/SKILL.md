@@ -373,6 +373,13 @@ step needed. `evidence/index.md` is a standing catalog of every
 investigated citing work, grouped **Verified** / **Pending Review**; skim
 it if you want a sense of what's already been checked before spending
 another `wake evidence` call on a work you may have already covered.
+
+(A dossier may propose more than one facet — e.g. a paper that's both
+`uses-as-tool` and `applies-to-domain`, see `references/classify.md`'s
+"Multi-Facet Relationships" — in which case `--relationship` affirms
+just one of them; the model's other facet stays in the dossier as an
+unaffirmed reading, not deleted. Run `override` again with a different
+`--relationship` if the human wants to affirm more than one.)
 `evidence/log.md` is the full chronological record (built, rebuilt,
 failed, verified) if you need to reconstruct what happened and when.
 `wake-out/<seed>/README.md` is the wiki's single entry point — a short

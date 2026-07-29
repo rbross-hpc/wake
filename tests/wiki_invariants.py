@@ -271,3 +271,58 @@ def assert_frontmatter_relative_paths_resolve(
                 f"{source_path}: frontmatter '{key}: {value!r}' resolves to "
                 f"{resolved}, which does not exist."
             )
+
+
+# Mirrors classify.py's CANONICAL_RELATIONSHIPS/MAX_FACETS/
+# MIN_FACET_CONFIDENCE -- duplicated here (rather than imported) so this
+# test-only module has no import-time dependency on wake's package
+# internals, consistent with the rest of this file's "encode the
+# properties, don't import the implementation" approach.
+_CANONICAL_RELATIONSHIPS = frozenset({
+    "extends", "builds-on", "uses-as-tool", "benchmarks",
+    "applies-to-domain", "related-infrastructure", "background-mention",
+})
+_MAX_FACETS = 3
+_MIN_FACET_CONFIDENCE = 0.5
+
+
+def assert_facet_list_valid(facets: list[dict[str, Any]], source: str | Path = "<text>") -> None:
+    """Validate a multi-facet "relationships" list (see classify.py's
+    module docstring for the schema: a citing work's relationship to the
+    seed is sometimes genuinely more than one story, e.g. both
+    "uses-as-tool" and "applies-to-domain").
+
+    Asserts: the list is non-empty, has at most _MAX_FACETS entries, every
+    facet has a label drawn from _CANONICAL_RELATIONSHIPS, every facet's
+    confidence is a number in [_MIN_FACET_CONFIDENCE, 1.0], and facets are
+    ordered confidence-descending (ties allowed in either order).
+
+    Not called unconditionally by assert_frontmatter_valid -- callers
+    that have a facets list in hand (e.g. from a dossier's parsed JSON
+    sidecar) call this directly; a dossier's rendered .md alone doesn't
+    expose per-facet confidence values, only labels via its tags.
+    """
+    if not facets:
+        raise AssertionError(f"{source}: facets list is empty -- must always have at least one facet.")
+    if len(facets) > _MAX_FACETS:
+        raise AssertionError(f"{source}: facets list has {len(facets)} entries, exceeding MAX_FACETS={_MAX_FACETS}.")
+
+    prev_confidence = None
+    for i, f in enumerate(facets):
+        label = f.get("label")
+        if label not in _CANONICAL_RELATIONSHIPS:
+            raise AssertionError(f"{source}: facet {i} has unknown label {label!r}.")
+        confidence = f.get("confidence")
+        if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
+            raise AssertionError(f"{source}: facet {i} ({label!r}) confidence {confidence!r} is not a number.")
+        if not (_MIN_FACET_CONFIDENCE <= confidence <= 1.0):
+            raise AssertionError(
+                f"{source}: facet {i} ({label!r}) confidence {confidence} is outside "
+                f"[{_MIN_FACET_CONFIDENCE}, 1.0]."
+            )
+        if prev_confidence is not None and confidence > prev_confidence:
+            raise AssertionError(
+                f"{source}: facets are not confidence-descending -- facet {i} ({label!r}, "
+                f"{confidence}) follows a higher-confidence facet ({prev_confidence})."
+            )
+        prev_confidence = confidence

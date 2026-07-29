@@ -60,11 +60,14 @@ def _score(entry: dict[str, Any]) -> float:
     report.relationship_score() -- the single source of truth for this
     formula -- so the impact brief's "Strongest Evidence" ranking and this
     wiki's Verified/Pending Review ranking can never silently drift apart.
-    """
+    Prefers the multi-facet "relationships" list when present (see
+    evidence.py's multi-facet schema), falling back to the legacy
+    "relationship" scalar."""
     from .report import relationship_score
 
-    relationship = entry.get("proposed", {}).get("relationship", "background-mention")
-    return relationship_score(relationship, entry.get("citing_cited_by_count", 0))
+    proposed = entry.get("proposed", {})
+    relationships = proposed.get("relationships") or proposed.get("relationship", "background-mention")
+    return relationship_score(relationships, entry.get("citing_cited_by_count", 0))
 
 
 def _load_all_dossiers(seed_id: str, base: Path | None = None) -> list[dict[str, Any]]:
@@ -118,7 +121,9 @@ def rebuild_index(seed_id: str, seed_title: str | None = None, base: Path | None
     def _render_group(group: list[dict[str, Any]]) -> None:
         for e in group:
             cid = e.get("citing_openalex_id", "")
-            rel = e.get("proposed", {}).get("relationship", "?")
+            proposed = e.get("proposed", {})
+            facets = proposed.get("relationships") or [{"label": proposed.get("relationship", "?")}]
+            rel = ", ".join(f["label"] for f in facets)
             score = round(_score(e), 2)
             when = e.get("human_verification", {}).get("verified_at") or e.get("generated_at", "")
             verb = "verified" if e.get("verification_status") == "verified" else "investigated"
@@ -212,21 +217,36 @@ def mark_verified(
     to verified, recording the human's justification and timestamp.
 
     *relationship* is the human-confirmed relationship from the `wake
-    override` call. When it differs from the dossier's own
-    `proposed.relationship` (the human corrected the model's reading,
-    rather than simply accepting it), the dossier's `proposed` field is
-    updated to match — otherwise index.md/log.md would keep displaying
-    the model's superseded conclusion forever, even though the override
-    that actually governs the impact brief disagrees with it. The
-    dossier's original `proposed.confidence` and `proposed.justification`
-    are preserved in `proposed.model_relationship`/`model_justification`
-    so the original (superseded) reading stays visible for audit.
+    override` call, matched against the dossier's `proposed.relationships`
+    facets (see evidence.py's multi-facet schema):
+
+      - If it matches an existing facet's label, that facet is flagged
+        `"verified": true` -- the model's *other* facets are left in
+        place, untouched, as unaffirmed-but-still-evidenced alternative
+        readings (a paper can genuinely be both `uses-as-tool` and
+        `applies-to-domain`; the human affirming one doesn't make the
+        other one wrong, just unconfirmed).
+      - If it matches no existing facet (the human corrected the model
+        to a reading it never proposed), a new facet is appended with
+        `"verified": true` -- the model's original facets are preserved
+        untouched here too, since they're still real readings of the
+        text, just not the one the human is affirming.
+      - If *relationship* is None (a plain accept, no override
+        `--relationship` divergence), the model's own top (most
+        confident) facet is marked verified as-is.
+
+    The legacy `proposed.relationship`/`confidence`/`justification`
+    scalars (read by evidence_wiki._score, rebuild_index's display line,
+    and any pre-multi-facet consumer) are updated to describe whichever
+    facet ends up flagged verified, since that's now the dossier's
+    authoritative reading.
 
     Returns False (no-op) if no dossier exists for this citing work —
     e.g. a plain human-judgment override with no `wake evidence` behind
     it has nothing to mark.
     """
-    from .evidence import dossier_json_path
+    import copy
+    from .evidence import dossier_json_path, _normalize_proposed_relationships
 
     json_path = dossier_json_path(seed_id, citing_id, base)
     if not json_path.exists():
@@ -241,46 +261,62 @@ def mark_verified(
     }
 
     proposed = payload.setdefault("proposed", {})
-    model_relationship = proposed.get("relationship")
-    corrected = relationship is not None and relationship != model_relationship
+    facets = _normalize_proposed_relationships(proposed, payload.get("quotes", []))
+    model_top_label = facets[0]["label"]
+    # Snapshot before mutation, so mark_pending() can restore the model's
+    # original facets list byte-for-byte when reverting a correction --
+    # analogous to the old single-label model_relationship/
+    # model_justification pair, but for the whole facets list.
+    model_facets_snapshot = copy.deepcopy(facets)
+
+    for f in facets:
+        f.setdefault("verified", False)
+
+    corrected = relationship is not None and relationship != model_top_label
+    if relationship is None:
+        facets[0]["verified"] = True
+        verified_facet = facets[0]
+    else:
+        match = next((f for f in facets if f["label"] == relationship), None)
+        if match is not None:
+            match["verified"] = True
+            verified_facet = match
+        else:
+            verified_facet = {
+                "label": relationship,
+                "confidence": 1.0,
+                "justification": justification or "(human correction)",
+                "quotes": [],
+                "verified": True,
+            }
+            facets.append(verified_facet)
+
+    proposed["relationships"] = facets
+    proposed["relationship"] = verified_facet["label"]
+    proposed["confidence"] = verified_facet["confidence"]
+    proposed["justification"] = verified_facet["justification"]
+
     if corrected:
-        proposed["model_relationship"] = model_relationship
-        proposed["model_justification"] = proposed.get("justification")
-        proposed["relationship"] = relationship
-        payload["human_verification"]["corrected_from"] = model_relationship
+        proposed["model_relationship"] = model_top_label
+        proposed["model_justification"] = model_facets_snapshot[0]["justification"]
+        proposed["model_relationships"] = model_facets_snapshot
+        payload["human_verification"]["corrected_from"] = model_top_label
 
     atomic_write_text(json_path, json.dumps(payload, indent=2, default=str))
 
-    md_path = dossier_path(seed_id, citing_id, base)
-    if md_path.exists():
-        md_text = md_path.read_text(encoding="utf-8")
-        md_text = md_text.replace("status:pending-human-review", "status:verified")
-        if corrected:
-            md_text = md_text.replace(
-                f"proposed:{model_relationship}", f"proposed:{relationship}"
-            )
-
-        # Structural replace via the <!-- status-section:... --> markers
-        # _render_dossier_markdown() wraps this block in -- not a literal
-        # match on the surrounding prose, so this keeps working even if
-        # that prose is edited later (see evidence.py for the markers).
-        status_note = f"Verified by a human on {verified_at}"
-        if corrected:
-            status_note += (
-                f" — human corrected the model's reading from "
-                f"*{model_relationship}* to *{relationship}*"
-            )
-        if justification:
-            status_note += f" — {justification}"
-        new_status_block = (
-            "<!-- status-section:start -->\n"
-            "## Status: verified\n\n"
-            f"{status_note}.\n"
-            "<!-- status-section:end -->"
-        )
-        if _STATUS_SECTION_RE.search(md_text):
-            md_text = _STATUS_SECTION_RE.sub(new_status_block, md_text, count=1)
-            atomic_write_text(md_path, md_text)
+    # Full re-render, not the old targeted string replace: the dossier's
+    # proposed-facets structure may have changed shape (a new facet
+    # appended, or an existing facet's "verified" flag flipped), which a
+    # single-line tag/status text replace can't express once there's more
+    # than one facet. rerender_dossier_md() reads the JSON sidecar we
+    # just wrote and re-derives the whole .md from it -- tags, per-facet
+    # sections, and (via finding["human_verification"], which now
+    # includes "corrected_from" when applicable) the status block too.
+    if dossier_path(seed_id, citing_id, base).exists():
+        from .evidence import rerender_dossier_md
+        from .seed import load_seed
+        seed_work = load_seed(seed_id, base) or {"openalex_id": seed_id}
+        rerender_dossier_md(seed_work, citing_id, base=base)
 
     return True
 
@@ -297,13 +333,16 @@ def mark_pending(
     `wake unverify` to undo a mistaken verification.
 
     If the human's original verification corrected the model's proposed
-    relationship (`mark_verified` moved the original reading into
-    `proposed.model_relationship`/`model_justification`), that correction
-    is undone too -- `proposed.relationship`/`justification` are restored
-    to the model's own original reading, since the human's corrected
-    reading is exactly the judgment being reverted. `human_verification`
-    is removed entirely (it's the record of a human sign-off that no
-    longer stands).
+    facets (`mark_verified` snapshotted the pre-correction facets list
+    into `proposed.model_relationships`), that correction is undone too --
+    `proposed.relationships` (and the legacy scalars derived from its top
+    facet) are restored to the model's own original reading, since the
+    human's corrected reading is exactly the judgment being reverted.
+    `human_verification` is removed entirely (it's the record of a human
+    sign-off that no longer stands). If the verification was a plain
+    accept (no correction, no facets appended/removed), only the
+    per-facet "verified" flags are cleared -- there's nothing to restore
+    because nothing was replaced.
 
     Returns False (no-op) if no dossier exists for this citing work --
     e.g. undoing a plain human-judgment override with no `wake evidence`
@@ -320,40 +359,46 @@ def mark_pending(
     payload.pop("human_verification", None)
 
     proposed = payload.setdefault("proposed", {})
-    model_relationship = proposed.pop("model_relationship", None)
-    model_justification = proposed.pop("model_justification", None)
-    current_relationship = proposed.get("relationship")
-    if model_relationship is not None:
-        proposed["relationship"] = model_relationship
-        if model_justification is not None:
-            proposed["justification"] = model_justification
+    model_facets = proposed.pop("model_relationships", None)
+    proposed.pop("model_relationship", None)
+    proposed.pop("model_justification", None)
+    was_corrected = model_facets is not None
+    if was_corrected:
+        for f in model_facets:
+            f["verified"] = False
+        proposed["relationships"] = model_facets
+        proposed["relationship"] = model_facets[0]["label"]
+        proposed["confidence"] = model_facets[0]["confidence"]
+        proposed["justification"] = model_facets[0]["justification"]
+    else:
+        for f in proposed.get("relationships", []) or []:
+            f["verified"] = False
 
     atomic_write_text(json_path, json.dumps(payload, indent=2, default=str))
 
-    md_path = dossier_path(seed_id, citing_id, base)
-    if md_path.exists():
-        md_text = md_path.read_text(encoding="utf-8")
-        md_text = md_text.replace("status:verified", "status:pending-human-review")
-        if model_relationship is not None:
-            md_text = md_text.replace(
-                f"proposed:{current_relationship}", f"proposed:{model_relationship}"
-            )
+    # Full re-render (see mark_verified()'s comment on why a targeted
+    # string replace can't safely express a facets-list-shaped change).
+    if dossier_path(seed_id, citing_id, base).exists():
+        from .evidence import rerender_dossier_md
+        from .seed import load_seed
+        seed_work = load_seed(seed_id, base) or {"openalex_id": seed_id}
+        rerender_dossier_md(seed_work, citing_id, base=base)
 
-        status_note = "This finding has not been applied to the impact brief. An agent"
-        new_status_block = (
-            "<!-- status-section:start -->\n"
-            "## Status: pending your review\n\n"
-            f"{status_note} "
-            "should present the passages above to a human, then run "
-            "`wake override` on their behalf once the human accepts or adjusts "
-            "the reading — see SKILL.md."
-            + (f" (A prior verification was reverted: {reason})" if reason else "")
-            + "\n"
-            "<!-- status-section:end -->"
-        )
-        if _STATUS_SECTION_RE.search(md_text):
-            md_text = _STATUS_SECTION_RE.sub(new_status_block, md_text, count=1)
-            atomic_write_text(md_path, md_text)
+        if reason:
+            # rerender_dossier_md's pending-status block doesn't know
+            # about *reason* (unverify-specific context, not part of the
+            # dossier's own persisted state) -- append it after the fact
+            # via the same structural marker replace the old code used.
+            md_path = dossier_path(seed_id, citing_id, base)
+            md_text = md_path.read_text(encoding="utf-8")
+            m = _STATUS_SECTION_RE.search(md_text)
+            if m:
+                annotated = m.group(0).replace(
+                    "— see SKILL.md.",
+                    f"— see SKILL.md. (A prior verification was reverted: {reason})",
+                )
+                md_text = md_text[:m.start()] + annotated + md_text[m.end():]
+                atomic_write_text(md_path, md_text)
 
     return True
 

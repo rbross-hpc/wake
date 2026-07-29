@@ -27,6 +27,67 @@ needed, since strength is always recomputed from the stored relationship
 label, never persisted alongside it. `wake config validate` catches a
 typo'd or incomplete strength map before it silently misranks anything.
 
+## Multi-Facet Relationships (opt-in)
+
+A citing paper's relationship to the seed is sometimes genuinely more
+than one story — most commonly a paper that both uses the seed's
+tool/software as-is *and* applies it to a new domain (`uses-as-tool` +
+`applies-to-domain`). Reducing that to a single label loses signal that's
+right there in the abstract or full text. `classify` and `evidence` can
+each return up to 3 facets — realistically almost always 1, occasionally
+2, very rarely 3 — instead of forcing one:
+
+```json
+{
+  "relationship": "uses-as-tool",
+  "confidence": 0.95,
+  "justification": "...",
+  "relationships": [
+    {"label": "uses-as-tool", "confidence": 0.95, "justification": "..."},
+    {"label": "applies-to-domain", "confidence": 0.80, "justification": "..."}
+  ]
+}
+```
+
+`relationship`/`confidence`/`justification` are always the top
+(most-confident) facet — every existing consumer (themes, narrative,
+report metrics, CLI display) keeps reading these scalars unchanged
+whether or not multi-facet is enabled. `relationships` is the full
+ordered list (confidence-descending), for anything facet-aware. Every
+facet has confidence ≥ 0.5; a facet the model isn't confident about
+simply isn't returned rather than being included at low confidence.
+
+**Ranking uses MAX across facets, not sum or average**: a work with
+`uses-as-tool` + `applies-to-domain` scores by whichever facet's
+configured strength is higher, not their combination — a second facet
+adds signal to the dossier and the impact brief's display, but doesn't
+by itself inflate a work's rank. `impact.md`'s "Relationship | Count | %"
+table counts a multi-facet work under *every* facet it has, so rows can
+sum to more than the classified total — the rendered brief footnotes
+this when it happens (rare, since most works have exactly one facet).
+
+**Opt-in, not a default.** The packaged `classify.prompt_version` /
+`evidence.prompt_version` stay at the original single-label prompts
+(`classify-2` / `evidence-1`) — multi-facet (`classify-3` / `evidence-2`)
+is enabled per project by setting these in `wake.config.yaml`:
+```yaml
+classify:
+  prompt_version: "classify-3"
+evidence:
+  prompt_version: "evidence-2"
+```
+Switching prompt versions invalidates every existing sidecar's cache
+(same mechanism as any other prompt-version bump — see `classify_all`'s
+prompt_version check), so this is deliberately not flipped on by an
+upgrade alone; a seed already analyzed under classify-2 keeps its
+single-label sidecars until re-classified.
+
+A dossier's "## Provisional Classification" / "## Full-Text Reading"
+sections render one subsection per facet when there's more than one
+(each with its own justification and, for the full-text reading, its
+own supporting passages) — invisible when there's only one facet, which
+is the overwhelmingly common case.
+
 ### Author-Overlap Tag (orthogonal to relationship)
 
 Every `classify` and `evidence` result also carries `author_overlap`

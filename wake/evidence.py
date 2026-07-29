@@ -39,7 +39,7 @@ from .sources.pdf_fulltext import extract_full_text_from_pages, extract_pages_ca
 
 _STAGE = "evidence"
 
-_SYSTEM = """\
+_SYSTEM_EVIDENCE_1 = """\
 You are verifying a bibliometric classification by reading a citing paper's
 full text. You are given:
   1. The seed paper being cited (title, year).
@@ -90,6 +90,101 @@ Your entire response must be parseable as JSON on its own:
   ]
 }\
 """
+
+# evidence-2: multi-facet successor to evidence-1, above. Mirrors
+# classify-3's reasoning (see classify.py's module docstring): a citing
+# paper's actual relationship to the seed, once you've read the full
+# text, is sometimes still genuinely more than one story -- each with
+# its own supporting passages. Quotes attach to the specific facet they
+# support rather than to the finding as a whole.
+_SYSTEM_EVIDENCE_2 = """\
+You are verifying a bibliometric classification by reading a citing paper's
+full text. You are given:
+  1. The seed paper being cited (title, year).
+  2. A PROVISIONAL classification of how the citing paper relates to the
+     seed — this was made from title/abstract alone, WITHOUT reading the
+     citing paper's actual text. Treat it only as a weak, unverified guess,
+     not a fact to confirm.
+  3. The citing paper's full text, with [page N] markers.
+
+Your job: read the full text and determine what it actually shows about
+the paper's relationship to the seed. Do not simply try to justify the
+provisional guess — form your own judgment from the text.
+
+Choose from these seven relationship class strings — copy verbatim into
+the "label" field, do not invent a new one:
+- "extends": directly extends the method, framework, or theory of the seed.
+- "builds-on": builds a new system, algorithm, or tool that depends on the seed.
+- "uses-as-tool": uses the seed's software, tool, or dataset as-is.
+- "benchmarks": benchmarks against or compares performance with the seed.
+- "applies-to-domain": applies the seed's approach to a new domain or problem.
+- "related-infrastructure": complementary tooling in the same ecosystem, no direct dependency.
+- "background-mention": cites only as background/related work, or the seed
+  is mentioned so briefly/indirectly that no specific technical relationship
+  can be determined from the text.
+
+Most citing papers have exactly ONE clear relationship to the seed, once
+you've read the full text. Some genuinely have TWO -- for example, a
+paper that both uses the seed's tool as-is ("uses-as-tool") AND applies
+it to a new domain ("applies-to-domain") is telling two independent
+stories, each with its own supporting passages. Very rarely does a paper
+have THREE.
+
+Return one facet by default. Return two only when both are independently
+well-supported by distinct passages (each a defensible standalone
+reading on its own — not the same story described two ways). Return
+three only in the exceptional case where the paper genuinely does three
+distinct things. Do not hedge: e.g. a paper that clearly "extends" the
+seed should NOT also list "builds-on" just because extending could be
+described as a kind of building-on -- that is one story, not two.
+
+Every facet you return must have confidence >= 0.5.
+
+For EVERY passage you rely on, quote the FULL PARAGRAPH containing it (not
+a bare sentence fragment) exactly as it appears in the source text, along
+with its page number. A human will read these quotes directly to judge
+your reasoning — they must be complete enough to stand on their own, in
+context, without needing to see the original document. Attach each quote
+to the specific facet it supports.
+
+If the seed paper is not clearly discussed anywhere in the text (e.g. it
+only appears in a bare reference-list entry with no in-text discussion),
+say so honestly — do not fabricate a passage that doesn't exist. In that
+case return a single "background-mention" facet with an empty quotes
+list and explain why in its justification.
+
+Respond with ONLY a single JSON object and NOTHING else — no markdown
+fence, no preamble, no reasoning or commentary before or after the JSON.
+Your entire response must be parseable as JSON on its own:
+{
+  "relationships": [
+    {
+      "label": "<one of the exact strings above>",
+      "confidence": <float 0.5-1.0>,
+      "justification": "<1-3 sentences explaining this specific facet>",
+      "quotes": [
+        {"page": <int>, "text": "<full paragraph, verbatim>", "note": "<what this passage shows>"}
+      ]
+    }
+  ],
+  "agrees_with_provisional": <true or false>
+}
+List the facets most-confident first. "agrees_with_provisional" is true
+if any facet you return matches the provisional label.\
+"""
+
+_SYSTEM_BY_VERSION: dict[str, str] = {
+    "evidence-1": _SYSTEM_EVIDENCE_1,
+    "evidence-2": _SYSTEM_EVIDENCE_2,
+}
+
+
+def _system_prompt(prompt_version: str) -> str:
+    """The literal system prompt for *prompt_version* -- see
+    _SYSTEM_BY_VERSION. Falls back to the evidence-1 (legacy,
+    single-label) prompt for an unrecognized version string."""
+    return _SYSTEM_BY_VERSION.get(prompt_version, _SYSTEM_EVIDENCE_1)
+
 
 _USER_TEMPLATE = """\
 Seed paper: "{seed_title}" ({seed_year})
@@ -169,6 +264,67 @@ def _resolve_sidecar_path(value: str | None, sidecar_dir: Path) -> str | None:
     return str((sidecar_dir / p).resolve())
 
 
+def _clean_quote(q: Any) -> dict[str, Any] | None:
+    if not isinstance(q, dict):
+        return None
+    text = (q.get("text") or "").strip()
+    if not text:
+        return None
+    return {"page": q.get("page"), "text": text, "note": (q.get("note") or "").strip()}
+
+
+def _parse_proposed_relationships(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize an evidence-verification LLM response from either
+    _SYSTEM_EVIDENCE_1 (single "relationship"/"confidence"/"justification"/
+    "quotes" scalars) or _SYSTEM_EVIDENCE_2 ("relationships" list, each
+    with its own "quotes") into a canonical facets list: valid labels
+    only, confidence >= classify.MIN_FACET_CONFIDENCE, sorted
+    confidence-descending, capped at classify.MAX_FACETS, each with its
+    own cleaned quotes list. Mirrors classify._parse_relationships_response
+    -- kept as a separate function because evidence facets additionally
+    carry per-facet quotes, which classify's abstract-only facets never
+    have. Always returns at least one facet."""
+    from .classify import CANONICAL_RELATIONSHIPS, MAX_FACETS, MIN_FACET_CONFIDENCE
+
+    raw_facets = result.get("relationships")
+    if not isinstance(raw_facets, list) or not raw_facets:
+        raw_facets = [{
+            "label": result.get("relationship", "background-mention"),
+            "confidence": result.get("confidence", 0.5),
+            "justification": result.get("justification", ""),
+            "quotes": result.get("quotes", []),
+        }]
+
+    facets: list[dict[str, Any]] = []
+    for f in raw_facets:
+        if not isinstance(f, dict):
+            continue
+        label = f.get("label")
+        if label not in CANONICAL_RELATIONSHIPS:
+            continue
+        try:
+            confidence = float(f.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        if confidence < MIN_FACET_CONFIDENCE:
+            continue
+        quotes = [q for q in (_clean_quote(q) for q in (f.get("quotes") or [])) if q is not None]
+        facets.append({
+            "label": label,
+            "confidence": confidence,
+            "justification": (f.get("justification") or "").strip(),
+            "quotes": quotes,
+        })
+
+    facets.sort(key=lambda f: f["confidence"], reverse=True)
+    facets = facets[:MAX_FACETS]
+
+    if not facets:
+        facets = [{"label": "background-mention", "confidence": 0.5, "justification": "", "quotes": []}]
+
+    return facets
+
+
 def verify_full_text(
     seed_work: dict[str, Any],
     citing_work: dict[str, Any],
@@ -179,13 +335,21 @@ def verify_full_text(
     record_cost: bool = True,
 ) -> dict[str, Any]:
     """Run the full-text verification LLM pass. Returns the proposed
-    finding: relationship, confidence, justification, agreement flag, and
-    quoted passages with page numbers.
-    """
+    finding: a multi-facet "relationships" list (see
+    _parse_proposed_relationships), legacy "relationship"/"confidence"/
+    "justification" scalars for read-compat set from the top
+    (most-confident) facet, an agreement flag, and a top-level "quotes"
+    list -- the deduplicated union of every facet's quotes, in the order
+    the facets are listed, for callers that only care about the finding
+    as a whole (e.g. `wake evidence`'s CLI printer)."""
+    from .classify import _normalize_relationships
+
+    provisional_facets = _normalize_relationships(citing_work)
     provisional = {
-        "relationship": citing_work.get("relationship", "background-mention"),
-        "confidence": citing_work.get("confidence", 0.0),
-        "justification": citing_work.get("justification", ""),
+        "relationship": provisional_facets[0]["label"],
+        "confidence": provisional_facets[0]["confidence"],
+        "justification": provisional_facets[0]["justification"],
+        "relationships": provisional_facets,
     }
 
     user_msg = _USER_TEMPLATE.format(
@@ -207,25 +371,30 @@ def verify_full_text(
                 system=system, user=user, response_text=response_text, base=base,
             )
 
-    result = chat_json(_SYSTEM, user_msg, model_role="evidence", cost_sink=cost_sink)
+    system_prompt = _system_prompt(_prompt_version())
+    result = chat_json(system_prompt, user_msg, model_role="evidence", cost_sink=cost_sink)
 
-    from .classify import RELATIONSHIPS
-    relationship = result.get("relationship", "background-mention")
-    if relationship not in RELATIONSHIPS:
-        relationship = "background-mention"
+    facets = _parse_proposed_relationships(result)
+    top = facets[0]
 
-    quotes = []
-    for q in result.get("quotes", []) or []:
-        if not isinstance(q, dict):
-            continue
-        text = (q.get("text") or "").strip()
-        if not text:
-            continue
-        quotes.append({
-            "page": q.get("page"),
-            "text": text,
-            "note": (q.get("note") or "").strip(),
-        })
+    provisional_labels = {f["label"] for f in provisional_facets}
+    agrees = bool(result.get(
+        "agrees_with_provisional",
+        any(f["label"] in provisional_labels for f in facets),
+    ))
+
+    # Deduplicated union of every facet's quotes, preserving facet order
+    # then in-facet order, for legacy readers that only look at the
+    # top-level "quotes" list (e.g. the CLI's human printer).
+    seen: set[tuple[Any, str]] = set()
+    quotes: list[dict[str, Any]] = []
+    for f in facets:
+        for q in f["quotes"]:
+            key = (q.get("page"), q["text"])
+            if key in seen:
+                continue
+            seen.add(key)
+            quotes.append(q)
 
     from .author_overlap import compute_overlap
     overlap = compute_overlap(seed_work, citing_work)
@@ -233,10 +402,11 @@ def verify_full_text(
     return {
         "provisional": provisional,
         "proposed": {
-            "relationship": relationship,
-            "confidence": float(result.get("confidence", 0.5)),
-            "justification": result.get("justification", ""),
-            "agrees_with_provisional": bool(result.get("agrees_with_provisional", relationship == provisional["relationship"])),
+            "relationship": top["label"],
+            "confidence": top["confidence"],
+            "justification": top["justification"],
+            "agrees_with_provisional": agrees,
+            "relationships": facets,
         },
         "quotes": quotes,
         **overlap,
@@ -310,6 +480,54 @@ def _referenced_by_line(seed_id: str, citing_id: str, base: Path | None = None) 
     return "**Referenced by:** " + "; ".join(parts)
 
 
+def _normalize_proposed_relationships(proposed: dict[str, Any], top_level_quotes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Like classify._normalize_relationships, but for a dossier's
+    "proposed" block specifically: when there's no "relationships" list
+    (a legacy, pre-multi-facet dossier), the synthesized single facet
+    must also carry quotes -- which classify's generic normalizer
+    doesn't know about, since classify's own facets (abstract-only) never
+    have quotes. Falls back to *top_level_quotes* (the dossier's
+    top-level "quotes" field) for that legacy case; a genuine multi-facet
+    "relationships" list already carries its own per-facet quotes and is
+    returned as-is."""
+    facets = proposed.get("relationships")
+    if isinstance(facets, list) and facets:
+        return facets
+    return [{
+        "label": proposed.get("relationship", "background-mention"),
+        "confidence": proposed.get("confidence", 0.5),
+        "justification": proposed.get("justification", ""),
+        "quotes": top_level_quotes,
+    }]
+
+
+def _append_facet_quotes(lines: list[str], quotes: list[dict[str, Any]]) -> None:
+    """Append a "### Supporting Passages" block (or its empty-state
+    fallback) for one facet's quotes to *lines* in place. Shared by
+    _render_dossier_markdown's single-facet and multi-facet rendering
+    paths so the passage formatting stays identical either way."""
+    if quotes:
+        lines.append("### Supporting Passages")
+        lines.append("")
+        for q in quotes:
+            page = q.get("page")
+            page_str = f"p. {page}" if page else "page unknown"
+            lines.append(f"**{page_str}**")
+            lines.append("")
+            quoted = q["text"].replace("\n", "\n> ")
+            lines.append(f"> {quoted}")
+            lines.append("")
+            if q.get("note"):
+                lines.append(f"*{q['note']}*")
+                lines.append("")
+    else:
+        lines.append(
+            "*No supporting passages found — the seed paper may only appear "
+            "in a reference-list entry with no in-text discussion.*"
+        )
+        lines.append("")
+
+
 def _render_dossier_markdown(
     seed_work: dict[str, Any],
     citing_work: dict[str, Any],
@@ -333,11 +551,16 @@ def _render_dossier_markdown(
     mark_verified()/mark_pending()'s job; this only needs to know which
     of the two static blocks to print.
     """
+    from .classify import _normalize_relationships
+
     seed_id = seed_work.get("openalex_id", "")
     citing_id = citing_work.get("openalex_id", "")
     title = citing_work.get("title") or "Unknown"
     doi = citing_work.get("doi")
     resource = doi and f"https://doi.org/{doi}" or citing_work.get("url") or f"https://openalex.org/{citing_id}"
+
+    provisional_facets = _normalize_relationships(finding["provisional"])
+    proposed_facets = _normalize_proposed_relationships(finding["proposed"], finding.get("quotes", []))
     proposed_rel = finding["proposed"]["relationship"]
     provisional_rel = finding["provisional"]["relationship"]
 
@@ -354,7 +577,14 @@ def _render_dossier_markdown(
     lines.append(f"resource: \"{resource}\"")
     if pdf_rel:
         lines.append(f'pdf: "{pdf_rel}"')
-    tags = [f"provisional:{provisional_rel}", f"proposed:{proposed_rel}", f"status:{verification_status}"]
+    # One tag per facet per phase, grouped by phase (all provisional:*
+    # tags together, then all proposed:*) rather than interleaved -- an
+    # Obsidian tag search for "provisional:X" alone stays predictable
+    # regardless of how many facets a dossier has (almost always 1,
+    # occasionally 2, rarely 3 -- see classify.py's MAX_FACETS).
+    tags = [f"provisional:{f['label']}" for f in provisional_facets]
+    tags += [f"proposed:{f['label']}" for f in proposed_facets]
+    tags.append(f"status:{verification_status}")
     if author_overlap:
         tags.append("author-overlap:true")
     lines.append(f"tags: [{', '.join(tags)}]")
@@ -393,10 +623,15 @@ def _render_dossier_markdown(
 
     lines.append("## Provisional Classification (abstract-only — not yet checked against the paper)")
     lines.append("")
-    lines.append(
-        f"> *{provisional_rel}* (confidence: {finding['provisional']['confidence']:.2f}) — "
-        f"{finding['provisional']['justification'] or '(no justification recorded)'}"
-    )
+    if len(provisional_facets) == 1:
+        f = provisional_facets[0]
+        lines.append(f"> *{f['label']}* (confidence: {f['confidence']:.2f}) — {f['justification'] or '(no justification recorded)'}")
+    else:
+        for f in provisional_facets:
+            lines.append(f"### {f['label']} (confidence: {f['confidence']:.2f})")
+            lines.append("")
+            lines.append(f"> {f['justification'] or '(no justification recorded)'}")
+            lines.append("")
     lines.append("")
     lines.append(
         "This was produced from title/abstract/venue alone, without reading "
@@ -407,36 +642,30 @@ def _render_dossier_markdown(
     lines.append("## Full-Text Reading (proposed — pending human review)")
     lines.append("")
     proposed = finding["proposed"]
+    provisional_labels = {f["label"] for f in provisional_facets}
     agree_note = (
         "confirms the provisional guess" if proposed["agrees_with_provisional"]
         else f"differs from the provisional guess (was: *{provisional_rel}*)"
     )
-    lines.append(
-        f"> *{proposed_rel}* (confidence: {proposed['confidence']:.2f}) — {proposed['justification']}"
-    )
-    lines.append(f"> ({agree_note})")
-    lines.append("")
-
-    if finding["quotes"]:
-        lines.append("### Supporting Passages")
-        lines.append("")
-        for q in finding["quotes"]:
-            page = q.get("page")
-            page_str = f"p. {page}" if page else "page unknown"
-            lines.append(f"**{page_str}**")
-            lines.append("")
-            quoted = q["text"].replace("\n", "\n> ")
-            lines.append(f"> {quoted}")
-            lines.append("")
-            if q.get("note"):
-                lines.append(f"*{q['note']}*")
-                lines.append("")
-    else:
+    if len(proposed_facets) == 1:
         lines.append(
-            "*No supporting passages found — the seed paper may only appear "
-            "in a reference-list entry with no in-text discussion.*"
+            f"> *{proposed_rel}* (confidence: {proposed['confidence']:.2f}) — {proposed['justification']}"
         )
+        lines.append(f"> ({agree_note})")
         lines.append("")
+        _append_facet_quotes(lines, proposed_facets[0]["quotes"])
+    else:
+        lines.append(f"*({agree_note})*")
+        lines.append("")
+        for f in proposed_facets:
+            lines.append(f"### {f['label']} (confidence: {f['confidence']:.2f})")
+            lines.append("")
+            lines.append(f"> {f['justification']}")
+            if f["label"] in provisional_labels:
+                lines.append(">")
+                lines.append("> (confirms one of the provisional guesses)")
+            lines.append("")
+            _append_facet_quotes(lines, f["quotes"])
 
     # Marked with HTML comments (invisible when rendered) rather than
     # matched by literal prose, so evidence_wiki.py::mark_verified()/

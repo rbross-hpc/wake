@@ -26,6 +26,23 @@ classification: edit config.yaml, then re-run `wake bake` (no LLM calls,
 no re-classification -- ranking is always recomputed from the stored
 relationship label, never from a persisted score).
 
+A citing work's relationship to the seed is sometimes genuinely more than
+one story -- e.g. a paper that uses the seed's tool as-is AND applies it
+to a new domain is both "uses-as-tool" and "applies-to-domain", and
+picking only one loses signal. classify-3 (see _SYSTEM_CLASSIFY_3) asks
+for a short, confidence-ordered list of facets ("relationships": [...])
+instead of one label; classify-2 (the default, see `prompt_version` in
+config.yaml) keeps the original single-label behavior. Both write the
+same sidecar shape either way: a top-level "relationships" facets list
+plus legacy "relationship"/"confidence"/"justification" scalars set from
+the top (most-confident) facet, so every existing consumer (themes,
+narrative, report metrics) keeps working unchanged regardless of which
+prompt version produced the sidecar. Opting into classify-3 is a local
+config edit (`classify.prompt_version: "classify-3"`), not a default --
+switching prompt versions invalidates every existing sidecar's cache
+(see classify_all's prompt_version check), so it's deliberately not
+flipped by an upgrade alone.
+
 Each classification is written atomically as a sidecar JSON file, so the
 pipeline is safely resumable after Ctrl-C.
 """
@@ -170,7 +187,19 @@ def relationship_strength() -> dict[str, int]:
 # (`from .classify import RELATIONSHIPS`).
 RELATIONSHIPS = list(CANONICAL_RELATIONSHIPS)
 
-_SYSTEM = """\
+# A citing work's relationship to the seed is sometimes genuinely more
+# than one story (see MULTI-FACET note below) -- these bound how far that
+# can go: at most this many facets are ever kept (LLM output is truncated
+# to the top-MAX_FACETS by confidence if it returns more), and any facet
+# below MIN_FACET_CONFIDENCE is dropped rather than kept as noise. Both
+# are belt-and-suspenders backstops for what the classify-3/evidence-2
+# prompts already ask for -- "one facet by default, two only when both
+# are independently well-supported, three only in the exceptional case" --
+# not something expected to bind often in practice.
+MAX_FACETS = 3
+MIN_FACET_CONFIDENCE = 0.5
+
+_SYSTEM_CLASSIFY_2 = """\
 You are a bibliometric analyst classifying how a citing paper uses a seed paper.
 
 You MUST choose exactly one of these seven relationship class strings —
@@ -199,6 +228,140 @@ Respond with ONLY a single JSON object, no markdown fence, matching this schema:
 }
 If the abstract is missing, base your decision on title and venue; set confidence <= 0.5.\
 """
+
+# classify-3: multi-facet successor to classify-2, above. A citing paper's
+# relationship to the seed is sometimes genuinely more than one story --
+# e.g. a paper that both uses the seed's tool as-is AND applies it to a
+# new domain is telling two independent stories, and reducing that to one
+# label loses signal (see the PnetCDF/flood-modeling case that motivated
+# this: uses-as-tool + applies-to-domain, both well-supported by distinct
+# passages). This prompt asks for a short, confidence-ordered list of
+# facets instead of a single label. MAX_FACETS/MIN_FACET_CONFIDENCE above
+# enforce the same discipline in code as a backstop.
+_SYSTEM_CLASSIFY_3 = """\
+You are a bibliometric analyst classifying how a citing paper uses a seed paper.
+
+Choose from these seven relationship class strings — copy verbatim into
+the "label" field, do not invent a new one:
+- "extends": The citing paper directly extends the method, framework, or theory of the seed.
+- "builds-on": The citing paper builds a new system, algorithm, or tool that depends on the seed.
+- "uses-as-tool": The citing paper uses the seed's software, tool, or dataset as-is without modification.
+- "benchmarks": The citing paper benchmarks against or compares performance with the seed.
+- "applies-to-domain": The citing paper applies the seed's approach to a new domain or problem.
+- "related-infrastructure": The citing paper is complementary tooling in the same
+  technical ecosystem or stack (e.g. another library solving an adjacent problem
+  in the same domain) but does not directly depend on, extend, or benchmark the
+  seed — it operates alongside it rather than using it.
+- "background-mention": The citing paper cites the seed only as background or
+  related work, with no specific technical relationship (including cases where
+  the relationship is unclear, indirect, or merely contextual).
+
+Most citing papers have exactly ONE clear relationship to the seed. Some
+genuinely have TWO — for example, a paper that both uses the seed's tool
+as-is ("uses-as-tool") AND applies it to a new domain ("applies-to-domain")
+is telling two independent stories. Very rarely does a paper have THREE.
+
+Return one facet by default. Return two only when both are independently
+well-supported (each has its own justification and would be a defensible
+standalone reading on its own — not the same story described two ways).
+Return three only in the exceptional case where the paper genuinely does
+three distinct things. Do not hedge: e.g. a paper that clearly "extends"
+the seed should NOT also list "builds-on" just because extending could be
+described as a kind of building-on -- that is one story, not two.
+
+Every facet you return must have confidence >= 0.5. If a possible second
+or third reading is weaker than that, leave it out.
+
+Respond with ONLY a single JSON object, no markdown fence, matching this schema:
+{
+  "relationships": [
+    {
+      "label": "<one of the seven exact strings above>",
+      "confidence": <float 0.5-1.0>,
+      "justification": "<one sentence explaining this specific facet>"
+    }
+  ]
+}
+List the facets most-confident first. If the abstract is missing, base
+your decision on title and venue; set confidence <= 0.5 for every facet
+in that case (i.e., in practice, return exactly one low-confidence facet).\
+"""
+
+_SYSTEM_BY_VERSION: dict[str, str] = {
+    "classify-2": _SYSTEM_CLASSIFY_2,
+    "classify-3": _SYSTEM_CLASSIFY_3,
+}
+
+
+def _system_prompt(prompt_version: str) -> str:
+    """The literal system prompt for *prompt_version* -- see
+    _SYSTEM_BY_VERSION. Falls back to the classify-2 (legacy, single-label)
+    prompt for an unrecognized version string, matching classify_one's
+    handling of an unrecognized *label* (never crash on unexpected
+    config; degrade to the well-understood default)."""
+    return _SYSTEM_BY_VERSION.get(prompt_version, _SYSTEM_CLASSIFY_2)
+
+
+def _parse_relationships_response(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize an LLM response from either _SYSTEM_CLASSIFY_2 (single
+    "relationship"/"confidence"/"justification" scalars) or
+    _SYSTEM_CLASSIFY_3 ("relationships" list) into a canonical facets
+    list: valid labels only, confidence >= MIN_FACET_CONFIDENCE, sorted
+    confidence-descending, capped at MAX_FACETS. Always returns at least
+    one facet -- falls back to a single background-mention facet if
+    parsing/filtering leaves nothing usable (garbled response, or every
+    facet failed validation)."""
+    raw_facets = result.get("relationships")
+    if not isinstance(raw_facets, list) or not raw_facets:
+        raw_facets = [{
+            "label": result.get("relationship", "background-mention"),
+            "confidence": result.get("confidence", 0.5),
+            "justification": result.get("justification", ""),
+        }]
+
+    facets: list[dict[str, Any]] = []
+    for f in raw_facets:
+        if not isinstance(f, dict):
+            continue
+        label = f.get("label")
+        if label not in CANONICAL_RELATIONSHIPS:
+            continue
+        try:
+            confidence = float(f.get("confidence", 0.5))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        if confidence < MIN_FACET_CONFIDENCE:
+            continue
+        facets.append({
+            "label": label,
+            "confidence": confidence,
+            "justification": (f.get("justification") or "").strip(),
+        })
+
+    facets.sort(key=lambda f: f["confidence"], reverse=True)
+    facets = facets[:MAX_FACETS]
+
+    if not facets:
+        facets = [{"label": "background-mention", "confidence": 0.5, "justification": ""}]
+
+    return facets
+
+
+def _normalize_relationships(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Read-compat: return *payload*'s "relationships" facets list if
+    present, else synthesize a one-element list from its legacy
+    "relationship"/"confidence"/"justification" scalars. Used by every
+    reader (classify, evidence, report, evidence_wiki) that needs to
+    treat an old, pre-multi-facet sidecar the same as a new one."""
+    facets = payload.get("relationships")
+    if isinstance(facets, list) and facets:
+        return facets
+    return [{
+        "label": payload.get("relationship", "background-mention"),
+        "confidence": payload.get("confidence", 0.5),
+        "justification": payload.get("justification", ""),
+    }]
+
 
 _USER_TEMPLATE = """\
 Seed paper: "{seed_title}" ({seed_year})
@@ -286,7 +449,14 @@ def classify_one(
     base: Path | None = None,
     record_cost: bool = True,
 ) -> dict[str, Any]:
-    """Classify a single citing work's relationship to the seed."""
+    """Classify a single citing work's relationship to the seed.
+
+    Returns both the new multi-facet "relationships" list (see
+    _parse_relationships_response) and, for read-compat with every
+    existing consumer (themes, narrative, report metrics, CLI display),
+    legacy "relationship"/"confidence"/"justification" scalars populated
+    from the top (most-confident) facet.
+    """
     user_msg = _USER_TEMPLATE.format(
         seed_title=seed_work.get("title") or "Unknown",
         seed_year=seed_work.get("year") or "Unknown",
@@ -304,19 +474,20 @@ def classify_one(
                 system=system, user=user, response_text=response_text, base=base,
             )
 
-    result = chat_json(_SYSTEM, user_msg, model_role="classify", cost_sink=cost_sink)
+    system_prompt = _system_prompt(_prompt_version())
+    result = chat_json(system_prompt, user_msg, model_role="classify", cost_sink=cost_sink)
 
-    relationship = result.get("relationship", "background-mention")
-    if relationship not in RELATIONSHIPS:
-        relationship = "background-mention"
+    facets = _parse_relationships_response(result)
+    top = facets[0]
 
     from .author_overlap import compute_overlap
     overlap = compute_overlap(seed_work, citing_work)
 
     return {
-        "relationship": relationship,
-        "confidence": float(result.get("confidence", 0.5)),
-        "justification": result.get("justification", ""),
+        "relationship": top["label"],
+        "confidence": top["confidence"],
+        "justification": top["justification"],
+        "relationships": facets,
         "has_abstract": bool(citing_work.get("abstract")),
         # No "strength" field here, deliberately: strength is a derived
         # score (see relationship_strength()/report.relationship_score()),

@@ -789,7 +789,14 @@ def run_classify(args) -> None:
     from collections import Counter
     classified_only = [w for w in result if w.get("relationship")]
     errored_only = [w for w in result if w.get("error") and not w.get("relationship")]
-    counts = Counter(w.get("relationship", "?") for w in classified_only)
+    # Counts each classified work under every facet it has (see
+    # report.build_metrics' by_relationship, same convention) -- almost
+    # always exactly one, occasionally two (see classify.py's MAX_FACETS).
+    counts: Counter = Counter()
+    for w in classified_only:
+        facets = w.get("relationships") or [{"label": w.get("relationship", "?")}]
+        for f in facets:
+            counts[f.get("label", "?")] += 1
 
     data = {
         "dry_run": args.dry_run,
@@ -1248,6 +1255,13 @@ def run_evidence(args) -> None:
         print(f"Provisional (abstract-only): {prov['relationship']} (confidence {prov['confidence']:.2f})")
         print(f"Proposed (full-text reading): {prop['relationship']} (confidence {prop['confidence']:.2f})")
         print(f"  {prop['justification']}")
+        # A dossier can genuinely propose more than one facet (see
+        # evidence.py's multi-facet schema) -- the scalars above are
+        # always the top (most-confident) one; list any others too so
+        # a second well-supported reading isn't hidden from the CLI.
+        other_facets = (prop.get("relationships") or [])[1:]
+        for f in other_facets:
+            print(f"  + also: {f['label']} (confidence: {f.get('confidence', 0):.2f}) — {f.get('justification', '')}")
         if not prop["agrees_with_provisional"]:
             print("  -> differs from the provisional guess")
         print()

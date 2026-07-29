@@ -27,6 +27,7 @@ from wake.evidence_wiki import rebuild_wiki_home
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 from .wiki_invariants import (
     assert_all_relative_md_links_exist,
+    assert_facet_list_valid,
     assert_frontmatter_relative_paths_resolve,
     assert_frontmatter_valid,
     assert_no_malformed_wikilinks,
@@ -157,6 +158,70 @@ def test_assert_frontmatter_relative_paths_resolve_noop_for_type_with_no_path_ke
     assert_frontmatter_relative_paths_resolve({"type": "theme"}, source)
 
 
+# --- assert_facet_list_valid --------------------------------------------------
+
+def test_assert_facet_list_valid_passes_for_single_facet():
+    assert_facet_list_valid([{"label": "extends", "confidence": 0.9, "justification": "x"}])
+
+
+def test_assert_facet_list_valid_passes_for_two_confidence_descending_facets():
+    assert_facet_list_valid([
+        {"label": "uses-as-tool", "confidence": 0.95, "justification": "a"},
+        {"label": "applies-to-domain", "confidence": 0.8, "justification": "b"},
+    ])
+
+
+def test_assert_facet_list_valid_passes_for_equal_confidence_facets():
+    assert_facet_list_valid([
+        {"label": "uses-as-tool", "confidence": 0.8, "justification": "a"},
+        {"label": "applies-to-domain", "confidence": 0.8, "justification": "b"},
+    ])
+
+
+def test_assert_facet_list_valid_fails_on_empty_list():
+    with pytest.raises(AssertionError, match="empty"):
+        assert_facet_list_valid([])
+
+
+def test_assert_facet_list_valid_fails_when_exceeding_max_facets():
+    facets = [
+        {"label": "extends", "confidence": 0.95, "justification": "a"},
+        {"label": "builds-on", "confidence": 0.9, "justification": "b"},
+        {"label": "uses-as-tool", "confidence": 0.85, "justification": "c"},
+        {"label": "benchmarks", "confidence": 0.8, "justification": "d"},
+    ]
+    with pytest.raises(AssertionError, match="MAX_FACETS"):
+        assert_facet_list_valid(facets)
+
+
+def test_assert_facet_list_valid_fails_on_unknown_label():
+    with pytest.raises(AssertionError, match="unknown label"):
+        assert_facet_list_valid([{"label": "not-a-real-label", "confidence": 0.9, "justification": "x"}])
+
+
+def test_assert_facet_list_valid_fails_on_confidence_below_minimum():
+    with pytest.raises(AssertionError, match="outside"):
+        assert_facet_list_valid([{"label": "extends", "confidence": 0.3, "justification": "x"}])
+
+
+def test_assert_facet_list_valid_fails_on_confidence_above_one():
+    with pytest.raises(AssertionError, match="outside"):
+        assert_facet_list_valid([{"label": "extends", "confidence": 1.5, "justification": "x"}])
+
+
+def test_assert_facet_list_valid_fails_on_non_numeric_confidence():
+    with pytest.raises(AssertionError, match="not a number"):
+        assert_facet_list_valid([{"label": "extends", "confidence": "high", "justification": "x"}])
+
+
+def test_assert_facet_list_valid_fails_when_not_confidence_descending():
+    with pytest.raises(AssertionError, match="not confidence-descending"):
+        assert_facet_list_valid([
+            {"label": "uses-as-tool", "confidence": 0.6, "justification": "a"},
+            {"label": "applies-to-domain", "confidence": 0.9, "justification": "b"},
+        ])
+
+
 # --- assert_ref_link_syntax ---------------------------------------------------
 
 def test_assert_ref_link_syntax_passes_for_correct_rendering():
@@ -243,6 +308,35 @@ def _fake_verification_response():
     }
 
 
+def _fake_multi_facet_verification_response():
+    return {
+        "relationships": [
+            {
+                "label": "uses-as-tool", "confidence": 0.95,
+                "justification": "Integrates PnetCDF for all I/O.",
+                "quotes": [{"page": 9, "text": "PnetCDF was integrated for all I/O.", "note": "Direct statement."}],
+            },
+            {
+                "label": "applies-to-domain", "confidence": 0.8,
+                "justification": "Applies it to flood modeling on supercomputers.",
+                "quotes": [{"page": 2, "text": "IFM is a flood-modeling framework for petascale HPC.", "note": "Domain framing."}],
+            },
+        ],
+        "agrees_with_provisional": True,
+    }
+
+
+def _build_multi_facet_dossier_for(tmp_path, citing_work, pdf_name):
+    dest = tmp_path / "pdfs" / pdf_name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(_FIXTURE, dest)
+    with patch("wake.evidence.fetch_pdf", return_value={
+        "ok": True, "path": str(dest), "source": "osti",
+    }), patch("wake.evidence.config.evidence_cfg", return_value={"prompt_version": "evidence-2"}), \
+         patch("wake.evidence.chat_json", return_value=_fake_multi_facet_verification_response()):
+        return evidence.build_dossier(PARALLEL_NETCDF_WORK, citing_work, base=tmp_path, verbose=False)
+
+
 def _build_dossier_for(tmp_path, citing_work, pdf_name):
     dest = tmp_path / "pdfs" / pdf_name
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -253,22 +347,52 @@ def _build_dossier_for(tmp_path, citing_work, pdf_name):
         return evidence.build_dossier(PARALLEL_NETCDF_WORK, citing_work, base=tmp_path, verbose=False)
 
 
+_MULTI_FACET_WORK = {
+    "openalex_id": "W1000000004",
+    "title": "IFM: A Scalable High Resolution Flood Modeling Framework",
+    "authors": ["Some Author"],
+    "year": 2014,
+    "venue": "Lecture Notes in Computer Science",
+    "venue_type": "conference",
+    "doi": "10.1145/fake.004",
+    "cited_by_count": 30,
+    "type": "proceedings-article",
+    "abstract": "IFM uses Parallel netCDF for I/O and applies it to flood modeling at supercomputer scale.",
+    "topics": ["High-performance computing"],
+}
+
+
 def _build_full_wiki(tmp_path):
     """Build a minimal-but-complete wiki: two dossier-backed verified
     works (one grounding a theme + narrative section, one left as a
     verified-but-unreferenced dossier -- exercising the 'no back-link
     line' path), one classified-but-never-evidenced work (exercising the
-    raw-[ref:...]-marker path), a confirmed theme, a stitched narrative
-    with one theme-grounded section, and a baked impact brief."""
+    raw-[ref:...]-marker path), one multi-facet dossier (both
+    "uses-as-tool" and "applies-to-domain", exercising the per-facet
+    rendering path), a confirmed theme, a stitched narrative with one
+    theme-grounded section, and a baked impact brief."""
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     w0 = _classified_work(0)  # referenced by theme + section
     w1 = _classified_work(1)  # verified dossier, but not referenced anywhere
     w2 = _classified_work(2, doi=None)  # never evidenced -- provisional only
+    w3 = {
+        **_MULTI_FACET_WORK,
+        "relationship": "uses-as-tool",
+        "confidence": 0.6,
+        "justification": "Likely uses PnetCDF and applies it to flood modeling.",
+        "relationships": [
+            {"label": "uses-as-tool", "confidence": 0.6, "justification": "Likely uses PnetCDF."},
+            {"label": "applies-to-domain", "confidence": 0.55, "justification": "Applies it to flood modeling."},
+        ],
+        "has_abstract": True,
+        "verification_status": "provisional",
+    }
 
-    save_classified(seed_id, [w0, w1, w2], base=tmp_path)
+    save_classified(seed_id, [w0, w1, w2, w3], base=tmp_path)
 
     _build_dossier_for(tmp_path, w0, pdf_name=f"{w0['openalex_id']}.pdf")
     _build_dossier_for(tmp_path, w1, pdf_name=f"{w1['openalex_id']}.pdf")
+    _build_multi_facet_dossier_for(tmp_path, w3, pdf_name=f"{w3['openalex_id']}.pdf")
 
     for w in (w0, w1):
         add_override(
@@ -304,6 +428,7 @@ def _build_full_wiki(tmp_path):
         {**w1, "relationship": "extends", "confidence": 1.0, "justification": "accepted",
          "verification_status": "verified", "verification_source": "evidence-dossier"},
         {**w2, "relationship": "background-mention", "confidence": 0.3, "justification": "Mentioned only."},
+        w3,
     ]
     report.bake_and_save(PARALLEL_NETCDF_WORK, classified, base=tmp_path, verbose=False)
 
@@ -311,7 +436,7 @@ def _build_full_wiki(tmp_path):
 
     return {
         "seed_id": seed_id,
-        "w0": w0, "w1": w1, "w2": w2,
+        "w0": w0, "w1": w1, "w2": w2, "w3": w3,
         "wiki_root": tmp_path / "wake-out" / seed_id,
     }
 
@@ -357,3 +482,19 @@ def test_full_wiki_output_satisfies_all_invariants(tmp_path):
     assert "[Narrative](narrative.md)" in readme_text
     assert "[Evidence Wiki](evidence/index.md)" in readme_text
     assert "[Themes](evidence/themes/index.md)" in readme_text
+
+    # w3's dossier has two facets (uses-as-tool + applies-to-domain) --
+    # its JSON sidecar's proposed.relationships must satisfy the facet
+    # invariant, and its rendered .md must show both per-facet sections.
+    w3_json = evidence.load_dossier(ctx["seed_id"], ctx["w3"]["openalex_id"], base=tmp_path)
+    assert_facet_list_valid(w3_json["proposed"]["relationships"], source="evidence/W1000000004.json (proposed)")
+    assert_facet_list_valid(w3_json["provisional"]["relationships"], source="evidence/W1000000004.json (provisional)")
+
+    w3_dossier = (wiki_root / "evidence" / f"{ctx['w3']['openalex_id']}.md").read_text()
+    assert "### uses-as-tool (confidence: 0.95)" in w3_dossier
+    assert "### applies-to-domain (confidence: 0.80)" in w3_dossier
+
+    # impact.md's relationship table footnotes the over-count caused by
+    # w3's two facets.
+    impact_text = (wiki_root / "impact.md").read_text()
+    assert "Rows may sum to more than the total classified count" in impact_text

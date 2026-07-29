@@ -208,11 +208,23 @@ def apply_overrides(
     return result
 
 
-def relationship_score(relationship: str, cited_by_count: int | None) -> float:
+def relationship_score(relationships: "list[dict] | str", cited_by_count: int | None) -> float:
     """Single source of truth for the ranking formula used both for the
     impact brief's "Strongest Evidence" (this module) and the evidence
-    wiki's index.md ranking (evidence_wiki.py) -- relationship strength x
+    wiki's index.md ranking (evidence_wiki.py) -- MAX facet strength x
     log(1 + downstream cited_by_count).
+
+    *relationships* accepts either a single legacy label string (kept for
+    every existing call site and for a plain human-judgment override,
+    which is always single-label) or a multi-facet list of
+    {"label": ..., ...} dicts (see classify.py's multi-facet schema). A
+    citing work that's genuinely both "uses-as-tool" and
+    "applies-to-domain" scores by whichever facet's strength is highest --
+    MAX, not sum or average (see BACKLOG/PLAN discussion): the strongest
+    single story a work tells is what should drive its rank, not an
+    accumulation across stories, which would let a purely-decorative
+    second facet inflate a work's position without a correspondingly
+    stronger claim on the seed's impact.
 
     Strength is always looked up fresh from relationship_strength() (which
     reads classify.relationship_strength from config, falling back to
@@ -224,18 +236,25 @@ def relationship_score(relationship: str, cited_by_count: int | None) -> float:
     sidecar on disk.
     """
     import math
-    strength = relationship_strength().get(relationship, 1)
+    strengths = relationship_strength()
+    if isinstance(relationships, str):
+        best = strengths.get(relationships, 1)
+    else:
+        labels = [f.get("label") for f in (relationships or []) if isinstance(f, dict)]
+        best = max((strengths.get(label, 1) for label in labels), default=1)
     downstream = cited_by_count or 0
-    return strength * math.log1p(downstream)
+    return best * math.log1p(downstream)
 
 
 def _score(work: dict) -> float:
-    """Rank score for a classified citing work dict. See
-    relationship_score() for the formula -- deliberately ignores any
-    legacy "strength" field a pre-existing sidecar/override might still
-    carry (see relationship_score()'s docstring)."""
+    """Rank score for a classified citing work dict. Prefers the
+    multi-facet "relationships" list when present, falling back to the
+    legacy "relationship" scalar (see relationship_score()'s MAX-across-
+    facets formula) -- deliberately ignores any legacy "strength" field a
+    pre-existing sidecar/override might still carry (see
+    relationship_score()'s docstring)."""
     return relationship_score(
-        work.get("relationship", "background-mention"),
+        work.get("relationships") or work.get("relationship", "background-mention"),
         work.get("cited_by_count", 0),
     )
 
@@ -318,12 +337,21 @@ def build_metrics(
         if w.get("abstract_source"):
             backfilled_abstract += 1
 
+    # Counts each classified work under EVERY facet it has (see Q2 in the
+    # multi-facet design discussion), not just its top/legacy facet -- a
+    # work that's genuinely both "uses-as-tool" and "applies-to-domain"
+    # increments both rows. Rows can therefore sum to more than
+    # classified_count; bake_markdown's rendered table footnotes this.
+    # Almost every work has exactly one facet (see classify.py's
+    # MAX_FACETS/prompt discipline), so the over-count is small in
+    # practice, not the common case.
     by_relationship: dict[str, int] = Counter()
     verified_count = 0
     self_extension_count = 0
     for w in classified:
-        rel = w.get("relationship", "background-mention")
-        by_relationship[rel] += 1
+        facets = w.get("relationships") or [{"label": w.get("relationship", "background-mention")}]
+        for f in facets:
+            by_relationship[f.get("label", "background-mention")] += 1
         if w.get("verification_status") == "verified":
             verified_count += 1
         if w.get("author_overlap"):
@@ -369,6 +397,7 @@ def build_metrics(
                 "relationship": w.get("relationship"),
                 "confidence": w.get("confidence"),
                 "justification": w.get("justification"),
+                "relationships": w.get("relationships"),
                 "human_reviewed": bool(w.get("human_reviewed")),
                 "verification_status": w.get("verification_status", "provisional"),
                 "verification_source": w.get("verification_source"),
@@ -591,6 +620,14 @@ def bake_markdown(
         pct = 100.0 * cnt / classified_count if classified_count else 0.0
         lines.append(f"| {rel} | {cnt:,} | {pct:.1f}% |")
     lines.append("")
+    if sum(by_rel.values()) > classified_count:
+        lines.append(
+            "*Rows may sum to more than the total classified count: a "
+            "citing work can legitimately show more than one relationship "
+            "to the seed (e.g. both `uses-as-tool` and `applies-to-domain`) "
+            "-- each is counted in its own row.*"
+        )
+        lines.append("")
 
     lines.append("## Strongest Evidence")
     lines.append("")
@@ -615,8 +652,6 @@ def bake_markdown(
             f"{author_tag} et al., {ev.get('year', '?')} "
             f"| {ev.get('cited_by_count', 0):,} citations"
         )
-        rel = ev.get("relationship", "?")
-        conf = ev.get("confidence", 0)
         just = ev.get("justification", "")
         status = ev.get("verification_status", "provisional")
         if status == "verified":
@@ -629,7 +664,23 @@ def bake_markdown(
             status_tag = " [PROVISIONAL — abstract-only, not yet checked against full text]"
         if ev.get("author_overlap"):
             status_tag += " [SELF-EXTENSION — seed's own team]"
-        lines.append(f"> *{rel}*{status_tag} (confidence: {conf:.2f}) — {just}")
+
+        facets = ev.get("relationships") or [
+            {"label": ev.get("relationship", "?"), "confidence": ev.get("confidence", 0)}
+        ]
+        if len(facets) == 1:
+            f = facets[0]
+            lines.append(f"> *{f['label']}*{status_tag} (confidence: {f.get('confidence', 0):.2f}) — {just}")
+        else:
+            # A verified work's top facet is the human-affirmed one (see
+            # evidence_wiki.mark_verified) -- only it gets the [VERIFIED]
+            # tag; the work's other facets are unaffirmed alternatives,
+            # still shown so the multi-facet reading isn't hidden.
+            facet_bits = []
+            for i, f in enumerate(facets):
+                tag = status_tag if i == 0 else ""
+                facet_bits.append(f"*{f['label']}*{tag} (confidence: {f.get('confidence', 0):.2f})")
+            lines.append(f"> {'; '.join(facet_bits)} — {just}")
         id_parts = []
         if ev.get("doi"):
             id_parts.append(f"DOI: [{ev['doi']}](https://doi.org/{ev['doi']})")
