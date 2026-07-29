@@ -19,12 +19,18 @@
     "pdf_path": "/abs/path/to/wake-out/<seed>/pdfs/<citing-id>.pdf",
     "pdf_source": "semanticscholar",
     "extracted_text_path": "/abs/path/to/wake-out/<seed>/pdfs/<citing-id>.json",
-    "provisional": {"relationship": "uses-as-tool", "confidence": 0.4, "justification": "..."},
+    "provisional": {
+      "relationship": "uses-as-tool", "confidence": 0.4, "justification": "...",
+      "relationships": [{"label": "uses-as-tool", "confidence": 0.4, "justification": "..."}]
+    },
     "proposed": {
       "relationship": "extends",
       "confidence": 0.9,
       "justification": "...",
-      "agrees_with_provisional": false
+      "agrees_with_provisional": false,
+      "relationships": [
+        {"label": "extends", "confidence": 0.9, "justification": "...", "quotes": [{"page": 4, "text": "...", "note": "..."}]}
+      ]
     },
     "quotes": [
       {"page": 4, "text": "<full paragraph, verbatim>", "note": "<what this shows>"}
@@ -32,6 +38,13 @@
   }
 }
 ```
+`relationship`/`confidence`/`justification` are always the top
+(most-confident) facet from `relationships` — read those scalars unless
+you specifically need every facet. `quotes` at the top level is the
+deduplicated union of every facet's own `quotes`, in facet order. See
+`classify.md`'s "Multi-Facet Relationships" section for the full schema
+and how to opt into it (`evidence.prompt_version: "evidence-2"`); by
+default (`evidence-1`) `relationships` is always a single-element list.
 `pdf_path`/`extracted_text_path` in this CLI response are always
 absolute, ready to open directly. The `evidence/<citing-id>.json`
 sidecar written to disk stores the same two paths *relative to its own
@@ -57,6 +70,19 @@ human-judgment` override (no dossier behind it) leaves the wiki
 untouched. Re-running `wake evidence --force` on an already-verified
 dossier resets it back to `pending-human-review` — a fresh full-text read
 is a new finding, not a continuation of the old sign-off.
+
+For a multi-facet dossier, `--relationship` affirms exactly one facet at
+a time: if it matches one of the dossier's existing facets, that facet
+is flagged verified and the model's *other* facets are left in place,
+untouched, as unaffirmed-but-still-evidenced alternative readings (a
+paper can genuinely be both `uses-as-tool` and `applies-to-domain`; the
+human affirming one doesn't make the other one wrong, just unconfirmed).
+If `--relationship` names a facet the model never proposed (a genuine
+correction), it's appended as a new verified facet, again without
+deleting the model's original reading — it's still real evidence about
+the text, just not the story the human is affirming. There's no way to
+affirm two facets in a single `wake override` call; run it again with a
+different `--relationship` if a human wants to affirm more than one.
 
 ## Re-printing an already-built dossier
 

@@ -230,7 +230,12 @@ def test_mark_verified_relationship_correction_updates_proposed_and_index(tmp_pa
     extraction directly) must update proposed.relationship so index.md/log.md
     reflect the human-confirmed relationship, not the superseded model
     conclusion -- otherwise the wiki silently drifts from what the impact
-    brief actually uses."""
+    brief actually uses. Per the multi-facet append-not-replace design
+    (see evidence_wiki.mark_verified's docstring), the model's original
+    facet is preserved as an unaffirmed alternative rather than deleted --
+    both proposed:extends and proposed:uses-as-tool legitimately appear in
+    the dossier's tags, but only the human-affirmed facet is flagged
+    verified."""
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     citing_id = SAMPLE_CITING_WORKS[0]["openalex_id"]
     _build(tmp_path, citing_work=_classified_work(0))  # dossier proposes "extends"
@@ -249,15 +254,20 @@ def test_mark_verified_relationship_correction_updates_proposed_and_index(tmp_pa
     assert loaded["proposed"]["model_justification"]
     assert loaded["human_verification"]["corrected_from"] == "extends"
 
+    facets_by_label = {f["label"]: f for f in loaded["proposed"]["relationships"]}
+    assert facets_by_label["uses-as-tool"]["verified"] is True
+    assert facets_by_label["extends"]["verified"] is False
+
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
     assert "proposed:uses-as-tool" in md_text
-    assert "proposed:extends" not in md_text
+    assert "proposed:extends" in md_text  # preserved as an unaffirmed alternative, not deleted
     assert "corrected the model's reading from *extends* to *uses-as-tool*" in md_text
 
+    # index.md lists every facet the dossier has (not just the
+    # human-affirmed one) -- both labels legitimately appear.
     index_p = evidence_wiki.rebuild_index(seed_id, base=tmp_path)
     index_text = index_p.read_text()
-    assert "*uses-as-tool*" in index_text
-    assert "*extends*" not in index_text
+    assert "*extends, uses-as-tool*" in index_text
 
 
 # --- add_override wiring --------------------------------------------------
