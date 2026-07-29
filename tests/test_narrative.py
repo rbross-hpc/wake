@@ -20,6 +20,7 @@ from wake import evidence, narrative, themes
 from wake.classify import save_classified
 from wake.report import add_override
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
+from .wiki_invariants import assert_no_malformed_wikilinks, assert_r_anchors_resolve
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
 
@@ -668,6 +669,7 @@ def test_section_md_links_ref_marker_to_dossier_when_one_exists(tmp_path):
     text = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
     assert f"[{cid}](../../evidence/{cid}.md)" in text
     assert "[ref:" not in text
+    assert_no_malformed_wikilinks(text)
 
 
 def test_section_md_leaves_ref_marker_raw_when_no_dossier(tmp_path):
@@ -873,6 +875,7 @@ def test_stitch_uses_obsidian_block_id_anchors_not_html_anchors(tmp_path):
     for line in text.splitlines():
         if line.startswith("1. ") or line.startswith("2. "):
             assert line.rstrip().endswith(" ^r1") or line.rstrip().endswith(" ^r2")
+    assert_r_anchors_resolve(text)
 
 
 def test_stitch_ref_numbers_are_stable_across_reuse(tmp_path):

@@ -22,6 +22,7 @@ from wake.io import atomic_write_json
 from wake.report import add_override
 from wake.seed import work_dir
 from wake.state import mark_stage_complete
+from .wiki_invariants import assert_no_malformed_wikilinks
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
@@ -228,6 +229,7 @@ def test_dossier_md_referenced_by_theme(tmp_path):
     ).read_text()
     assert "**Referenced by:**" in text
     assert "theme [Theme One](themes/t1.md)" in text
+    assert_no_malformed_wikilinks(text)
 
 
 def test_dossier_md_referenced_by_narrative_section(tmp_path):
