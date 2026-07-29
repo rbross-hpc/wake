@@ -53,7 +53,7 @@ REQUIRED_KEYS_BY_TYPE: dict[str, set[str]] = {
     "impact-brief": {
         "title", "seed_openalex_id", "citing_count", "verified_count",
         "provisional_count", "themes_confirmed", "themes_draft",
-        "narrative_status", "generated_at", "tags",
+        "narrative_status", "seed_pdf_status", "generated_at", "tags",
     },
     "narrative": {
         "title", "seed_openalex_id", "confirmed_sections", "draft_sections",

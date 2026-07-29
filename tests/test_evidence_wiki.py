@@ -439,3 +439,129 @@ def test_wiki_orientation_created_as_side_effect_of_add_override(tmp_path):
 
     agents_text = evidence_wiki.agents_md_path(seed_id, base=tmp_path).read_text()
     assert "Full-text-verified: 1" in agents_text
+
+
+# --- seed_pdf_status -----------------------------------------------------
+
+def test_seed_pdf_status_not_attempted_when_no_seed_pdf_key(tmp_path):
+    from wake.io import atomic_write_json
+    from wake.seed import work_dir
+
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    wd = work_dir(seed_id, base=tmp_path)
+    wd.mkdir(parents=True)
+    atomic_write_json(wd / "seed.json", {"openalex_id": seed_id, "title": "x"})
+
+    status = evidence_wiki.seed_pdf_status(seed_id, base=tmp_path)
+    assert status == {"status": "not-attempted", "tried": [], "fallback_links": {}}
+
+
+def test_seed_pdf_status_not_attempted_when_no_seed_json_at_all(tmp_path):
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    status = evidence_wiki.seed_pdf_status(seed_id, base=tmp_path)
+    assert status["status"] == "not-attempted"
+
+
+def test_seed_pdf_status_attempted_failed_reflects_seed_json(tmp_path):
+    from wake.io import atomic_write_json
+    from wake.seed import work_dir
+
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    wd = work_dir(seed_id, base=tmp_path)
+    wd.mkdir(parents=True)
+    atomic_write_json(wd / "seed.json", {
+        "openalex_id": seed_id, "title": "x",
+        "seed_pdf": {
+            "path": None,
+            "tried": ["osti", "unpaywall"],
+            "fallback_links": {"unpaywall": "https://unpaywall.org/x"},
+        },
+    })
+
+    status = evidence_wiki.seed_pdf_status(seed_id, base=tmp_path)
+    assert status["status"] == "attempted-failed"
+    assert status["tried"] == ["osti", "unpaywall"]
+    assert status["fallback_links"] == {"unpaywall": "https://unpaywall.org/x"}
+
+
+def test_seed_pdf_status_cached_when_seed_pdf_file_exists(tmp_path):
+    from wake.io import atomic_write_json
+    from wake.seed import work_dir
+
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    wd = work_dir(seed_id, base=tmp_path)
+    wd.mkdir(parents=True)
+    atomic_write_json(wd / "seed.json", {
+        "openalex_id": seed_id, "title": "x",
+        "seed_pdf": {"path": None, "tried": ["osti"], "fallback_links": {}},
+    })
+    (wd / "seed.pdf").write_bytes(b"%PDF-1.4 fake")
+
+    # seed.pdf existing on disk wins over a stale failure record in
+    # seed.json (e.g. a manual `wake seed fetch-pdf --from-pdf` after an
+    # earlier auto-fetch failure, before seed.json's own record catches up).
+    status = evidence_wiki.seed_pdf_status(seed_id, base=tmp_path)
+    assert status["status"] == "cached"
+
+
+def test_readme_shows_seed_pdf_bullet_only_when_attempted_failed(tmp_path):
+    from wake.io import atomic_write_json
+    from wake.seed import work_dir
+
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    wd = work_dir(seed_id, base=tmp_path)
+    wd.mkdir(parents=True)
+    atomic_write_json(wd / "seed.json", {
+        "openalex_id": seed_id, "title": "x",
+        "seed_pdf": {"path": None, "tried": ["osti", "arxiv"], "fallback_links": {}},
+    })
+
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
+    assert "**Seed paper's own PDF**: not yet acquired" in text
+    assert "tried osti, arxiv without success" in text
+    assert "wake seed fetch-pdf --from-pdf PATH" in text
+
+
+def test_readme_omits_seed_pdf_bullet_when_not_attempted(tmp_path):
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
+    assert "Seed paper's own PDF" not in text
+
+
+def test_readme_omits_seed_pdf_bullet_when_cached(tmp_path):
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    from wake.seed import work_dir
+    wd = work_dir(seed_id, base=tmp_path)
+    wd.mkdir(parents=True)
+    (wd / "seed.pdf").write_bytes(b"%PDF-1.4 fake")
+
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
+    assert "Seed paper's own PDF" not in text
+
+
+def test_agents_md_shows_seed_pdf_status_for_all_three_states(tmp_path):
+    from wake.io import atomic_write_json
+    from wake.seed import work_dir
+
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = evidence_wiki.agents_md_path(seed_id, base=tmp_path).read_text()
+    assert "Seed PDF: not attempted yet" in text
+
+    wd = work_dir(seed_id, base=tmp_path)
+    atomic_write_json(wd / "seed.json", {
+        "openalex_id": seed_id, "title": "x",
+        "seed_pdf": {"path": None, "tried": ["osti"], "fallback_links": {}},
+    })
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = evidence_wiki.agents_md_path(seed_id, base=tmp_path).read_text()
+    assert "Seed PDF: attempted and failed (tried: osti)" in text
+
+    (wd / "seed.pdf").write_bytes(b"%PDF-1.4 fake")
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
+    text = evidence_wiki.agents_md_path(seed_id, base=tmp_path).read_text()
+    assert "Seed PDF: cached" in text

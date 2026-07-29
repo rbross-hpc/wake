@@ -484,6 +484,48 @@ def rebuild_themes_index(seed_id: str, seed_title: str | None = None, base: Path
     return p
 
 
+def seed_pdf_status(seed_id: str, base: Path | None = None) -> dict[str, Any]:
+    """Classify the seed paper's own PDF-acquisition state into one of
+    three buckets, from whatever seed.json/seed.pdf currently say on
+    disk -- used by both orientation files and bake_markdown() so all
+    three surfaces (README.md, AGENTS.md, impact.md) agree on the same
+    status, the same "derived from disk, never itself a source of
+    truth" convention as every other orientation field.
+
+      "cached"           -- seed.pdf exists (wake seed fetch-pdf, auto
+                             or manual, succeeded).
+      "attempted-failed" -- seed.json's seed_pdf sub-object records an
+                             attempt (auto-fetch at `wake resolve` time
+                             tried every configured source) that did
+                             not produce a cached PDF.
+      "not-attempted"    -- no seed_pdf sub-object at all, e.g. a very
+                             early-pipeline packet, or
+                             pdf_fetch.seed_pdf_at_resolve was disabled.
+
+    A `wake resolve` auto-fetch failure is silent by design (see
+    seed.py's _maybe_auto_fetch_seed_pdf) so it never blocks the
+    workflow -- but that silence means the *only* record of it is this
+    seed_pdf sub-object, easy to miss without surfacing it explicitly
+    in every human/agent-facing view of the folder.
+    """
+    from .pdf_fetch import seed_pdf_path
+    from .seed import load_seed
+
+    if seed_pdf_path(seed_id, base).exists():
+        return {"status": "cached", "tried": [], "fallback_links": {}}
+
+    seed_work = load_seed(seed_id, base) or {}
+    info = seed_work.get("seed_pdf") or {}
+    if not info:
+        return {"status": "not-attempted", "tried": [], "fallback_links": {}}
+
+    return {
+        "status": "attempted-failed",
+        "tried": info.get("tried") or [],
+        "fallback_links": info.get("fallback_links") or {},
+    }
+
+
 def _orientation_counts(seed_id: str, base: Path | None = None) -> dict[str, Any]:
     """Gather the counts both README.md and AGENTS.md need to describe
     what's been done so far, from whatever's currently on disk. Shared
@@ -518,6 +560,7 @@ def _orientation_counts(seed_id: str, base: Path | None = None) -> dict[str, Any
         "themes_confirmed": themes_confirmed,
         "themes_draft": themes_draft,
         "themes_exist": bool(all_themes),
+        "seed_pdf": seed_pdf_status(seed_id, base),
     }
 
 
@@ -604,6 +647,20 @@ def _build_readme_lines(seed_id: str, seed_work: dict[str, Any] | None, counts: 
         )
     if counts["narrative_exists"]:
         what_was_done.append("a narrative assembled from those confirmed themes")
+
+    # Only "attempted-failed" gets a bullet here -- "not-attempted" isn't
+    # an actionable problem (nothing has happened yet, same as every
+    # other bullet in this section only appearing for completed work,
+    # not its absence), and "cached" is the silent green path.
+    seed_pdf = counts["seed_pdf"]
+    if seed_pdf["status"] == "attempted-failed":
+        tried = ", ".join(seed_pdf["tried"]) or "the configured sources"
+        what_was_done.append(
+            f"**Seed paper's own PDF**: not yet acquired (tried {tried} "
+            "without success; see `seed.json` for fallback links to try "
+            "by hand, or run `wake seed fetch-pdf --from-pdf PATH` once "
+            "you have one)"
+        )
 
     if what_was_done:
         lines.append("## What was done")
@@ -741,6 +798,14 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     lines.append(f"- Full-text-verified: {counts['verified_count']}")
     lines.append(f"- Confirmed themes: {counts['themes_confirmed']}")
     lines.append(f"- Narrative status: {narrative_status}")
+    seed_pdf = counts["seed_pdf"]
+    if seed_pdf["status"] == "cached":
+        lines.append("- Seed PDF: cached")
+    elif seed_pdf["status"] == "attempted-failed":
+        tried = ", ".join(seed_pdf["tried"]) or "configured sources"
+        lines.append(f"- Seed PDF: attempted and failed (tried: {tried}) — see seed.json's `seed_pdf` field for fallback links")
+    else:
+        lines.append("- Seed PDF: not attempted yet")
     lines.append("")
 
     lines.append("## Two-surface convention")
