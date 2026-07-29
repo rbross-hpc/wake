@@ -4,9 +4,11 @@
 wake-out/<OpenAlex-ID>/
   README.md               — human-oriented wiki home page: title + byline, a "What
                              this folder is" paragraph, a "What was done" summary
-                             (counts, only for stages that have actually run), a
-                             "Where to start" section linking impact.md / narrative.md
-                             / evidence/index.md / evidence/themes/index.md /
+                             (counts, only for stages that have actually run --
+                             including a call-out if the seed's own PDF was
+                             auto-attempted and failed to acquire), a "Where to
+                             start" section linking impact.md / narrative.md /
+                             evidence/index.md / evidence/themes/index.md /
                              evidence/log.md (each omitted until its target exists),
                              reading conventions, and the four human-editable .jsonl
                              files; regenerated automatically as a side effect of
@@ -18,15 +20,23 @@ wake-out/<OpenAlex-ID>/
                              possibly wake not even installed. Terse schema
                              reference (every artifact type's fields, the .md=human/
                              .json=agent surface convention, relative-path rule,
-                             regeneration verbs, and a handful of concrete query
-                             recipes) rather than README.md's explanatory prose.
-                             Carries no YAML frontmatter (unlike every other
-                             rendered .md here) -- it's a plain reference doc, not
-                             an OKF concept doc. Same regeneration trigger as
-                             README.md
+                             regeneration verbs, a "Seed PDF: cached/attempted and
+                             failed/not attempted yet" status line, and a handful
+                             of concrete query recipes) rather than README.md's
+                             explanatory prose. Carries no YAML frontmatter (unlike
+                             every other rendered .md here) -- it's a plain
+                             reference doc, not an OKF concept doc. Same
+                             regeneration trigger as README.md
   seed.json               — resolved seed + LLM description + seed_pdf sub-object
+                             (path/source on success; tried/fallback_links on
+                             failure -- see evidence_wiki.seed_pdf_status(), the
+                             single source of truth README.md/AGENTS.md/impact.md
+                             all read this from)
   seed.pdf                — the seed paper's own PDF (wake seed fetch-pdf; auto-attempted
-                             at wake resolve time, silently skipped if unavailable)
+                             at wake resolve time, silently skipped if unavailable --
+                             a failed attempt is never invisible for long, though:
+                             it's surfaced in README.md/AGENTS.md/impact.md's
+                             seed_pdf_status until someone supplies a copy)
   seed.pdf.json           — seed PDF full text, page-tagged (sibling cache, same format
                              as pdfs/<citing-id>.json)
   citing.json             — all citing works (paginated, cached)
@@ -35,9 +45,10 @@ wake-out/<OpenAlex-ID>/
   impact.json             — aggregated metrics (includes verified_count)
   impact.md               — the impact brief: OKF-style YAML frontmatter (seed
                              metadata, citing/verified/provisional counts,
-                             themes/narrative status) + a "See also" nav line to the
-                             evidence wiki/themes/narrative (each conditional on
-                             existing); notes coverage if partial; per-entry
+                             themes/narrative status, seed_pdf_status) + a "See
+                             also" nav line to the evidence wiki/themes/narrative
+                             (each conditional on existing); notes coverage if
+                             partial; per-entry
                              [PROVISIONAL]/[VERIFIED via ...] tags. Each "Strongest
                              Evidence" entry's title links to its evidence dossier
                              (when one exists), and its DOI/OpenAlex ID are both

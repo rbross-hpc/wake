@@ -82,20 +82,24 @@ there's nothing to report beyond "looks good."
 wake --json resolve "<seed>"
 ```
 
-Show the human the resolved title/year/venue/OpenAlex ID. **Confirm this is
-the paper they meant** before proceeding — title search can mismatch.
-
 `wake resolve` also automatically tries to acquire the seed paper's own PDF
-(same source chain as `wake fetch-pdf`, stored at `wake-out/<seed>/seed.pdf`).
-This is a silent side effect — resolve never blocks on it. Check the result:
+(same source chain as `wake fetch-pdf`, stored at `wake-out/<seed>/seed.pdf`) —
+a silent side effect, resolve never blocks on it. Check the result in the same
+breath as everything else you're confirming with the human:
 
 ```bash
 wake --json status "<seed>"   # shows "Seed PDF: cached at ..." or "not available"
 ```
 
-If the automatic fetch failed (the paper is behind a paywall not covered by
-any configured source), ask the human for a copy — they should have one, or
-can get one from the publisher. Once they do:
+**Present both to the human together, as one confirmation step**: the
+resolved title/year/venue/OpenAlex ID (title search can mismatch — this is
+the cheapest point to catch it), *and* the seed-PDF status. Don't treat the
+PDF check as a separate, skippable aside — if the automatic fetch failed
+(the paper is behind a paywall not covered by any configured source), ask
+the human for a copy right here, before moving to step 2. They should have
+one, or can get one from the publisher; `wake status` also surfaces
+fallback links (Unpaywall, publisher DOI, Google Scholar) recorded in
+`seed.json` from the failed attempt. Once they have a copy:
 
 ```bash
 wake --json seed fetch-pdf "<seed>" --from-pdf /path/to/paper.pdf
@@ -103,8 +107,13 @@ wake --json seed fetch-pdf "<seed>" --from-pdf /path/to/paper.pdf
 
 wake validates that the supplied PDF matches the seed's metadata before
 accepting it. The seed PDF is not yet used in any LLM prompts (it's acquired
-now so it's on hand when future commands need it); you don't need to take any
-further action with it at this stage.
+now so it's on hand when future commands need it) — but its acquisition
+status is surfaced everywhere the packet is: `wake-out/<seed>/README.md`,
+`AGENTS.md`, and `impact.md`'s frontmatter (`seed_pdf_status`) all show
+whether it's `cached`, `attempted-failed`, or `not-attempted`, so a
+still-missing seed PDF stays visible for the life of the packet, not just
+at this one step. If the human genuinely doesn't have a copy and can't get
+one, that's fine — proceed anyway; nothing downstream requires it yet.
 
 ### 2. Fetch citing works and report scale
 
