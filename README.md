@@ -50,42 +50,73 @@ downstream agent handed just the folder. See
 [`wake/skills/impact-analysis/references/output-layout.md`](wake/skills/impact-analysis/references/output-layout.md)
 for the full directory layout.
 
-## Install
+## Getting Started
+
+You'll mostly interact with `wake` by asking your agent to run it, not
+by running it yourself.
+
+### 1. Install wake
+
+In your agent harness (opencode, Claude Code, or similar), ask:
+
+> Please install wake from GitHub and export its bundled Agent Skill
+> into this project so you know how to use it.
+
+The agent should run something equivalent to:
 
 ```bash
-pip install -e ".[dev]"
-
-# Optional: PDF abstract extraction (wake fill-abstract --from-pdf)
-pip install -e ".[dev,pdf]"
+pip install "wake[pdf] @ git+https://github.com/rbross-hpc/wake.git"
+wake skill export .opencode/agent/wake
 ```
 
-## Quick Start
+(`[pdf]` enables PDF-based abstract recovery; other harnesses use
+their own skill directory in place of `.opencode/agent/wake`.)
 
-```bash
-export OPENAI_API_KEY=your-key
-export OPENAI_BASE_URL=https://apps-stage.inside.anl.gov/argoapi/v1
-export OPENALEX_MAILTO=you@example.com
+`wake skill export` copies wake's bundled `SKILL.md` and reference
+docs into your agent's skill directory. Without this, the agent has
+the CLI available but no sense of *when* to sample vs. scale up, when
+to check cost, or when to check in with you — the whole explore-first
+workflow lives in that skill.
 
-wake --json config validate                   # setup check — run once per session
-wake --json resolve "10.1145/1048935.1050189" # confirm the seed
-wake --json citing "10.1145/1048935.1050189" --sort cited-by
-wake --json sample "10.1145/1048935.1050189" -n 10   # free — no LLM calls
-wake --json classify "10.1145/1048935.1050189" --limit 10 --sort cited-by
-wake --json status "10.1145/1048935.1050189"  # check cost before scaling
-wake --json classify "10.1145/1048935.1050189"
-wake --json bake "10.1145/1048935.1050189"
+### 2. Set your credentials
 
-# Output: wake-out/W2156077349/impact.md
-```
+Wake needs an LLM endpoint. Set these in whatever mechanism your
+harness uses (`.env`, MCP config, shell profile) so wake's subprocess
+inherits them:
 
-See [`docs/workflow.md`](docs/workflow.md) for the full command list
-(including abstract-gap escalation, full-text verification, themes, and
-narrative drafting) and the recommended step-by-step sequence.
+- `OPENAI_API_KEY` — LLM API key (required)
+- `OPENAI_BASE_URL` — API endpoint URL (required)
+- `OPENALEX_MAILTO` — your email, for OpenAlex/Unpaywall's polite pool
+  (recommended — faster, more reliable)
 
-Every command supports `--json` for machine-readable output (a stable
-envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
-"error": {...}}`), and human-readable text otherwise. Global flags:
-`--json`, `--work-dir DIR` (or `WAKE_WORK_DIR` env var), `--verbose`.
+The agent's first move in any session should be
+`wake --json config validate`, which tells it exactly what's missing.
+See [Environment Variables](#environment-variables) below for the
+full list, including optional ones.
+
+### 3. Hand your agent a seed paper
+
+Ask something like:
+
+> Analyze the citation impact of doi:10.1145/1048935.1050189 using wake.
+
+or
+
+> Use wake to analyze who cites "Parallel netCDF" and how.
+
+A DOI, arXiv ID, OpenAlex ID, or paper title all work as the seed.
+
+### 4. Stay in the loop
+
+Because the Agent Skill teaches wake's explore-first discipline, your
+agent should pause and check in with you at natural decision points —
+after resolving the seed, after classifying a sample of ~10 works
+before scaling to hundreds, before running expensive full-text reads,
+before confirming a theme, before stitching a narrative. Answer its
+questions as they come.
+
+When it's done, open `wake-out/<seed>/README.md` in Obsidian, GitHub,
+or your editor of choice — the folder is self-describing.
 
 ## Documentation
 
