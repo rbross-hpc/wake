@@ -23,9 +23,10 @@ import pytest
 from wake import evidence, narrative, report, themes
 from wake.classify import save_classified
 from wake.report import add_override
-from wake.evidence_wiki import rebuild_wiki_home
+from wake.evidence_wiki import rebuild_wiki_orientation
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 from .wiki_invariants import (
+    assert_agents_md_declares_all_types,
     assert_all_relative_md_links_exist,
     assert_facet_list_valid,
     assert_frontmatter_relative_paths_resolve,
@@ -34,6 +35,11 @@ from .wiki_invariants import (
     assert_r_anchors_resolve,
     assert_ref_link_syntax,
 )
+
+# AGENTS.md is a plain reference doc (mirroring a project's own
+# AGENTS.md convention), not an OKF concept doc -- it carries no YAML
+# frontmatter, unlike every other rendered .md in the wiki.
+_NO_FRONTMATTER_FILES = {"AGENTS.md"}
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
 
@@ -432,7 +438,7 @@ def _build_full_wiki(tmp_path):
     ]
     report.bake_and_save(PARALLEL_NETCDF_WORK, classified, base=tmp_path, verbose=False)
 
-    rebuild_wiki_home(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
+    rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
 
     return {
         "seed_id": seed_id,
@@ -451,8 +457,10 @@ def test_full_wiki_output_satisfies_all_invariants(tmp_path):
     for md_path in md_files:
         text = md_path.read_text(encoding="utf-8")
         assert_no_malformed_wikilinks(text, source=md_path)
-        frontmatter = assert_frontmatter_valid(text, source=md_path)
         assert_all_relative_md_links_exist(text, md_path, wiki_root)
+        if md_path.name in _NO_FRONTMATTER_FILES:
+            continue
+        frontmatter = assert_frontmatter_valid(text, source=md_path)
         assert_frontmatter_relative_paths_resolve(frontmatter, md_path)
 
     section_text = (wiki_root / "narrative" / "sections" / "s1.md").read_text()
@@ -482,6 +490,10 @@ def test_full_wiki_output_satisfies_all_invariants(tmp_path):
     assert "[Narrative](narrative.md)" in readme_text
     assert "[Evidence Wiki](evidence/index.md)" in readme_text
     assert "[Themes](evidence/themes/index.md)" in readme_text
+    assert "[AGENTS.md](AGENTS.md)" in readme_text
+
+    agents_text = (wiki_root / "AGENTS.md").read_text()
+    assert_agents_md_declares_all_types(agents_text, md_files, source="AGENTS.md")
 
     # w3's dossier has two facets (uses-as-tool + applies-to-domain) --
     # its JSON sidecar's proposed.relationships must satisfy the facet

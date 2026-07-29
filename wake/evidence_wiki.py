@@ -55,6 +55,10 @@ def wiki_home_path(seed_id: str, base: Path | None = None) -> Path:
     return work_dir(seed_id, base) / "README.md"
 
 
+def agents_md_path(seed_id: str, base: Path | None = None) -> Path:
+    return work_dir(seed_id, base) / "AGENTS.md"
+
+
 def _score(entry: dict[str, Any]) -> float:
     """Rank score for a dossier .json sidecar. Delegates to
     report.relationship_score() -- the single source of truth for this
@@ -480,26 +484,60 @@ def rebuild_themes_index(seed_id: str, seed_title: str | None = None, base: Path
     return p
 
 
-def rebuild_wiki_home(seed_id: str, seed_work: dict[str, Any] | None = None, base: Path | None = None) -> Path:
-    """Regenerate `wake-out/<seed>/README.md`, the wiki's single entry
-    point: a minimal navigation page linking out to the four top-level
-    artifacts (impact brief, narrative, evidence wiki, themes), each with
-    a one-line count, and omitted entirely if its target doesn't exist
-    yet. Like every other wiki file here, this is a derived view --
-    recomputed from whatever's currently on disk, never itself a source
-    of truth -- so it's always safe to regenerate and never goes stale in
-    a way a fresh call can't fix.
-
-    Called as a side effect of the commands that create the artifacts it
-    links to (`wake bake`, `wake evidence`, `wake theme create`/`confirm`,
-    `wake narrative stitch`, `wake override`) -- no separate command
-    needed, same pattern as index.md/log.md/themes/index.md.
-    """
+def _orientation_counts(seed_id: str, base: Path | None = None) -> dict[str, Any]:
+    """Gather the counts both README.md and AGENTS.md need to describe
+    what's been done so far, from whatever's currently on disk. Shared
+    by both builders so the two files never disagree about a number."""
+    from .classify import load_classified
     from .narrative import narrative_md_path
+    from .report import load_overrides
 
     wd = work_dir(seed_id, base)
-    p = wiki_home_path(seed_id, base)
 
+    classified = load_classified(seed_id, base) or []
+    classified_count = sum(1 for w in classified if w.get("relationship"))
+
+    dossiers = _load_all_dossiers(seed_id, base)
+    verified_dossiers = sum(1 for e in dossiers if e.get("verification_status") == "verified")
+
+    overrides = load_overrides(seed_id, base)
+    verified_overrides = sum(1 for o in overrides.values() if o.get("verification_status") == "verified")
+
+    all_themes = _load_all_themes(seed_id, base)
+    themes_confirmed = sum(1 for t in all_themes if t.get("theme_status") == "confirmed")
+    themes_draft = len(all_themes) - themes_confirmed
+
+    return {
+        "impact_exists": (wd / "impact.md").exists(),
+        "narrative_exists": narrative_md_path(seed_id, base).exists(),
+        "citing_count": len(load_citing_ids(seed_id, base)),
+        "classified_count": classified_count,
+        "dossier_count": len(dossiers),
+        "verified_count": max(verified_dossiers, verified_overrides),
+        "pending_count": len(dossiers) - verified_dossiers,
+        "themes_confirmed": themes_confirmed,
+        "themes_draft": themes_draft,
+        "themes_exist": bool(all_themes),
+    }
+
+
+def load_citing_ids(seed_id: str, base: Path | None = None) -> list[str]:
+    """Best-effort count of citing works fetched so far, used only for
+    orientation-file counts -- returns an empty list rather than raising
+    if citing.json doesn't exist yet (nothing fetched) or is malformed."""
+    from .citing import load_citing
+
+    try:
+        return [w.get("openalex_id") for w in (load_citing(seed_id, base) or [])]
+    except (OSError, ValueError):
+        return []
+
+
+def _build_readme_lines(seed_id: str, seed_work: dict[str, Any] | None, counts: dict[str, Any]) -> list[str]:
+    """Render README.md's content: a human-oriented explanation of what
+    this folder is, what's been done, and where to start reading -- not
+    just a bare link list. See rebuild_wiki_orientation()'s docstring for
+    why this and AGENTS.md are two separate files."""
     title = (seed_work or {}).get("title") or seed_id
     doi = (seed_work or {}).get("doi")
     year = (seed_work or {}).get("year")
@@ -521,34 +559,427 @@ def rebuild_wiki_home(seed_id: str, seed_work: dict[str, Any] | None = None, bas
         lines.append(f"*{author_str}*")
     lines.append("")
 
-    if (wd / "impact.md").exists():
-        lines.append("- **[Impact Brief](impact.md)** — reach metrics, top-cited citing works, ranked evidence")
-
-    if narrative_md_path(seed_id, base).exists():
-        lines.append("- **[Narrative](narrative.md)** — assembled prose from confirmed themes")
-
-    dossiers = _load_all_dossiers(seed_id, base)
-    if dossiers:
-        verified = sum(1 for e in dossiers if e.get("verification_status") == "verified")
-        pending = len(dossiers) - verified
-        lines.append(
-            f"- **[Evidence Wiki](evidence/index.md)** — every full-text-verified "
-            f"citing work ({verified} verified / {pending} pending)"
-        )
-
-    all_themes = _load_all_themes(seed_id, base)
-    if all_themes:
-        confirmed = sum(1 for t in all_themes if t.get("theme_status") == "confirmed")
-        draft_n = len(all_themes) - confirmed
-        lines.append(
-            f"- **[Themes](evidence/themes/index.md)** — combined-evidence "
-            f"thematic docs ({confirmed} confirmed / {draft_n} draft)"
-        )
-
-    if dossiers:
-        lines.append("- **[Log](evidence/log.md)** — chronological history of all evidence investigations")
-
+    lines.append("## What this folder is")
+    lines.append("")
+    lines.append(
+        "This is a citation-impact analysis of the paper above, produced by "
+        "[wake](https://github.com/rbross-hpc/wake). It catalogs every work "
+        "that cites this paper, classifies the *nature* of each citation "
+        "(does the citing work extend it, use it as a tool, benchmark "
+        "against it, or just mention it in passing?), and — for the "
+        "highest-signal citations — reads the full text of the citing paper "
+        "to verify that classification and quote the specific passages that "
+        "support it."
+    )
     lines.append("")
 
-    atomic_write_text(p, "\n".join(lines))
-    return p
+    what_was_done: list[str] = []
+    if counts["citing_count"]:
+        what_was_done.append(
+            f"**{counts['citing_count']}** citing works pulled from OpenAlex"
+        )
+    if counts["classified_count"]:
+        what_was_done.append(
+            f"**{counts['classified_count']}** classified by an LLM from title/abstract "
+            "into one of seven relationship types (extends, builds-on, "
+            "uses-as-tool, benchmarks, applies-to-domain, "
+            "related-infrastructure, background-mention)"
+        )
+    if counts["dossier_count"]:
+        what_was_done.append(
+            f"**{counts['dossier_count']}** had their full PDF fetched, extracted, and "
+            "re-classified against the actual body text, with supporting "
+            "passages quoted directly"
+        )
+    if counts["verified_count"]:
+        what_was_done.append(
+            f"**{counts['verified_count']}** verified findings signed off by a human reviewer"
+        )
+    if counts["themes_exist"]:
+        theme_bit = f"**{counts['themes_confirmed']}** confirmed"
+        if counts["themes_draft"]:
+            theme_bit += f" ({counts['themes_draft']} still draft)"
+        what_was_done.append(
+            f"{theme_bit} combined-evidence theme(s) synthesized across multiple dossiers"
+        )
+    if counts["narrative_exists"]:
+        what_was_done.append("a narrative assembled from those confirmed themes")
+
+    if what_was_done:
+        lines.append("## What was done")
+        lines.append("")
+        for item in what_was_done:
+            lines.append(f"- {item}")
+        lines.append("")
+
+    lines.append("## Where to start")
+    lines.append("")
+    if counts["impact_exists"]:
+        lines.append(
+            "- **Get the top-line finding fast** — read the "
+            "[Impact Brief](impact.md). Its \"Strongest Evidence\" section "
+            "ranks the most impactful adoptions."
+        )
+    if counts["narrative_exists"]:
+        lines.append(
+            "- **Read the story** — read the [Narrative](narrative.md), "
+            "prose that stitches the confirmed themes together with "
+            "numbered citations back to the evidence."
+        )
+    if counts["dossier_count"]:
+        lines.append(
+            "- **Drill into a specific citing work** — start at the "
+            "[Evidence Wiki](evidence/index.md) and pick a dossier. Each "
+            "has quoted passages with page numbers."
+        )
+    if counts["themes_exist"]:
+        lines.append(
+            "- **See what patterns emerged across citing works** — read "
+            "[Themes](evidence/themes/index.md)."
+        )
+    if counts["dossier_count"]:
+        lines.append(
+            "- **Audit what was investigated, in what order** — read the "
+            "[Log](evidence/log.md)."
+        )
+    if not any([counts["impact_exists"], counts["dossier_count"], counts["themes_exist"]]):
+        lines.append(
+            "- Nothing has been generated yet beyond this page. Run `wake "
+            "classify` and `wake bake` in the directory above `wake-out/` "
+            "to produce an impact brief."
+        )
+    lines.append("")
+
+    lines.append("## Reading conventions")
+    lines.append("")
+    lines.append(
+        "- Every `.md` file in this folder that documents a specific "
+        "finding has a `.json` sidecar with the same data in structured "
+        "form. The `.md` is what you're meant to read; the `.json` is for "
+        "tools."
+    )
+    lines.append(
+        "- \"Provisional\" findings are from the abstract only — treat them "
+        "as placeholder guesses. \"Verified\" findings have been checked "
+        "against the full text and signed off by a human."
+    )
+    lines.append(
+        "- All links in this folder are relative, so the whole folder can "
+        "be moved, zipped, or shared and everything will still resolve."
+    )
+    lines.append(
+        "- A citing work flagged as author-overlap with the seed is the "
+        "seed's own team publishing follow-on work, not independent "
+        "third-party adoption — called out wherever it applies."
+    )
+    lines.append("")
+
+    lines.append("## Editing this folder by hand")
+    lines.append("")
+    lines.append("Human-facing files you might edit directly, one JSON object per line:")
+    lines.append("")
+    lines.append("- `overrides.jsonl` — record a corrected classification")
+    lines.append("- `duplicates.jsonl` — mark a citing work as a duplicate of another")
+    lines.append("- `exclusions.jsonl` — exclude a work from theme synthesis")
+    lines.append("- `manual_abstracts.jsonl` — supply an abstract OpenAlex is missing")
+    lines.append("")
+    lines.append(
+        "These are append-only — later lines for the same work win, "
+        "nothing is ever rewritten in place. Everything else in this "
+        "folder is derived from these plus the raw fetched/LLM data, and "
+        "is safe to delete and regenerate."
+    )
+    lines.append("")
+
+    lines.append("---")
+    lines.append("")
+    lines.append(
+        "*Generated by [wake](https://github.com/rbross-hpc/wake). To "
+        "regenerate any view from the underlying data, run `wake bake` in "
+        "the directory above `wake-out/`. If you're an agent working with "
+        "this folder, see [AGENTS.md](AGENTS.md).*"
+    )
+    lines.append("")
+    return lines
+
+
+def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, counts: dict[str, Any]) -> list[str]:
+    """Render AGENTS.md's content: a terse, schema-first reference for an
+    agent handed this folder with no other context (no access to wake's
+    own source, and possibly not even wake installed). See
+    rebuild_wiki_orientation()'s docstring for why this is a separate
+    file from README.md."""
+    title = (seed_work or {}).get("title") or seed_id
+    doi = (seed_work or {}).get("doi")
+    year = (seed_work or {}).get("year")
+
+    narrative_status = "assembled" if counts["narrative_exists"] else "absent"
+
+    lines: list[str] = []
+    lines.append("# AGENTS.md — orientation for an agent handed this folder")
+    lines.append("")
+    lines.append(
+        "This folder is a **citation-impact analysis** of one seed paper, "
+        "produced by [wake](https://github.com/rbross-hpc/wake). Every "
+        "file here is one of a small number of artifact types, each with a "
+        "stable schema described below. This file is self-contained — you "
+        "do not need wake installed, or access to its source, to read the "
+        "data in this folder."
+    )
+    lines.append("")
+
+    lines.append("## Seed paper")
+    lines.append("")
+    lines.append(f"- Title: {title}")
+    if year:
+        lines.append(f"- Year: {year}")
+    if doi:
+        lines.append(f"- DOI: {doi}")
+    lines.append(f"- OpenAlex ID: {seed_id}")
+    lines.append(f"- Citing works fetched: {counts['citing_count']}")
+    lines.append(f"- Citing works classified: {counts['classified_count']}")
+    lines.append(f"- Full-text-verified: {counts['verified_count']}")
+    lines.append(f"- Confirmed themes: {counts['themes_confirmed']}")
+    lines.append(f"- Narrative status: {narrative_status}")
+    lines.append("")
+
+    lines.append("## Two-surface convention")
+    lines.append("")
+    lines.append(
+        "- **`.md` files** are the human surface: rendered prose, meant to "
+        "be read by a person in Obsidian, GitHub, or a plain editor."
+    )
+    lines.append(
+        "- **`.json` sidecars** are the agent surface. Every `.md` concept "
+        "doc (dossier, theme, narrative section, impact brief) has a "
+        "`.json` alongside it with the same information in structured "
+        "form. **If you're programmatically extracting a finding, read "
+        "the `.json`, never scrape prose out of the `.md`.**"
+    )
+    lines.append(
+        "- Exception: `README.md`, `evidence/index.md`, `evidence/log.md`, "
+        "and `evidence/themes/index.md` are pure catalogs with no JSON of "
+        "their own — every fact in them is already in some other file's "
+        "JSON sidecar."
+    )
+    lines.append("")
+
+    lines.append("## Frontmatter `type:` values")
+    lines.append("")
+    lines.append(
+        "Every rendered `.md` in this folder (except this file and "
+        "README.md) opens with a YAML frontmatter block whose `type:` key "
+        "is one of:"
+    )
+    lines.append("")
+    lines.append("- `wiki-home` — README.md")
+    lines.append("- `impact-brief` — impact.md")
+    lines.append("- `narrative` — narrative.md")
+    lines.append("- `narrative-outline` — narrative/outline.md")
+    lines.append("- `narrative-section` — narrative/sections/<slug>.md")
+    lines.append("- `theme` — evidence/themes/<slug>.md")
+    lines.append("- `citing-work-evidence` — evidence/<id>.md")
+    lines.append("- `index` — evidence/index.md, evidence/themes/index.md")
+    lines.append("- `log` — evidence/log.md")
+    lines.append("")
+
+    lines.append("## File map")
+    lines.append("")
+    lines.append("```")
+    lines.append("seed.json               resolved seed metadata + LLM description")
+    lines.append("citing.json             every citing work fetched from OpenAlex")
+    lines.append("classified.json         per-citing-work relationship classification")
+    lines.append("impact.json / .md       aggregated reach metrics + ranked evidence")
+    lines.append("narrative.md            assembled prose (sections live in narrative/)")
+    lines.append("overrides.jsonl         human-reviewed relationship corrections")
+    lines.append("duplicates.jsonl        citing works marked as duplicates of another")
+    lines.append("exclusions.jsonl        citing works excluded from theme synthesis")
+    lines.append("manual_abstracts.jsonl  human/PDF-recovered abstracts")
+    lines.append("pdfs/<id>.pdf           cached PDF for a citing work")
+    lines.append("pdfs/<id>.json          its extracted text, page-tagged")
+    lines.append("evidence/<id>.md/.json  full-text verification dossier for a citing work")
+    lines.append("evidence/index.md       dossier catalog: Verified / Pending Review")
+    lines.append("evidence/log.md         chronological investigation history")
+    lines.append("evidence/themes/*.md/.json     combined-evidence theme docs")
+    lines.append("evidence/themes/index.md      theme catalog: Confirmed / Draft")
+    lines.append("narrative/sections/*.md/.json  individual narrative section prose")
+    lines.append("narrative/outline.md/.json     planned section order/status")
+    lines.append("```")
+    lines.append("")
+
+    lines.append("## Schemas")
+    lines.append("")
+
+    lines.append("### `citing-work-evidence` — `evidence/<id>.json`")
+    lines.append("")
+    lines.append(
+        "Keys: `citing_openalex_id`, `verification_status` "
+        "(`verified` | `pending-human-review`), `provisional` "
+        "(abstract-only guess: `relationship`, `confidence`, "
+        "`justification`), `proposed` (full-text reading: `relationships` "
+        "— a list of up to 3 facets, each `{label, confidence, "
+        "justification, quotes, verified}` — plus legacy `relationship`/"
+        "`confidence`/`justification` scalars mirroring the top facet), "
+        "`quotes` (page-numbered supporting passages), `pdf_path`, "
+        "`extracted_text_path`, `author_overlap`."
+    )
+    lines.append(
+        "Relationship labels (fixed set of 7): `extends`, `builds-on`, "
+        "`uses-as-tool`, `benchmarks`, `applies-to-domain`, "
+        "`related-infrastructure`, `background-mention`. A citing work "
+        "can have more than one facet (e.g. both `uses-as-tool` and "
+        "`applies-to-domain`); ranking uses the strongest facet, not a sum."
+    )
+    lines.append("")
+
+    lines.append("### `theme` — `evidence/themes/<slug>.json`")
+    lines.append("")
+    lines.append(
+        "Keys: `slug`, `title`, `theme_status` (`draft` | `confirmed`), "
+        "`summary` (synthesis prose), `citing_works` (list of "
+        "`{citing_id, status, has_dossier, title}`), `needs_evidence`."
+    )
+    lines.append("")
+
+    lines.append("### `narrative-section` — `narrative/sections/<slug>.json`")
+    lines.append("")
+    lines.append(
+        "Keys: `slug`, `title`, `kind`, `theme_slugs`, `status` "
+        "(`draft` | `confirmed`), `prose` (with `[ref:ID]` markers, "
+        "resolved to dossier links only in the rendered `.md`)."
+    )
+    lines.append("")
+
+    lines.append("### `impact-brief` — `impact.json`")
+    lines.append("")
+    lines.append(
+        "Keys: `seed_openalex_id`, `total_citing_works`, "
+        "`classified_count`, `verified_count`, `self_extension_count`, "
+        "`coverage`, `by_year`, `by_relationship` (counts per label, one "
+        "work may count under more than one), `by_venue_type`, "
+        "`top_fields`, `top_evidence` (ranked list)."
+    )
+    lines.append("")
+
+    lines.append("### Append-only decision logs (`*.jsonl`)")
+    lines.append("")
+    lines.append(
+        "One JSON object per line; later lines for the same `citing_id` "
+        "win on replay. Never rewritten in place, only appended to."
+    )
+    lines.append("")
+    lines.append(
+        "- `overrides.jsonl` — `{citing_id, relationship, justification, "
+        "confidence, verification_status, overridden_at}`"
+    )
+    lines.append(
+        "- `duplicates.jsonl` — `{duplicate_id, canonical_id, reason, "
+        "confirmed_at}`"
+    )
+    lines.append(
+        "- `exclusions.jsonl` — `{citing_id, excluded, reason, category, "
+        "excluded_at}`"
+    )
+    lines.append(
+        "- `manual_abstracts.jsonl` — `{citing_id, abstract, source, "
+        "added_at}`"
+    )
+    lines.append("")
+
+    lines.append("## Cross-file references")
+    lines.append("")
+    lines.append(
+        "All paths inside this folder are relative to the file containing "
+        "them, both in `.md` link syntax and in JSON path fields (e.g. a "
+        "dossier's `pdf_path` reads `../pdfs/<id>.pdf`, relative to "
+        "`evidence/`)."
+    )
+    lines.append("")
+
+    lines.append("## Regenerating derived files")
+    lines.append("")
+    lines.append(
+        "If you have wake installed (`pip install wake`), these verbs "
+        "regenerate a rendered view from the JSON already on disk, with no "
+        "LLM calls:"
+    )
+    lines.append("")
+    lines.append("- `wake bake` — regenerate impact.md/json and this folder's orientation files")
+    lines.append("- `wake evidence --rerender-all` — regenerate all dossier .md files from .json")
+    lines.append("- `wake theme rerender-all` — regenerate all theme .md files from .json")
+    lines.append("- `wake narrative stitch` — regenerate narrative.md from sections")
+    lines.append("")
+    lines.append(
+        "If wake is not installed, every `.md`/`.json` file here remains "
+        "directly readable — none of them require wake to interpret, only "
+        "to regenerate."
+    )
+    lines.append("")
+
+    lines.append("## Query patterns")
+    lines.append("")
+    lines.append(
+        "- **Which works cite the seed as `uses-as-tool`?** Read "
+        "`classified.json`, filter `relationships[].label == "
+        "\"uses-as-tool\"` (or the legacy `relationship` scalar)."
+    )
+    lines.append(
+        "- **Show me all verified findings.** Read `evidence/<id>.json` "
+        "for each entry in `evidence/index.md`, filter "
+        "`verification_status == \"verified\"`. Or read `overrides.jsonl` "
+        "for only the human-signed-off ones."
+    )
+    lines.append(
+        "- **What did the citing paper actually say?** Read "
+        "`pdfs/<id>.json` — the raw, page-tagged extracted text, the same "
+        "input the LLM was given."
+    )
+    lines.append(
+        "- **Show provenance of a specific finding.** A dossier's "
+        "`proposed.relationships[].quotes` list carries page-numbered "
+        "verbatim passages."
+    )
+    lines.append(
+        "- **Is this citing work independent, or the same team's own "
+        "follow-on?** Check `author_overlap` / `overlapping_authors` on "
+        "the classified/dossier entry."
+    )
+    lines.append("")
+    return lines
+
+
+def rebuild_wiki_orientation(
+    seed_id: str, seed_work: dict[str, Any] | None = None, base: Path | None = None,
+) -> tuple[Path, Path]:
+    """Regenerate the wiki's two entry points:
+
+      README.md — a human-oriented explanation of what this folder is,
+                   what's been done so far, and where to start reading,
+                   ending with links to the top-level artifacts (impact
+                   brief, narrative, evidence wiki, themes, log), each
+                   omitted until its target exists.
+      AGENTS.md — a terse, schema-first reference for an agent handed
+                   just this folder, with no access to wake's own source
+                   and possibly wake not even installed: every artifact
+                   type's schema, the two-surface (.md/.json) convention,
+                   and a handful of concrete query recipes.
+
+    Both are derived views, like every other file in this module --
+    recomputed from whatever's currently on disk, never themselves a
+    source of truth -- so it's always safe to regenerate them and they
+    never go stale in a way a fresh call can't fix.
+
+    Called as a side effect of the commands that create the artifacts
+    they describe (`wake bake`, `wake evidence`, `wake theme
+    create`/`confirm`, `wake narrative stitch`, `wake override`) -- no
+    separate command needed, same pattern as index.md/log.md/themes/index.md.
+    """
+    counts = _orientation_counts(seed_id, base)
+
+    readme_path = wiki_home_path(seed_id, base)
+    atomic_write_text(readme_path, "\n".join(_build_readme_lines(seed_id, seed_work, counts)))
+
+    agents_path = agents_md_path(seed_id, base)
+    atomic_write_text(agents_path, "\n".join(_build_agents_md_lines(seed_id, seed_work, counts)))
+
+    return readme_path, agents_path

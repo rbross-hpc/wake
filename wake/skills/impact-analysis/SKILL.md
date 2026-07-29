@@ -382,10 +382,17 @@ unaffirmed reading, not deleted. Run `override` again with a different
 `--relationship` if the human wants to affirm more than one.)
 `evidence/log.md` is the full chronological record (built, rebuilt,
 failed, verified) if you need to reconstruct what happened and when.
-`wake-out/<seed>/README.md` is the wiki's single entry point — a short
-navigation page linking to `impact.md`, `narrative.md`, and both
-indexes, with counts; regenerated automatically alongside the artifacts
-it links to, worth pointing a human at when a packet is largely done. A
+`wake-out/<seed>/README.md` is the wiki's human entry point — what the
+folder is, what's been done so far, and where to start reading, ending
+in links to `impact.md`, `narrative.md`, and both indexes with counts;
+regenerated automatically alongside the artifacts it links to, worth
+pointing a human at when a packet is largely done.
+`wake-out/<seed>/AGENTS.md` is the equivalent entry point for an agent
+handed just the folder, with no other context: a terse schema
+reference (every artifact type, the `.md`=human/`.json`=agent surface
+convention, and query recipes) rather than README.md's explanatory
+prose — see `references/output-layout.md`. Both are regenerated
+together, same trigger. A
 dossier, theme, and narrative section also cross-link each other
 directly: a dossier's own `.md` shows a "Referenced by:" line naming
 every theme and section that currently cites it, and a theme's `.md`

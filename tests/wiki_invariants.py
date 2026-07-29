@@ -286,6 +286,43 @@ _MAX_FACETS = 3
 _MIN_FACET_CONFIDENCE = 0.5
 
 
+def assert_agents_md_declares_all_types(
+    agents_md_text: str, rendered_md_files: list[Path], source: str | Path = "AGENTS.md",
+) -> None:
+    """An agent handed the wiki folder cold relies on AGENTS.md's
+    "Frontmatter `type:` values" section to know every concept-doc shape
+    it might encounter. This walks every actually-rendered `.md` file,
+    collects its frontmatter `type:` value (skipping AGENTS.md/README.md,
+    which carry no frontmatter), and asserts each one is mentioned
+    somewhere in AGENTS.md's text -- catching the case where a new
+    artifact type is added to the renderers but AGENTS.md's hand-written
+    schema section is never updated to describe it.
+    """
+    seen_types: set[str] = set()
+    for md_path in rendered_md_files:
+        if md_path.name in {"AGENTS.md", "README.md"}:
+            continue
+        text = md_path.read_text(encoding="utf-8")
+        m = _FRONTMATTER_RE.match(text)
+        if not m:
+            continue
+        try:
+            frontmatter = yaml.safe_load(m.group(1))
+        except yaml.YAMLError:
+            continue
+        if isinstance(frontmatter, dict) and frontmatter.get("type"):
+            seen_types.add(frontmatter["type"])
+
+    missing = {t for t in seen_types if f"`{t}`" not in agents_md_text}
+    if missing:
+        raise AssertionError(
+            f"{source}: frontmatter type(s) {sorted(missing)} appear in the "
+            "rendered wiki but are not mentioned in AGENTS.md's schema "
+            "section -- an agent reading only AGENTS.md would not know "
+            "this file type exists."
+        )
+
+
 def assert_facet_list_valid(facets: list[dict[str, Any]], source: str | Path = "<text>") -> None:
     """Validate a multi-facet "relationships" list (see classify.py's
     module docstring for the schema: a citing work's relationship to the
