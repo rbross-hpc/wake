@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config
-from .classify import RELATIONSHIP_STRENGTH
+from .classify import relationship_strength
 from .io import atomic_write_json, atomic_write_text, now_iso, read_json
 from .seed import work_dir
 from .state import mark_stage_complete
@@ -110,7 +110,10 @@ def add_override(
         "human_reviewed": True,
         "verification_status": "verified",
         "verification_source": verification_source,
-        "strength": RELATIONSHIP_STRENGTH.get(relationship, 1),
+        # No "strength" field here, deliberately -- see relationship_score()
+        # below: strength is always recomputed from the relationship label
+        # and the current config, never persisted, so a later config edit
+        # (classify.relationship_strength) reranks this override too.
         "overridden_at": now_iso(),
     }
     _migrate_legacy_overrides_if_needed(seed_id, base)
@@ -205,31 +208,35 @@ def apply_overrides(
     return result
 
 
-def relationship_score(relationship: str, cited_by_count: int | None, *, strength: int | None = None) -> float:
+def relationship_score(relationship: str, cited_by_count: int | None) -> float:
     """Single source of truth for the ranking formula used both for the
     impact brief's "Strongest Evidence" (this module) and the evidence
     wiki's index.md ranking (evidence_wiki.py) -- relationship strength x
     log(1 + downstream cited_by_count).
 
-    *strength* lets a caller that already has a precomputed strength
-    (classified works carry a "strength" field) skip the RELATIONSHIP_STRENGTH
-    lookup; callers working from a relationship label alone (e.g. an
-    evidence dossier, which has no "strength" field of its own) omit it.
+    Strength is always looked up fresh from relationship_strength() (which
+    reads classify.relationship_strength from config, falling back to
+    built-in defaults) -- never accepted as a precomputed argument or read
+    from a persisted "strength" field. This is what makes reranking a
+    config-only operation: editing wake.config.yaml's
+    classify.relationship_strength and re-running `wake bake` changes
+    every score here without re-classifying anything or touching a single
+    sidecar on disk.
     """
     import math
-    if strength is None:
-        strength = RELATIONSHIP_STRENGTH.get(relationship, 1)
+    strength = relationship_strength().get(relationship, 1)
     downstream = cited_by_count or 0
     return strength * math.log1p(downstream)
 
 
 def _score(work: dict) -> float:
-    """Rank score for a classified citing work dict (has "strength" and
-    "cited_by_count" fields). See relationship_score() for the formula."""
+    """Rank score for a classified citing work dict. See
+    relationship_score() for the formula -- deliberately ignores any
+    legacy "strength" field a pre-existing sidecar/override might still
+    carry (see relationship_score()'s docstring)."""
     return relationship_score(
         work.get("relationship", "background-mention"),
         work.get("cited_by_count", 0),
-        strength=work.get("strength", 1),
     )
 
 
@@ -565,10 +572,18 @@ def bake_markdown(
         )
         lines.append("")
     by_rel = metrics.get("by_relationship", {})
-    relationship_order = [
-        "extends", "builds-on", "uses-as-tool", "benchmarks",
-        "applies-to-domain", "related-infrastructure", "background-mention",
-    ]
+    # Sorted by the *current* configured strength, strongest first (ties
+    # broken by the fixed canonical order) -- so this table's row order
+    # stays consistent with the "Strongest Evidence" ranking below and
+    # with whatever classify.relationship_strength a user has configured,
+    # rather than a hardcoded order that could silently drift out of sync
+    # with a reweighted strength scheme.
+    from .classify import CANONICAL_RELATIONSHIPS
+    strengths = relationship_strength()
+    relationship_order = sorted(
+        CANONICAL_RELATIONSHIPS,
+        key=lambda rel: (-strengths.get(rel, 1), CANONICAL_RELATIONSHIPS.index(rel)),
+    )
     lines.append("| Relationship | Count | % |")
     lines.append("|---|---:|---:|")
     for rel in relationship_order:

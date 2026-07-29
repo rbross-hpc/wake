@@ -72,14 +72,32 @@ evidence:
 
 classify:
   prompt_version: "classify-2"
-  relationships:
-    - extends
-    - builds-on
-    - uses-as-tool
-    - benchmarks
-    - applies-to-domain
-    - related-infrastructure
-    - background-mention
+  # How much each relationship label counts for when ranking citing works
+  # (impact.md's "Strongest Evidence" and the evidence wiki's Verified/
+  # Pending ordering): score = strength * log(1 + citing work's own
+  # cited_by_count). The label SET itself is fixed in code
+  # (classify.py's CANONICAL_RELATIONSHIPS) because the LLM prompts spell
+  # each label out as prose the model must copy verbatim -- you can only
+  # reweight these seven, not add or remove one, here.
+  #
+  # Example: if your analysis cares more about domain reach than tooling
+  # adoption, weight applies-to-domain above uses-as-tool:
+  #   applies-to-domain: 6
+  #   uses-as-tool: 3
+  #
+  # Editing this and re-running `wake bake` reranks the impact brief
+  # immediately -- no LLM calls, no re-classification. Every one of these
+  # seven keys is required (wake will refuse to start with a config that
+  # adds an unknown label, drops one of the seven, or sets a
+  # non-positive value).
+  relationship_strength:
+    extends: 7
+    builds-on: 6
+    uses-as-tool: 5
+    benchmarks: 4
+    applies-to-domain: 3
+    related-infrastructure: 2
+    background-mention: 1
 
 describe:
   prompt_version: "describe-1"

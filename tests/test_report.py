@@ -4,8 +4,7 @@
 from __future__ import annotations
 
 import pytest
-from wake.report import build_metrics, bake_markdown, _score, _venue_type_or_fallback
-from wake.classify import RELATIONSHIP_STRENGTH
+from wake.report import build_metrics, bake_markdown, relationship_score, _score, _venue_type_or_fallback
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 
@@ -18,7 +17,11 @@ def _make_classified(works, relationships, verification_status="provisional"):
             "confidence": 0.9,
             "justification": "Test",
             "has_abstract": bool(w.get("abstract")),
-            "strength": RELATIONSHIP_STRENGTH.get(rel, 1),
+            # Deliberately no "strength" field -- see
+            # test_score_ignores_legacy_strength_field below: _score()
+            # must always recompute from the relationship label, never
+            # from a stored value, so this fixture matches what
+            # classify_one() actually produces now.
             "verification_status": verification_status,
         })
     return result
@@ -174,15 +177,41 @@ def test_bake_markdown_nav_line_reflects_existing_wiki_artifacts(tmp_path):
 
 
 def test_score_higher_for_stronger_relationship():
-    w_extends = {"cited_by_count": 100, "strength": RELATIONSHIP_STRENGTH["extends"]}
-    w_mention = {"cited_by_count": 100, "strength": RELATIONSHIP_STRENGTH["background-mention"]}
+    w_extends = {"cited_by_count": 100, "relationship": "extends"}
+    w_mention = {"cited_by_count": 100, "relationship": "background-mention"}
     assert _score(w_extends) > _score(w_mention)
 
 
 def test_score_higher_for_more_cited():
-    w_cited = {"cited_by_count": 1000, "strength": 4}
-    w_few = {"cited_by_count": 1, "strength": 4}
+    w_cited = {"cited_by_count": 1000, "relationship": "benchmarks"}
+    w_few = {"cited_by_count": 1, "relationship": "benchmarks"}
     assert _score(w_cited) > _score(w_few)
+
+
+def test_score_ignores_legacy_strength_field():
+    """A pre-existing sidecar/override from before this change may still
+    carry a stale "strength" field on disk -- _score() must not let it
+    win over the label-derived, config-driven score. Deliberately sets a
+    bogus strength that would flip the comparison if honored."""
+    w_extends = {"cited_by_count": 100, "relationship": "extends", "strength": 1}
+    w_mention = {"cited_by_count": 100, "relationship": "background-mention", "strength": 999}
+    assert _score(w_extends) > _score(w_mention)
+
+
+def test_relationship_score_reranks_when_config_strength_changes(monkeypatch):
+    """The concrete 'rerank without reanalysis' workflow: editing
+    classify.relationship_strength and recomputing (no LLM, no
+    reclassification) changes the ranking."""
+    assert relationship_score("extends", 10) > relationship_score("applies-to-domain", 10)
+
+    monkeypatch.setattr(
+        "wake.classify.config.classify_cfg",
+        lambda: {"relationship_strength": {
+            "extends": 1, "builds-on": 2, "uses-as-tool": 3, "benchmarks": 4,
+            "applies-to-domain": 9, "related-infrastructure": 5, "background-mention": 1,
+        }},
+    )
+    assert relationship_score("applies-to-domain", 10) > relationship_score("extends", 10)
 
 
 def test_build_metrics_partial_coverage():
@@ -193,7 +222,6 @@ def test_build_metrics_partial_coverage():
         "confidence": 0.9,
         "justification": "Test",
         "has_abstract": True,
-        "strength": RELATIONSHIP_STRENGTH["extends"],
         "verification_status": "provisional",
     }
     mixed = [classified_first, SAMPLE_CITING_WORKS[1], SAMPLE_CITING_WORKS[2]]
@@ -212,7 +240,6 @@ def test_bake_markdown_notes_partial_coverage():
         "confidence": 0.9,
         "justification": "Test",
         "has_abstract": True,
-        "strength": RELATIONSHIP_STRENGTH["extends"],
         "verification_status": "provisional",
     }
     mixed = [classified_first, SAMPLE_CITING_WORKS[1], SAMPLE_CITING_WORKS[2]]
