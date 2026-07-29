@@ -176,6 +176,72 @@ def test_bake_markdown_nav_line_reflects_existing_wiki_artifacts(tmp_path):
     assert "[narrative](narrative.md)" in md
 
 
+def test_bake_markdown_nav_line_reflects_cwd_wiki_artifacts_without_explicit_base(tmp_path, monkeypatch):
+    """Regression test: bake_markdown() must resolve wiki-navigation
+    state (themes/narrative/evidence existence) the same way every other
+    wake-out/<seed>/ path resolves it -- explicit base, else
+    WAKE_WORK_DIR, else cwd (see seed.work_dir()) -- not by treating
+    base=None as "nothing exists yet". `wake bake` with no --work-dir
+    flag (the common case) calls bake_and_save()/bake_markdown() with
+    base=None, relying on cwd resolution; a prior bug gated the entire
+    themes/narrative/evidence-dossier-link block on `base is not None`,
+    which silently dropped the "See also" nav line, the frontmatter's
+    themes_confirmed/narrative_status fields, and Strongest Evidence's
+    dossier links whenever wake was invoked without --work-dir, even
+    though the wiki artifacts were sitting right there in cwd."""
+    import shutil
+    from pathlib import Path as _Path
+    from unittest.mock import patch
+    from wake import evidence, narrative, themes
+    from wake.classify import save_classified
+    from wake.report import add_override, bake_and_save
+
+    monkeypatch.chdir(tmp_path)
+
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    work = SAMPLE_CITING_WORKS[0]
+    classified = [{**work, "relationship": "extends", "confidence": 0.9, "justification": "x"}]
+    save_classified(seed_id, classified)
+
+    fixture = _Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
+    dest = tmp_path / "wake-out" / seed_id / "pdfs" / "citing.pdf"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(fixture, dest)
+    fake_response = {
+        "relationship": "extends", "confidence": 0.9, "justification": "j",
+        "agrees_with_provisional": False,
+        "quotes": [{"page": 1, "text": "Directly extends the seed.", "note": ""}],
+    }
+    with patch("wake.evidence.fetch_pdf", return_value={"ok": True, "path": str(dest), "source": "osti"}), \
+         patch("wake.evidence.chat_json", return_value=fake_response):
+        evidence.build_dossier(PARALLEL_NETCDF_WORK, work, verbose=False)
+
+    add_override(
+        seed_id, work["openalex_id"], relationship="extends", justification="ok",
+        verification_source="evidence-dossier",
+    )
+    themes.create_theme(
+        PARALLEL_NETCDF_WORK, "t1", title="T", summary="S",
+        citing_ids=[work["openalex_id"]],
+    )
+    narrative.create_outline(
+        PARALLEL_NETCDF_WORK, components=[{"slug": "intro", "title": "Intro", "kind": "free"}],
+    )
+    narrative.create_section(PARALLEL_NETCDF_WORK, "intro", title="Intro", prose="Framing.")
+    narrative.stitch(PARALLEL_NETCDF_WORK)
+
+    json_path, md_path = bake_and_save(PARALLEL_NETCDF_WORK, classified, verbose=False)
+    md = md_path.read_text()
+
+    assert "themes_draft: 1" in md
+    assert "narrative_status: assembled" in md
+    assert "See also:" in md
+    assert "[full evidence wiki](evidence/index.md)" in md
+    assert "[themes](evidence/themes/index.md)" in md
+    assert "[narrative](narrative.md)" in md
+    assert f"[{work['title']}](evidence/{work['openalex_id']}.md)" in md
+
+
 def test_score_higher_for_stronger_relationship():
     w_extends = {"cited_by_count": 100, "relationship": "extends"}
     w_mention = {"cited_by_count": 100, "relationship": "background-mention"}
