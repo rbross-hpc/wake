@@ -170,17 +170,29 @@ def test_build_dossier_end_to_end_with_real_fixture_pdf(tmp_path):
 
     # The extraction cache must be written next to the PDF, and the
     # dossier must point at it (so a human/agent can inspect what the
-    # model actually read).
+    # model actually read). build_dossier()'s returned paths are always
+    # absolute (for a caller that wants to open the file directly);
+    # the dossier itself links to it with a path relative to evidence/.
     extracted_text_path = pdf_copy.with_suffix(".json")
     assert extracted_text_path.exists()
     assert result["extracted_text_path"] == str(extracted_text_path)
-    assert extracted_text_path.name in md_text
+    assert "[Raw extracted text](" in md_text
+    assert "[Cached PDF](" in md_text
 
-    # Dossier JSON sidecar carries what the evidence wiki (BACKLOG Theme D)
-    # needs to index/score this dossier without re-loading classified.json.
+    dossier_dir = Path(result["dossier_path"]).parent
     loaded = evidence.load_dossier(
         PARALLEL_NETCDF_WORK["openalex_id"], CLASSIFIED_CITING_WORK["openalex_id"], base=tmp_path,
     )
+    # JSON sidecar stores paths relative to its own directory (evidence/),
+    # not absolute -- so the whole wake-out/<seed>/ tree stays
+    # self-consistent if it's ever moved or shared.
+    assert not Path(loaded["pdf_path"]).is_absolute()
+    assert not Path(loaded["extracted_text_path"]).is_absolute()
+    assert (dossier_dir / loaded["pdf_path"]).resolve() == pdf_copy.resolve()
+    assert (dossier_dir / loaded["extracted_text_path"]).resolve() == extracted_text_path.resolve()
+
+    # Dossier JSON sidecar carries what the evidence wiki (BACKLOG Theme D)
+    # needs to index/score this dossier without re-loading classified.json.
     assert loaded["citing_cited_by_count"] == CLASSIFIED_CITING_WORK["cited_by_count"]
     assert loaded["verification_status"] == "pending-human-review"
     assert loaded["author_overlap"] is False
@@ -280,7 +292,10 @@ def test_load_dossier_after_build(tmp_path):
     loaded = evidence.load_dossier(PARALLEL_NETCDF_WORK["openalex_id"], CLASSIFIED_CITING_WORK["openalex_id"], base=tmp_path)
     assert loaded is not None
     assert loaded["proposed"]["relationship"] == "extends"
-    assert loaded["extracted_text_path"] == str(pdf_copy.with_suffix(".json"))
+    # Relative to the JSON sidecar's own directory (evidence/), not absolute.
+    dossier_dir = evidence.evidence_dir(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
+    assert not Path(loaded["extracted_text_path"]).is_absolute()
+    assert (dossier_dir / loaded["extracted_text_path"]).resolve() == pdf_copy.with_suffix(".json").resolve()
 
 
 def test_dossier_markdown_quotes_full_paragraph_verbatim(tmp_path):

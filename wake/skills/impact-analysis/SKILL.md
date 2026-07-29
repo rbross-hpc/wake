@@ -405,16 +405,19 @@ If you're confident it's the right paper despite the check failing, use
 
 **If a `proposed` finding looks wrong or implausible, check the extraction
 before doubting the reasoning.** The `extracted_text_path` field in the
-response (also linked from the dossier's "Source" section) points at the
-raw page-tagged text the model was actually given, cached at
-`wake-out/<seed>/pdfs/<citing-id>.json`. Read it yourself before telling
-the human "the model got this wrong" — multi-column academic PDF layouts
-are a known source of garbled extraction, and a bad extraction produces a
-very different-looking problem than a bad inference once you've seen the
-raw text. `wake --json evidence "<seed>" <citing-id> --force` re-runs
-extraction too (not just the LLM verification call), so a garbled
-extraction can be retried without needing a fresh PDF. If the dossier had
-already been verified, `--force` resets it back to pending — the fresh
+response (an absolute path; the dossier's `.json` sidecar stores the same
+file relative to its own directory) points at the raw page-tagged text
+the model was actually given, cached at `wake-out/<seed>/pdfs/<citing-id>.json`.
+Read it yourself before telling the human "the model got this wrong" —
+multi-column academic PDF layouts are a known source of garbled
+extraction, and a bad extraction produces a very different-looking
+problem than a bad inference once you've seen the raw text. A human
+reviewing the dossier directly can instead click the "Raw extracted
+text" link under its "## Source" heading. `wake --json evidence "<seed>"
+<citing-id> --force` re-runs extraction too (not just the LLM
+verification call), so a garbled extraction can be retried without
+needing a fresh PDF. If the dossier had already been verified, `--force`
+resets it back to pending — the fresh
 read is a new finding, not a continuation of the old sign-off, so it
 needs a fresh look before you re-run `override`.
 

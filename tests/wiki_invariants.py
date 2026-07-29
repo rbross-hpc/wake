@@ -231,3 +231,43 @@ def assert_r_anchors_resolve(text: str, source: str | Path = "<text>") -> None:
     unused = block_ids - prose_numbers
     if unused:
         raise AssertionError(f"{source}: ^r<n> block ID(s) with no matching in-prose [R<n>] link: {sorted(unused)}.")
+
+
+# Frontmatter keys that hold a path relative to the file's own directory
+# (as opposed to e.g. `resource:`, which is an external URL). Only
+# `citing-work-evidence`'s `pdf:` exists today; a dict (not a flat set)
+# so a future type can add its own path-valued key without ambiguity.
+PATH_KEYS_BY_TYPE: dict[str, set[str]] = {
+    "citing-work-evidence": {"pdf"},
+}
+
+
+def assert_frontmatter_relative_paths_resolve(
+    frontmatter: dict[str, Any], source_path: Path,
+) -> None:
+    """For any frontmatter key in PATH_KEYS_BY_TYPE[doc_type] that is
+    present, assert its value is a relative (not absolute) path and that
+    it resolves to a real file relative to *source_path*'s own directory.
+
+    These keys are optional (e.g. a dossier with no cached PDF omits
+    `pdf:` entirely), so a missing key is not itself a failure -- call
+    this after assert_frontmatter_valid() has already confirmed the
+    required keys are present.
+    """
+    doc_type = frontmatter.get("type")
+    for key in PATH_KEYS_BY_TYPE.get(doc_type, set()):
+        value = frontmatter.get(key)
+        if not value:
+            continue
+        if Path(value).is_absolute():
+            raise AssertionError(
+                f"{source_path}: frontmatter '{key}: {value!r}' is an absolute path -- "
+                "should be relative to this file's own directory so the wiki stays "
+                "portable if wake-out/<seed>/ is moved."
+            )
+        resolved = (source_path.parent / value).resolve()
+        if not resolved.exists():
+            raise AssertionError(
+                f"{source_path}: frontmatter '{key}: {value!r}' resolves to "
+                f"{resolved}, which does not exist."
+            )

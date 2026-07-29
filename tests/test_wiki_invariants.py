@@ -27,6 +27,7 @@ from wake.evidence_wiki import rebuild_wiki_home
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 from .wiki_invariants import (
     assert_all_relative_md_links_exist,
+    assert_frontmatter_relative_paths_resolve,
     assert_frontmatter_valid,
     assert_no_malformed_wikilinks,
     assert_r_anchors_resolve,
@@ -113,6 +114,47 @@ def test_assert_all_relative_md_links_exist_skips_external_and_fragment_links(tm
         "[email](mailto:a@b.com)."
     )
     assert_all_relative_md_links_exist(text, source, tmp_path)
+
+
+# --- assert_frontmatter_relative_paths_resolve --------------------------------
+
+def test_assert_frontmatter_relative_paths_resolve_passes_when_target_present(tmp_path):
+    (tmp_path / "pdfs").mkdir()
+    (tmp_path / "pdfs" / "W123.pdf").write_text("stub")
+    source = tmp_path / "evidence" / "W123.md"
+    source.parent.mkdir()
+    assert_frontmatter_relative_paths_resolve(
+        {"type": "citing-work-evidence", "pdf": "../pdfs/W123.pdf"}, source,
+    )
+
+
+def test_assert_frontmatter_relative_paths_resolve_fails_when_target_missing(tmp_path):
+    source = tmp_path / "evidence" / "W123.md"
+    source.parent.mkdir(parents=True)
+    with pytest.raises(AssertionError, match="does not exist"):
+        assert_frontmatter_relative_paths_resolve(
+            {"type": "citing-work-evidence", "pdf": "../pdfs/W123.pdf"}, source,
+        )
+
+
+def test_assert_frontmatter_relative_paths_resolve_fails_on_absolute_path(tmp_path):
+    source = tmp_path / "evidence" / "W123.md"
+    source.parent.mkdir(parents=True)
+    with pytest.raises(AssertionError, match="absolute path"):
+        assert_frontmatter_relative_paths_resolve(
+            {"type": "citing-work-evidence", "pdf": "/tmp/somewhere/W123.pdf"}, source,
+        )
+
+
+def test_assert_frontmatter_relative_paths_resolve_noop_when_key_absent(tmp_path):
+    source = tmp_path / "evidence" / "W123.md"
+    source.parent.mkdir(parents=True)
+    assert_frontmatter_relative_paths_resolve({"type": "citing-work-evidence"}, source)
+
+
+def test_assert_frontmatter_relative_paths_resolve_noop_for_type_with_no_path_keys(tmp_path):
+    source = tmp_path / "theme.md"
+    assert_frontmatter_relative_paths_resolve({"type": "theme"}, source)
 
 
 # --- assert_ref_link_syntax ---------------------------------------------------
@@ -284,8 +326,9 @@ def test_full_wiki_output_satisfies_all_invariants(tmp_path):
     for md_path in md_files:
         text = md_path.read_text(encoding="utf-8")
         assert_no_malformed_wikilinks(text, source=md_path)
-        assert_frontmatter_valid(text, source=md_path)
+        frontmatter = assert_frontmatter_valid(text, source=md_path)
         assert_all_relative_md_links_exist(text, md_path, wiki_root)
+        assert_frontmatter_relative_paths_resolve(frontmatter, md_path)
 
     section_text = (wiki_root / "narrative" / "sections" / "s1.md").read_text()
     assert_ref_link_syntax(
