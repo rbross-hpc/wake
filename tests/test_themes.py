@@ -18,6 +18,7 @@ import pytest
 from wake import evidence, evidence_wiki, narrative, themes
 from wake.classify import save_classified
 from wake.report import add_override
+from .wiki_invariants import assert_no_malformed_wikilinks
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
@@ -420,6 +421,7 @@ def test_theme_markdown_referenced_by_grounded_section(tmp_path):
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert "## Referenced By" in md
     assert "[Section One](../../narrative/sections/s1.md)" in md
+    assert_no_malformed_wikilinks(md)
 
 
 def test_theme_markdown_not_referenced_by_unrelated_section(tmp_path):
