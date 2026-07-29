@@ -2,12 +2,28 @@
 
 ```
 wake-out/<OpenAlex-ID>/
-  README.md               — wiki home page: title + byline + links (with counts) to
-                             impact.md / narrative.md / evidence/index.md /
-                             evidence/themes/index.md, each omitted until its target
-                             exists; regenerated automatically as a side effect of
+  README.md               — human-oriented wiki home page: title + byline, a "What
+                             this folder is" paragraph, a "What was done" summary
+                             (counts, only for stages that have actually run), a
+                             "Where to start" section linking impact.md / narrative.md
+                             / evidence/index.md / evidence/themes/index.md /
+                             evidence/log.md (each omitted until its target exists),
+                             reading conventions, and the four human-editable .jsonl
+                             files; regenerated automatically as a side effect of
                              bake/evidence/theme/narrative-stitch/override, no
-                             separate command
+                             separate command -- same trigger as AGENTS.md below,
+                             both built by evidence_wiki.rebuild_wiki_orientation()
+  AGENTS.md                — agent-oriented orientation: for an agent handed just
+                             this folder, with no access to wake's own source and
+                             possibly wake not even installed. Terse schema
+                             reference (every artifact type's fields, the .md=human/
+                             .json=agent surface convention, relative-path rule,
+                             regeneration verbs, and a handful of concrete query
+                             recipes) rather than README.md's explanatory prose.
+                             Carries no YAML frontmatter (unlike every other
+                             rendered .md here) -- it's a plain reference doc, not
+                             an OKF concept doc. Same regeneration trigger as
+                             README.md
   seed.json               — resolved seed + LLM description + seed_pdf sub-object
   seed.pdf                — the seed paper's own PDF (wake seed fetch-pdf; auto-attempted
                              at wake resolve time, silently skipped if unavailable)
@@ -86,10 +102,13 @@ of truth (structured, safe to regenerate the `.md` from — see each
 subsystem's `rerender-all` verb), the `.md` is the derived human view,
 opening with an OKF-style YAML frontmatter block (`type`, `status`/
 counts, `timestamp`) so a human or tool can skim structured metadata
-without parsing prose. `README.md` and the `index.md`/`log.md`/
-`themes/index.md` catalogs are the only `.md` files with no `.json`
-sidecar of their own — they're 100% derived from other files that
-already have one, so a sidecar would just duplicate data.
+without parsing prose. `README.md`, `AGENTS.md`, and the `index.md`/
+`log.md`/`themes/index.md` catalogs are the only `.md` files with no
+`.json` sidecar of their own — they're 100% derived from other files
+that already have one, so a sidecar would just duplicate data.
+`AGENTS.md` additionally carries no YAML frontmatter at all (unlike
+every other file in this list) — it's a plain reference doc in the
+same spirit as a project's own `AGENTS.md`, not an OKF concept doc.
 
 Append-only human/agent decisions (`overrides.jsonl`, `duplicates.jsonl`,
 `exclusions.jsonl`, `manual_abstracts.jsonl`) use `.jsonl`, one JSON

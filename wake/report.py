@@ -123,7 +123,7 @@ def add_override(
         f.write(json.dumps(entry, default=str) + "\n")
 
     if verification_source == "evidence-dossier":
-        from .evidence_wiki import append_log_entry, mark_verified, rebuild_index, rebuild_wiki_home
+        from .evidence_wiki import append_log_entry, mark_verified, rebuild_index, rebuild_wiki_orientation
         if mark_verified(
             seed_id, citing_id, justification=justification,
             relationship=relationship, base=base,
@@ -135,7 +135,7 @@ def add_override(
             rebuild_index(seed_id, seed_title=seed_title, base=base)
             from .seed import load_seed
             seed_work = load_seed(seed_id, base) or {"openalex_id": seed_id, "title": seed_title}
-            rebuild_wiki_home(seed_id, seed_work, base=base)
+            rebuild_wiki_orientation(seed_id, seed_work, base=base)
 
     return entry
 
@@ -423,7 +423,7 @@ def bake_markdown(
     (themes_confirmed/draft, narrative_status) and the "See also" nav
     line right under the byline -- both purely derived views over
     whatever's currently on disk, same convention as
-    evidence_wiki.rebuild_wiki_home(). When omitted (e.g. a pure
+    evidence_wiki.rebuild_wiki_orientation(). When omitted (e.g. a pure
     metrics-only caller, or a test exercising this function directly),
     those fields default to zero/"none" and the corresponding nav links
     are simply omitted, exactly as if nothing existed yet.
@@ -749,8 +749,8 @@ def bake_and_save(
 
     mark_stage_complete(wd, _STAGE, seed_id=seed_id)
 
-    from .evidence_wiki import rebuild_wiki_home
-    rebuild_wiki_home(seed_id, seed_work, base=base)
+    from .evidence_wiki import rebuild_wiki_orientation
+    rebuild_wiki_orientation(seed_id, seed_work, base=base)
 
     if verbose:
         print(f"[wake] Report written:", file=sys.stderr)

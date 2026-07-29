@@ -348,43 +348,50 @@ def test_force_rerun_resets_verified_dossier_to_pending(tmp_path):
     assert "dossier_rebuilt" in log_text
 
 
-# --- rebuild_wiki_home -------------------------------------------------
+# --- rebuild_wiki_orientation (README.md + AGENTS.md) ------------------
 
-def test_rebuild_wiki_home_omits_links_for_missing_targets(tmp_path):
-    p = evidence_wiki.rebuild_wiki_home(
+def test_rebuild_wiki_orientation_omits_links_for_missing_targets(tmp_path):
+    readme_path, agents_path = evidence_wiki.rebuild_wiki_orientation(
         PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
     )
-    assert p.exists()
-    text = p.read_text()
+    assert readme_path.exists()
+    assert agents_path.exists()
+    text = readme_path.read_text()
     assert "type: wiki-home" in text
     assert PARALLEL_NETCDF_WORK["title"] in text
+    assert "## What was done" not in text
     assert "[Impact Brief]" not in text
     assert "[Narrative]" not in text
     assert "[Evidence Wiki]" not in text
     assert "[Themes]" not in text
     assert "[Log]" not in text
+    assert "Nothing has been generated yet" in text
 
 
-def test_wiki_home_created_as_side_effect_of_build_dossier(tmp_path):
+def test_wiki_orientation_created_as_side_effect_of_build_dossier(tmp_path):
     _build(tmp_path)
-    p = evidence_wiki.wiki_home_path(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
-    assert p.exists()
-    text = p.read_text()
-    assert "[Evidence Wiki](evidence/index.md)" in text
-    assert "[Log](evidence/log.md)" in text
-    assert "0 verified / 1 pending" in text
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    readme_text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
+    assert "[Evidence Wiki](evidence/index.md)" in readme_text
+    assert "[Log](evidence/log.md)" in readme_text
+
+    agents_text = evidence_wiki.agents_md_path(seed_id, base=tmp_path).read_text()
+    assert "Full-text-verified: 0" in agents_text
 
 
-def test_wiki_home_created_as_side_effect_of_bake(tmp_path):
+def test_wiki_orientation_created_as_side_effect_of_bake(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     save_classified(seed_id, [_classified_work()], base=tmp_path)
     report.bake_and_save(PARALLEL_NETCDF_WORK, [_classified_work()], base=tmp_path, verbose=False)
-    p = evidence_wiki.wiki_home_path(seed_id, base=tmp_path)
-    assert p.exists()
-    assert "[Impact Brief](impact.md)" in p.read_text()
+    readme_path = evidence_wiki.wiki_home_path(seed_id, base=tmp_path)
+    agents_path = evidence_wiki.agents_md_path(seed_id, base=tmp_path)
+    assert readme_path.exists()
+    assert agents_path.exists()
+    assert "[Impact Brief](impact.md)" in readme_path.read_text()
+    assert "Citing works classified: 1" in agents_path.read_text()
 
 
-def test_wiki_home_created_as_side_effect_of_theme_create(tmp_path):
+def test_wiki_orientation_created_as_side_effect_of_theme_create(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     work = _classified_work()
     save_classified(seed_id, [work], base=tmp_path)
@@ -394,10 +401,13 @@ def test_wiki_home_created_as_side_effect_of_theme_create(tmp_path):
     )
     text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
     assert "[Themes](evidence/themes/index.md)" in text
-    assert "0 confirmed / 1 draft" in text
+    assert "**0** confirmed (1 still draft)" in text
+
+    agents_text = evidence_wiki.agents_md_path(seed_id, base=tmp_path).read_text()
+    assert "Confirmed themes: 0" in agents_text
 
 
-def test_wiki_home_created_as_side_effect_of_narrative_stitch(tmp_path):
+def test_wiki_orientation_created_as_side_effect_of_narrative_stitch(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     narrative.create_outline(
         PARALLEL_NETCDF_WORK,
@@ -411,8 +421,11 @@ def test_wiki_home_created_as_side_effect_of_narrative_stitch(tmp_path):
     text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
     assert "[Narrative](narrative.md)" in text
 
+    agents_text = evidence_wiki.agents_md_path(seed_id, base=tmp_path).read_text()
+    assert "Narrative status: assembled" in agents_text
 
-def test_wiki_home_created_as_side_effect_of_add_override(tmp_path):
+
+def test_wiki_orientation_created_as_side_effect_of_add_override(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     citing_work = _classified_work(0)
     _build(tmp_path, citing_work=citing_work)
@@ -422,4 +435,7 @@ def test_wiki_home_created_as_side_effect_of_add_override(tmp_path):
         base=tmp_path,
     )
     text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
-    assert "1 verified / 0 pending" in text
+    assert "**1** verified findings signed off by a human reviewer" in text
+
+    agents_text = evidence_wiki.agents_md_path(seed_id, base=tmp_path).read_text()
+    assert "Full-text-verified: 1" in agents_text
