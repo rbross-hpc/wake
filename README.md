@@ -20,20 +20,22 @@ classifications, and approve LLM spend before scaling up:
   `background-mention`), read only from title/abstract. **Every
   classification starts life as `provisional` — a placeholder guess,
   not a finding.**
-- **bake** — aggregate the classifications into an impact brief with
-  reach metrics, citation trends, and a ranked evidence table. Every
-  unverified row is explicitly tagged `[PROVISIONAL]`, so a reader
-  can't confuse a guess with a finding.
 - **evidence** — for a specific high-signal citing work, fetch its PDF,
   extract the text, and re-classify against the *actual body of the
   paper* — with the specific passages quoted, page-numbered, and
-  written to a dossier. This is what promotes a provisional guess to
-  a `proposed` finding, and (after `wake override` records the
-  human's sign-off) to `verified`.
+  written to a dossier. This produces a `proposed` finding; `wake
+  override` then records the human's sign-off to make it `verified`.
 - **theme** — synthesize multiple verified dossiers into a
   combined-evidence thematic document.
 - **narrative** — draft prose grounded in the confirmed themes, with
   per-sentence citations back to the underlying evidence.
+
+Throughout, `wake bake` re-aggregates whatever's currently on disk into
+an impact brief (`impact.md`) — reach metrics, citation trends, and a
+ranked evidence table, with every unverified row explicitly tagged
+`[PROVISIONAL]` so a reader can't confuse a guess with a finding. It's
+cheap and idempotent — rerun it any time a new verified finding,
+confirmed theme, or narrative section is added.
 
 There is no single "run everything" command. `wake` provides thin,
 JSON-emitting primitives that an agent composes into this workflow;
