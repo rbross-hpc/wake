@@ -1,33 +1,52 @@
 # wake
 
-Evidence-backed impact analysis for research papers — designed to be driven
-by an agent (e.g. Claude via opencode) on a human's behalf, not run as a
-one-shot autopilot.
+Evidence-backed citation-impact analysis for research papers — designed
+to be driven by an agent (e.g. Claude via opencode) on a human's behalf,
+not run as a one-shot autopilot.
 
-Given a seed paper (DOI, arXiv ID, OpenAlex ID, or title), `wake`:
+Given a seed paper (DOI, arXiv ID, OpenAlex ID, or title), `wake` helps
+an agent build a self-contained wiki at `wake-out/<seed>/` describing
+*who cites this paper and how* — with an explicit distinction between
+what an LLM guessed from a citing work's abstract and what has actually
+been checked against the paper's full text.
 
-1. Resolves the seed to a canonical [OpenAlex](https://openalex.org) record.
-2. Fetches every work that cites the seed (via `filter=cites:<id>`).
-3. Generates a one-paragraph LLM description of the seed's contribution.
-4. LLM-classifies each citing work's relationship to the seed.
-5. Bakes a Markdown impact brief with reach metrics, citation trends, and ranked evidence.
+The wiki grows as the workflow progresses. At each stage the agent
+pauses so the human can confirm the seed, spot-check a sample of
+classifications, and approve LLM spend before scaling up:
 
-Beyond the brief, `wake` also supports deeper, evidence-backed work: full-
-text verification of a specific finding (`wake evidence`), combined-
-evidence thematic synthesis (`wake theme`), and narrative drafting from
-confirmed themes with per-sentence source references (`wake narrative`).
-See [`docs/`](docs/) for the full topic breakdown.
-
-## Design: explore-first, not autopilot
+- **classify** — LLM tags every citing work with its relationship to
+  the seed (`extends`, `builds-on`, `uses-as-tool`, `benchmarks`,
+  `applies-to-domain`, `related-infrastructure`, or
+  `background-mention`), read only from title/abstract. **Every
+  classification starts life as `provisional` — a placeholder guess,
+  not a finding.**
+- **bake** — aggregate the classifications into an impact brief with
+  reach metrics, citation trends, and a ranked evidence table. Every
+  unverified row is explicitly tagged `[PROVISIONAL]`, so a reader
+  can't confuse a guess with a finding.
+- **evidence** — for a specific high-signal citing work, fetch its PDF,
+  extract the text, and re-classify against the *actual body of the
+  paper* — with the specific passages quoted, page-numbered, and
+  written to a dossier. This is what promotes a provisional guess to
+  a `proposed` finding, and (after `wake override` records the
+  human's sign-off) to `verified`.
+- **theme** — synthesize multiple verified dossiers into a
+  combined-evidence thematic document.
+- **narrative** — draft prose grounded in the confirmed themes, with
+  per-sentence citations back to the underlying evidence.
 
 There is no single "run everything" command. `wake` provides thin,
-JSON-emitting primitives that an agent composes into a workflow: resolve
-and confirm the seed, sample a handful of citing works, classify the
-sample and check with the human, review the estimated cost to finish,
-then scale up. See
-[`wake/skills/impact-analysis/SKILL.md`](wake/skills/impact-analysis/SKILL.md)
-for the full recommended workflow — this is the primary way the tool is
-meant to be used.
+JSON-emitting primitives that an agent composes into this workflow;
+see [`wake/skills/impact-analysis/SKILL.md`](wake/skills/impact-analysis/SKILL.md)
+for the full recommended sequence — this is the primary way the tool
+is meant to be used. See [`docs/`](docs/) for the full topic breakdown.
+
+The wiki itself is designed to be opened directly (in Obsidian, on
+GitHub, or in a plain editor) once wake is done — a `README.md` in the
+output folder orients a human, and a companion `AGENTS.md` orients any
+downstream agent handed just the folder. See
+[`wake/skills/impact-analysis/references/output-layout.md`](wake/skills/impact-analysis/references/output-layout.md)
+for the full directory layout.
 
 ## Install
 
