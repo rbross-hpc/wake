@@ -200,7 +200,7 @@ def test_mark_verified_patches_json_and_markdown(tmp_path):
     assert loaded["human_verification"]["justification"] == "looks right"
 
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
-    assert "status:verified" in md_text
+    assert "verification_status: verified" in md_text
     assert "## Status: verified" in md_text
     assert "pending your review" not in md_text.lower()
 
@@ -233,8 +233,8 @@ def test_mark_verified_relationship_correction_updates_proposed_and_index(tmp_pa
     brief actually uses. Per the multi-facet append-not-replace design
     (see evidence_wiki.mark_verified's docstring), the model's original
     facet is preserved as an unaffirmed alternative rather than deleted --
-    both proposed:extends and proposed:uses-as-tool legitimately appear in
-    the dossier's tags, but only the human-affirmed facet is flagged
+    both extends and uses-as-tool legitimately appear in the dossier's
+    proposed_relationships, but only the human-affirmed facet is flagged
     verified."""
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     citing_id = SAMPLE_CITING_WORKS[0]["openalex_id"]
@@ -259,8 +259,9 @@ def test_mark_verified_relationship_correction_updates_proposed_and_index(tmp_pa
     assert facets_by_label["extends"]["verified"] is False
 
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
-    assert "proposed:uses-as-tool" in md_text
-    assert "proposed:extends" in md_text  # preserved as an unaffirmed alternative, not deleted
+    proposed_line = next(line for line in md_text.splitlines() if line.startswith("proposed_relationships:"))
+    assert "uses-as-tool" in proposed_line
+    assert "extends" in proposed_line  # preserved as an unaffirmed alternative, not deleted
     assert "corrected the model's reading from *extends* to *uses-as-tool*" in md_text
 
     # index.md lists every facet the dossier has (not just the

@@ -63,7 +63,7 @@ def test_assert_frontmatter_valid_passes_on_well_formed_doc():
         "type: theme\n"
         'title: "T"\n'
         'description: "D"\n'
-        "tags: [status:draft]\n"
+        "theme_status: draft\n"
         "timestamp: 2026-01-01T00:00:00+00:00\n"
         "---\n\n# Theme: T\n"
     )
@@ -89,7 +89,7 @@ def test_assert_frontmatter_valid_fails_on_missing_required_key():
 
 
 def test_assert_frontmatter_valid_fails_on_type_mismatch():
-    text = "---\ntype: theme\ntitle: x\ndescription: d\ntags: []\ntimestamp: t\n---\n\n# X\n"
+    text = "---\ntype: theme\ntitle: x\ndescription: d\ntheme_status: draft\ntimestamp: t\n---\n\n# X\n"
     with pytest.raises(AssertionError, match="expected type"):
         assert_frontmatter_valid(text, expected_type="narrative")
 

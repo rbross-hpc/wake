@@ -112,7 +112,7 @@ def test_mark_pending_reverts_status(tmp_path):
     assert "human_verification" not in loaded
 
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
-    assert "status:pending-human-review" in md_text
+    assert "verification_status: pending-human-review" in md_text
     assert "## Status: pending your review" in md_text
 
 
@@ -134,8 +134,9 @@ def test_mark_pending_undoes_relationship_correction(tmp_path):
     assert "model_justification" not in loaded["proposed"]
 
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
-    assert "proposed:extends" in md_text
-    assert "proposed:uses-as-tool" not in md_text
+    proposed_line = next(line for line in md_text.splitlines() if line.startswith("proposed_relationships:"))
+    assert "extends" in proposed_line
+    assert "uses-as-tool" not in proposed_line
 
 
 # --- unverify_work -----------------------------------------------------

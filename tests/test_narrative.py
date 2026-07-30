@@ -473,7 +473,7 @@ def test_stitch_writes_yaml_frontmatter(tmp_path):
     assert "draft_sections: 0" in text
     assert "missing_sections: []" in text
     assert "reference_count: 0" in text
-    assert "tags: [type:narrative]" in text
+    assert "tags:" not in text
     # frontmatter closes before the H1
     frontmatter, _, rest = text.partition("---\n")[2].partition("\n---\n")
     assert rest.lstrip().startswith("# Narrative")

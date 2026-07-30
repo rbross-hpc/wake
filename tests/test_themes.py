@@ -323,7 +323,7 @@ def test_list_theme_needs_evidence_aggregates_across_multiple_themes(tmp_path):
 
 # --- markdown rendering ---------------------------------------------------
 
-def test_theme_markdown_shows_draft_banner_and_status_tags(tmp_path):
+def test_theme_markdown_shows_draft_banner_and_status(tmp_path):
     works = _seed_two_classified(tmp_path)
     ids = [w["openalex_id"] for w in works]
     themes.create_theme(
@@ -332,7 +332,7 @@ def test_theme_markdown_shows_draft_banner_and_status_tags(tmp_path):
     )
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert "type: theme" in md
-    assert "status:draft" in md
+    assert "theme_status: draft" in md
     assert "DRAFT" in md
     assert "Both use this for ESM." in md
     assert "[PROVISIONAL" in md
@@ -353,7 +353,7 @@ def test_theme_markdown_shows_confirmed_banner(tmp_path):
     themes.confirm_theme(PARALLEL_NETCDF_WORK, "t1", base=tmp_path)
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert "CONFIRMED" in md
-    assert "status:confirmed" in md
+    assert "theme_status: confirmed" in md
     assert "Needs Full-Text Verification" not in md
 
 

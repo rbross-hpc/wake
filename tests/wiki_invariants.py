@@ -53,16 +53,19 @@ REQUIRED_KEYS_BY_TYPE: dict[str, set[str]] = {
     "impact-brief": {
         "title", "seed_openalex_id", "citing_count", "verified_count",
         "provisional_count", "themes_confirmed", "themes_draft",
-        "narrative_status", "seed_pdf_status", "generated_at", "tags",
+        "narrative_status", "seed_pdf_status", "generated_at",
     },
     "narrative": {
         "title", "seed_openalex_id", "confirmed_sections", "draft_sections",
-        "missing_sections", "reference_count", "timestamp", "tags",
+        "missing_sections", "reference_count", "timestamp",
     },
     "narrative-outline": {"title", "timestamp"},
-    "narrative-section": {"title", "tags", "timestamp"},
-    "theme": {"title", "description", "tags", "timestamp"},
-    "citing-work-evidence": {"title", "description", "resource", "tags", "timestamp"},
+    "narrative-section": {"title", "kind", "section_status", "timestamp"},
+    "theme": {"title", "description", "theme_status", "timestamp"},
+    "citing-work-evidence": {
+        "title", "description", "resource", "verification_status",
+        "provisional_relationships", "proposed_relationships", "timestamp",
+    },
     "index": {"title", "timestamp"},
     "log": {"title"},
 }

@@ -416,8 +416,7 @@ def _render_theme_markdown(seed_work: dict[str, Any], theme: dict[str, Any], bas
     lines.append("type: theme")
     lines.append(f'title: "{title}"')
     lines.append(f'description: "{theme["summary"][:150]}"')
-    tags = [f"status:{status}"]
-    lines.append(f"tags: [{', '.join(tags)}]")
+    lines.append(f"theme_status: {status}")
     lines.append(f"timestamp: {theme['updated_at']}")
     lines.append("---")
     lines.append("")

@@ -689,7 +689,6 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
     lines.append(f"missing_sections: [{missing_list}]")
     lines.append(f"reference_count: {len(ref_numbers)}")
     lines.append(f"timestamp: {generated_at}")
-    lines.append("tags: [type:narrative]")
     lines.append("---")
     lines.append("")
 
@@ -965,8 +964,8 @@ def _render_section_markdown(
     lines.append("---")
     lines.append("type: narrative-section")
     lines.append(f'title: "{section["title"]}"')
-    tags = [f"kind:{section['kind']}", f"status:{status}"]
-    lines.append(f"tags: [{', '.join(tags)}]")
+    lines.append(f"kind: {section['kind']}")
+    lines.append(f"section_status: {status}")
     lines.append(f"timestamp: {section['updated_at']}")
     lines.append("---")
     lines.append("")
