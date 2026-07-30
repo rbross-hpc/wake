@@ -329,7 +329,7 @@ def test_rerender_dossier_md_preserves_verified_status_block(tmp_path):
     assert "## Status: verified" in text
     assert "Verified by a human on" in text
     assert "human accepted the finding" in text
-    assert "status:verified" in text
+    assert "verification_status: verified" in text
 
 
 def test_rerender_all_dossiers_returns_sorted_ids(tmp_path):

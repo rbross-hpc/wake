@@ -577,17 +577,16 @@ def _render_dossier_markdown(
     lines.append(f"resource: \"{resource}\"")
     if pdf_rel:
         lines.append(f'pdf: "{pdf_rel}"')
-    # One tag per facet per phase, grouped by phase (all provisional:*
-    # tags together, then all proposed:*) rather than interleaved -- an
-    # Obsidian tag search for "provisional:X" alone stays predictable
-    # regardless of how many facets a dossier has (almost always 1,
-    # occasionally 2, rarely 3 -- see classify.py's MAX_FACETS).
-    tags = [f"provisional:{f['label']}" for f in provisional_facets]
-    tags += [f"proposed:{f['label']}" for f in proposed_facets]
-    tags.append(f"status:{verification_status}")
+    lines.append(f"verification_status: {verification_status}")
+    # One entry per facet per phase, listed in the same order as displayed
+    # below (see classify.py's MAX_FACETS -- almost always 1, occasionally
+    # 2, rarely 3 facets per phase).
+    provisional_list = ", ".join(f["label"] for f in provisional_facets)
+    proposed_list = ", ".join(f["label"] for f in proposed_facets)
+    lines.append(f"provisional_relationships: [{provisional_list}]")
+    lines.append(f"proposed_relationships: [{proposed_list}]")
     if author_overlap:
-        tags.append("author-overlap:true")
-    lines.append(f"tags: [{', '.join(tags)}]")
+        lines.append("author_overlap: true")
     lines.append(f"timestamp: {now_iso()}")
     lines.append("---")
     lines.append("")

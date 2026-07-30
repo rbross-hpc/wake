@@ -895,6 +895,13 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
         "can have more than one facet (e.g. both `uses-as-tool` and "
         "`applies-to-domain`); ranking uses the strongest facet, not a sum."
     )
+    lines.append(
+        "The `.md`'s own frontmatter carries the same status at a glance: "
+        "`verification_status`, `provisional_relationships` (label list), "
+        "`proposed_relationships` (label list), and `author_overlap` "
+        "(present only when `true`) — enough to filter dossiers without "
+        "opening the `.json`."
+    )
     lines.append("")
 
     lines.append("### `theme` — `evidence/themes/<slug>.json`")
@@ -904,6 +911,7 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
         "`summary` (synthesis prose), `citing_works` (list of "
         "`{citing_id, status, has_dossier, title}`), `needs_evidence`."
     )
+    lines.append("The `.md`'s frontmatter mirrors `theme_status` directly.")
     lines.append("")
 
     lines.append("### `narrative-section` — `narrative/sections/<slug>.json`")
@@ -912,6 +920,11 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
         "Keys: `slug`, `title`, `kind`, `theme_slugs`, `status` "
         "(`draft` | `confirmed`), `prose` (with `[ref:ID]` markers, "
         "resolved to dossier links only in the rendered `.md`)."
+    )
+    lines.append(
+        "The `.md`'s frontmatter carries `kind` and `section_status` "
+        "(the JSON's `status`, renamed to avoid colliding with a "
+        "dossier's `verification_status` in a vault-wide query)."
     )
     lines.append("")
 

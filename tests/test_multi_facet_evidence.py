@@ -227,15 +227,14 @@ def test_build_dossier_multi_facet_renders_per_facet_sections(tmp_path):
     assert "IFM is a flood-modeling framework for petascale HPC." in md_text
 
 
-def test_build_dossier_multi_facet_frontmatter_tags_one_per_facet(tmp_path):
+def test_build_dossier_multi_facet_frontmatter_lists_one_entry_per_facet(tmp_path):
     result = _build_multi_facet_dossier(tmp_path)
     md_text = Path(result["dossier_path"]).read_text()
-    assert "proposed:uses-as-tool" in md_text
-    assert "proposed:applies-to-domain" in md_text
-    # Grouped by phase: both proposed:* tags appear together, not
-    # interleaved with provisional:* tags.
-    tags_line = next(line for line in md_text.splitlines() if line.startswith("tags:"))
-    assert tags_line.index("proposed:uses-as-tool") < tags_line.index("proposed:applies-to-domain")
+    proposed_line = next(line for line in md_text.splitlines() if line.startswith("proposed_relationships:"))
+    assert "uses-as-tool" in proposed_line
+    assert "applies-to-domain" in proposed_line
+    # Facets are listed in ranking order within the array.
+    assert proposed_line.index("uses-as-tool") < proposed_line.index("applies-to-domain")
 
 
 def test_build_dossier_multi_facet_json_sidecar_round_trips(tmp_path):
@@ -284,8 +283,9 @@ def test_build_dossier_multi_facet_provisional_renders_per_facet_sections(tmp_pa
     md_text = Path(result["dossier_path"]).read_text()
     assert "### uses-as-tool (confidence: 0.60)" in md_text
     assert "### applies-to-domain (confidence: 0.55)" in md_text
-    assert "provisional:uses-as-tool" in md_text
-    assert "provisional:applies-to-domain" in md_text
+    provisional_line = next(line for line in md_text.splitlines() if line.startswith("provisional_relationships:"))
+    assert "uses-as-tool" in provisional_line
+    assert "applies-to-domain" in provisional_line
 
 
 def test_single_facet_dossier_still_renders_without_subsections(tmp_path):

@@ -216,7 +216,7 @@ def test_build_dossier_flags_author_overlap_in_markdown_and_json(tmp_path):
     assert result["overlapping_authors"] == ["Jianwei Li"]
 
     md_text = Path(result["dossier_path"]).read_text()
-    assert "author-overlap:true" in md_text
+    assert "author_overlap: true" in md_text
     assert "Author overlap with seed:" in md_text
     assert "Jianwei Li" in md_text
     assert "original team's own follow-on work" in md_text

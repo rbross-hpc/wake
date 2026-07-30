@@ -495,7 +495,6 @@ def bake_markdown(
     lines.append(f"narrative_status: {narrative_status}")
     lines.append(f"seed_pdf_status: {seed_pdf_status_value}")
     lines.append(f"generated_at: {now_iso()}")
-    lines.append("tags: [type:impact-brief]")
     lines.append("---")
     lines.append("")
 

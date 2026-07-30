@@ -89,10 +89,19 @@ type: citing-work-evidence
 title: "<citing work title>"
 description: "<one-line: how it uses the seed>"
 resource: "<DOI or OpenAlex URL>"
-tags: [provisional:<label>, proposed:<label>, status:pending-human-review]
+verification_status: pending-human-review
+provisional_relationships: [<label>]
+proposed_relationships: [<label>]
 timestamp: <generated-at>
 ---
 ```
+
+(Originally emitted as a single `tags: [...]` list with colon-joined
+values, e.g. `provisional:<label>`. Replaced later — see the
+`refactor/frontmatter-named-keys` entry below — because Obsidian's
+Reading-mode tag styling misread `:`-joined values as malformed nested
+tags and struck them through; named keys carry the same information
+without colliding with Obsidian's tag syntax.)
 
 Body: full citation, complete abstract, the provisional classification
 (clearly framed as a placeholder), the proposed full-text reading, and
@@ -343,9 +352,11 @@ Wired into both places BACKLOG originally called for:
   `author_overlap`/`overlapping_authors` alongside its relationship,
   orthogonal to (not a replacement for) the relationship label itself.
 - `evidence.py::verify_full_text()` — every dossier gets the same tag;
-  `_render_dossier_markdown()` surfaces it as an `author-overlap:true`
-  frontmatter tag plus an inline note under the citing work's byline when
-  true ("this appears to be the original team's own follow-on work").
+  `_render_dossier_markdown()` surfaces it as an `author_overlap: true`
+  frontmatter key (originally `author-overlap:true` inside the old
+  `tags: [...]` list — see the frontmatter-named-keys refactor) plus an
+  inline note under the citing work's byline when true ("this appears to
+  be the original team's own follow-on work").
 
 `report.py` aggregates it too: `build_metrics()` adds a
 `self_extension_count` (works with `author_overlap: true` among the
