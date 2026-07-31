@@ -861,7 +861,7 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     lines.append("exclusions.jsonl        citing works excluded from theme synthesis")
     lines.append("manual_abstracts.jsonl  human/PDF-recovered abstracts")
     lines.append("pdfs/<id>.pdf           cached PDF for a citing work")
-    lines.append("pdfs/<id>.json          its extracted text, page-tagged")
+    lines.append("pdfs/<id>.pdf.json      its extracted text, page-tagged")
     lines.append("evidence/<id>.md/.json  full-text verification dossier for a citing work")
     lines.append("evidence/index.md       dossier catalog: Verified / Pending Review")
     lines.append("evidence/log.md         chronological investigation history")
@@ -1009,8 +1009,8 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     )
     lines.append(
         "- **What did the citing paper actually say?** Read "
-        "`pdfs/<id>.json` — the raw, page-tagged extracted text, the same "
-        "input the LLM was given."
+        "`pdfs/<id>.pdf.json` — the raw, page-tagged extracted text, the "
+        "same input the LLM was given."
     )
     lines.append(
         "- **Show provenance of a specific finding.** A dossier's "

@@ -66,9 +66,19 @@ def test_extract_full_text_from_pages_skips_blank_pages():
 
 # ---- Extraction caching (extract_pages_cached / extracted_text_path) ----
 
-def test_extracted_text_path_is_sibling_json_file():
+def test_extracted_text_path_is_sibling_pdf_json_file():
     p = pdf_fulltext.extracted_text_path("/some/dir/W123.pdf")
-    assert p == Path("/some/dir/W123.json")
+    assert p == Path("/some/dir/W123.pdf.json")
+
+
+def test_extracted_text_path_does_not_collide_with_seed_json():
+    """seed.pdf's extraction cache must never land at seed.json -- that
+    path is wake/seed.py's resolve-payload cache. See BACKLOG.md's
+    frontmatter-named-keys/seed-pdf history for why this collision
+    matters."""
+    p = pdf_fulltext.extracted_text_path("/some/dir/seed.pdf")
+    assert p == Path("/some/dir/seed.pdf.json")
+    assert p != Path("/some/dir/seed.json")
 
 
 def test_extract_pages_cached_missing_pdf_raises(tmp_path):

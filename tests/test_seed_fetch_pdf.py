@@ -188,6 +188,117 @@ def test_acquire_seed_pdf_extraction_failure_graceful(tmp_path):
     assert cached["seed_pdf"]["extracted_text_path"] is None
 
 
+# --- regression: real extraction must never clobber seed.json --------------
+#
+# Every test above mocks out wake.sources.pdf_fulltext.extract_pages_cached,
+# which is exactly why a real bug slipped through undetected: that function
+# computes its own cache path from the PDF's stem
+# (sources/pdf_fulltext.py::extracted_text_path), and for the seed PDF
+# (always named seed.pdf) the pre-fix path was seed.json -- the same file
+# this module's own _update_seed_json() reads and rewrites. A successful
+# seed-PDF fetch silently destroyed the resolve payload (openalex_id,
+# title, authors, ...), and the next `wake citing`/`wake classify`/etc.
+# call KeyError'd deep inside _maybe_auto_fetch_seed_pdf. These tests run
+# extraction for real (fixture PDF, no mocking of extract_pages_cached) so
+# a future re-introduction of the collision fails loudly here instead.
+
+def test_acquire_seed_pdf_real_extraction_does_not_clobber_seed_json(tmp_path):
+    """The automatic-fetch path (osti hit -> real extraction) must leave
+    seed.json's resolve payload intact and write the extraction cache to
+    a distinct file."""
+    _seed_cached(tmp_path)
+    with patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi", return_value="http://example.com/seed.pdf"), \
+         patch("wake.pdf_fetch.requests.get") as mock_get, \
+         patch("wake.pdf_fetch.time.sleep"):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = _FIXTURE.read_bytes()
+        result = acquire_seed_pdf(_SEED, base=tmp_path, verbose=False)
+
+    assert result["ok"] is True
+    assert result["extracted_text_path"] is not None
+
+    cached = load_seed(_SEED["openalex_id"], tmp_path)
+    assert cached is not None
+    # The resolve payload must survive -- this is the actual bug: it was
+    # being overwritten by the extraction cache write.
+    assert cached["openalex_id"] == _SEED["openalex_id"]
+    assert cached["title"] == _SEED["title"]
+    assert "resolved_at" in cached
+
+    sp = cached["seed_pdf"]
+    assert sp["path"] is not None
+    assert sp["extracted_text_path"] is not None
+
+    seed_pdf_p = seed_pdf_path(_SEED["openalex_id"], tmp_path)
+    ext_p = Path(sp["extracted_text_path"])
+    assert ext_p != work_dir(_SEED["openalex_id"], tmp_path) / "seed.json"
+    assert ext_p.name == "seed.pdf.json"
+    assert ext_p.exists()
+    assert seed_pdf_p.exists()
+
+
+def test_from_pdf_real_extraction_does_not_clobber_seed_json(tmp_path):
+    """The manual --from-pdf path (the bug report's own reproduction)
+    must leave seed.json's resolve payload intact."""
+    _seed_cached(tmp_path)
+    pdf_copy = tmp_path / "supplied.pdf"
+    shutil.copy(_FIXTURE, pdf_copy)
+
+    fake_check = {
+        "ok": True, "title_similarity": 0.75, "author_matched": True,
+        "doi_found": False, "strong_signals": 2, "message": "ok",
+    }
+    with patch("wake.pdf_verify.check_pdf_metadata", return_value=fake_check):
+        result = acquire_seed_pdf_from_path(_SEED, pdf_copy, base=tmp_path, verbose=False)
+
+    assert result["ok"] is True
+    assert result["extracted_text_path"] is not None
+
+    cached = load_seed(_SEED["openalex_id"], tmp_path)
+    assert cached["openalex_id"] == _SEED["openalex_id"]
+    assert cached["title"] == _SEED["title"]
+
+    ext_p = Path(cached["seed_pdf"]["extracted_text_path"])
+    assert ext_p.name == "seed.pdf.json"
+    assert ext_p.exists()
+
+
+def test_resolve_and_cache_survives_seed_pdf_fetch(tmp_path):
+    """The exact downstream path the bug report crashed on: after a
+    successful seed-PDF acquisition, a later wake citing/classify/etc.
+    call re-enters resolve_and_cache, hits the is_stage_current fast
+    path, and must get back a seed dict with openalex_id intact -- not
+    a bare KeyError from _maybe_auto_fetch_seed_pdf."""
+    _seed_cached(tmp_path)
+    with patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi", return_value="http://example.com/seed.pdf"), \
+         patch("wake.pdf_fetch.requests.get") as mock_get, \
+         patch("wake.pdf_fetch.time.sleep"):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = _FIXTURE.read_bytes()
+        acquire_seed_pdf(_SEED, base=tmp_path, verbose=False)
+
+    from wake.seed import resolve_and_cache
+    with patch("wake.seed.resolve", return_value={**_SEED}):
+        work = resolve_and_cache(_SEED["openalex_id"], base=tmp_path)
+
+    assert work["openalex_id"] == _SEED["openalex_id"]
+    assert work["title"] == _SEED["title"]
+
+
+def test_update_seed_json_raises_on_corrupted_seed_json(tmp_path):
+    """Defense in depth: if seed.json is ever already missing
+    openalex_id when _update_seed_json is about to merge into it,
+    raise immediately rather than silently writing back a
+    seed_pdf-sub-object-only file that breaks every downstream
+    command with a confusing KeyError far from the actual cause."""
+    wd = work_dir(_SEED["openalex_id"], tmp_path)
+    wd.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(wd / "seed.json", {"pages": ["corrupted"], "pdf_sha256": "x"})
+
+    with pytest.raises(RuntimeError, match="openalex_id"):
+        seed_pdf_mod._update_seed_json(_SEED["openalex_id"], {"path": None}, tmp_path)
+
+
 # --- acquire_seed_pdf_from_path --------------------------------------------
 
 def test_from_pdf_match_copies_and_updates_seed_json(tmp_path):

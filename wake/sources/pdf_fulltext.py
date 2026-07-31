@@ -103,16 +103,26 @@ def _extract_pages_with_extractor_name(path: Path) -> tuple[list[str], str]:
 
 def extracted_text_path(pdf_path: Path | str) -> Path:
     """Return the cache file path for a given PDF's extracted text —
-    always a sibling of the PDF itself (same directory, same stem, .json
-    extension), e.g. wake-out/<seed>/pdfs/<citing-id>.pdf ->
-    wake-out/<seed>/pdfs/<citing-id>.json. Deliberately co-located with
-    the PDF rather than under evidence/: extraction is a property of the
-    PDF file, not of any particular dossier, so any future caller (e.g. a
-    DOE-signals reader, or a re-verification under a different prompt)
-    can reuse it without depending on wake evidence's output layout.
+    always a sibling of the PDF itself (same directory, same stem, with
+    .pdf.json appended rather than swapped in for .pdf), e.g.
+    wake-out/<seed>/pdfs/<citing-id>.pdf ->
+    wake-out/<seed>/pdfs/<citing-id>.pdf.json. Deliberately co-located
+    with the PDF rather than under evidence/: extraction is a property
+    of the PDF file, not of any particular dossier, so any future caller
+    (e.g. a DOE-signals reader, or a re-verification under a different
+    prompt) can reuse it without depending on wake evidence's output
+    layout.
+
+    Appending rather than replacing the suffix (.pdf.json, not .json) is
+    deliberate, not cosmetic: the seed paper's own PDF is always named
+    seed.pdf, and wake/seed.py separately uses seed.json for the resolved
+    OpenAlex payload in the same directory. A plain .with_suffix(".json")
+    would silently collide with (and overwrite) that file the first time
+    the seed PDF's text was extracted -- exactly the bug this convention
+    exists to avoid.
     """
     p = Path(pdf_path)
-    return p.with_suffix(".json")
+    return p.with_suffix(".pdf.json")
 
 
 def extract_pages_cached(

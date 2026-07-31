@@ -753,7 +753,7 @@ def build_dossier(
     bad/garbled extraction can be fixed by re-running with --force even
     when the underlying PDF file hasn't changed. The extracted text
     itself is always cached next to the PDF
-    (wake-out/<seed>/pdfs/<citing-id>.json) regardless of force, so anyone
+    (wake-out/<seed>/pdfs/<citing-id>.pdf.json) regardless of force, so anyone
     diagnosing a surprising finding — a human directly, or an agent
     checking on the human's behalf before assuming the model reasoned
     poorly — can open that file and see exactly what text the LLM saw.
