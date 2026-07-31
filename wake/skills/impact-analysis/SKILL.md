@@ -1,3 +1,8 @@
+---
+name: wake
+description: Use when analyzing the citation impact of a research paper with the wake CLI. Covers the full explore-first workflow — resolve, citing, sample, classify, gaps, fetch-pdf, evidence, themes, narrative, bake — and the provisional → proposed → verified evidence lifecycle. Do not use for general literature search or unrelated citation queries.
+---
+
 # Agent Skill: wake — Impact Analysis
 
 ## Purpose

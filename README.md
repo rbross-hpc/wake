@@ -66,11 +66,13 @@ The agent should run something equivalent to:
 
 ```bash
 pip install "wake[pdf] @ git+https://github.com/rbross-hpc/wake.git"
-wake skill export .opencode/agent/wake
+wake skill export .opencode/skills/wake
 ```
 
-(`[pdf]` enables PDF-based abstract recovery; other harnesses use
-their own skill directory in place of `.opencode/agent/wake`.)
+(`[pdf]` enables PDF-based abstract recovery. For opencode the
+destination is `.opencode/skills/wake`; other harnesses — e.g. Claude
+Code — use their own skills directory, so ask your agent to check its
+documentation for the right path.)
 
 `wake skill export` copies wake's bundled `SKILL.md` and reference
 docs into your agent's skill directory. Without this, the agent has
