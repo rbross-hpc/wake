@@ -889,3 +889,14 @@ wanted, just not next):**
   claim is actually supported. Reports only, does not enforce; kept
   separate from `section confirm` so drafting is never blocked on LLM
   audit availability.
+- README multi-harness skill-install docs. The `wake skill export`
+  install step (Getting Started, step 1) currently only names the
+  correct destination path for opencode (`.opencode/skills/wake`,
+  fixed after `wake-doc-bug.md` reported the old `.opencode/agent/wake`
+  example silently failed opencode's skill discovery — see
+  `packages/opencode/src/skill/index.ts`'s `{skill,skills}/**/SKILL.md`
+  pattern). Deferred: a short per-harness table (opencode, Claude Code,
+  others) with each one's confirmed-correct skill directory, rather
+  than one example plus a "check your harness's docs" hand-wave.
+  Needs someone to actually verify each harness's path from its source
+  the way opencode's was verified here, not guess it.
