@@ -430,7 +430,7 @@ If you're confident it's the right paper despite the check failing, use
 before doubting the reasoning.** The `extracted_text_path` field in the
 response (an absolute path; the dossier's `.json` sidecar stores the same
 file relative to its own directory) points at the raw page-tagged text
-the model was actually given, cached at `wake-out/<seed>/pdfs/<citing-id>.json`.
+the model was actually given, cached at `wake-out/<seed>/pdfs/<citing-id>.pdf.json`.
 Read it yourself before telling the human "the model got this wrong" —
 multi-column academic PDF layouts are a known source of garbled
 extraction, and a bad extraction produces a very different-looking

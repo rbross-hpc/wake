@@ -10,9 +10,9 @@ against the real Argo endpoint.
 Tests that exercise build_dossier() copy the fixture into tmp_path rather
 than pointing fetch_pdf's mock at the fixture in place: build_dossier's
 extraction cache (wake.sources.pdf_fulltext.extract_pages_cached) writes
-a .json sidecar next to whatever PDF path it's given, and the committed
-fixture directory must never accumulate generated cache files from test
-runs.
+a .pdf.json sidecar next to whatever PDF path it's given, and the
+committed fixture directory must never accumulate generated cache files
+from test runs.
 """
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ from unittest.mock import patch
 import pytest
 
 from wake import evidence
+from wake.sources.pdf_fulltext import extracted_text_path
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
@@ -173,9 +174,9 @@ def test_build_dossier_end_to_end_with_real_fixture_pdf(tmp_path):
     # model actually read). build_dossier()'s returned paths are always
     # absolute (for a caller that wants to open the file directly);
     # the dossier itself links to it with a path relative to evidence/.
-    extracted_text_path = pdf_copy.with_suffix(".json")
-    assert extracted_text_path.exists()
-    assert result["extracted_text_path"] == str(extracted_text_path)
+    expected_extracted_text_path = extracted_text_path(pdf_copy)
+    assert expected_extracted_text_path.exists()
+    assert result["extracted_text_path"] == str(expected_extracted_text_path)
     assert "[Raw extracted text](" in md_text
     assert "[Cached PDF](" in md_text
 
@@ -189,7 +190,7 @@ def test_build_dossier_end_to_end_with_real_fixture_pdf(tmp_path):
     assert not Path(loaded["pdf_path"]).is_absolute()
     assert not Path(loaded["extracted_text_path"]).is_absolute()
     assert (dossier_dir / loaded["pdf_path"]).resolve() == pdf_copy.resolve()
-    assert (dossier_dir / loaded["extracted_text_path"]).resolve() == extracted_text_path.resolve()
+    assert (dossier_dir / loaded["extracted_text_path"]).resolve() == expected_extracted_text_path.resolve()
 
     # Dossier JSON sidecar carries what the evidence wiki (BACKLOG Theme D)
     # needs to index/score this dossier without re-loading classified.json.
@@ -295,7 +296,7 @@ def test_load_dossier_after_build(tmp_path):
     # Relative to the JSON sidecar's own directory (evidence/), not absolute.
     dossier_dir = evidence.evidence_dir(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
     assert not Path(loaded["extracted_text_path"]).is_absolute()
-    assert (dossier_dir / loaded["extracted_text_path"]).resolve() == pdf_copy.with_suffix(".json").resolve()
+    assert (dossier_dir / loaded["extracted_text_path"]).resolve() == extracted_text_path(pdf_copy).resolve()
 
 
 def test_dossier_markdown_quotes_full_paragraph_verbatim(tmp_path):

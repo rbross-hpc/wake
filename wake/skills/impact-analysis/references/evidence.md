@@ -18,7 +18,7 @@
     "dossier_json_path": "wake-out/<seed>/evidence/<citing-id>.json",
     "pdf_path": "/abs/path/to/wake-out/<seed>/pdfs/<citing-id>.pdf",
     "pdf_source": "semanticscholar",
-    "extracted_text_path": "/abs/path/to/wake-out/<seed>/pdfs/<citing-id>.json",
+    "extracted_text_path": "/abs/path/to/wake-out/<seed>/pdfs/<citing-id>.pdf.json",
     "provisional": {
       "relationship": "uses-as-tool", "confidence": 0.4, "justification": "...",
       "relationships": [{"label": "uses-as-tool", "confidence": 0.4, "justification": "..."}]
@@ -201,7 +201,7 @@ omitted (mutually exclusive with `--rerender-all`, `--force`, and
 ## Diagnosing a surprising finding: check the extraction first
 
 The extraction cache — the raw page-tagged text the LLM was actually
-given, cached next to the PDF (`wake-out/<seed>/pdfs/<citing-id>.json`),
+given, cached next to the PDF (`wake-out/<seed>/pdfs/<citing-id>.pdf.json`),
 keyed by the PDF's sha256 so a re-fetched PDF invalidates it
 automatically — is where to look if a `proposed` finding looks
 implausible. Read it **before** concluding the model reasoned poorly:

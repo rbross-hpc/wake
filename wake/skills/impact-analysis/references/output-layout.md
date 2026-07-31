@@ -38,7 +38,7 @@ wake-out/<OpenAlex-ID>/
                              it's surfaced in README.md/AGENTS.md/impact.md's
                              seed_pdf_status until someone supplies a copy)
   seed.pdf.json           — seed PDF full text, page-tagged (sibling cache, same format
-                             as pdfs/<citing-id>.json)
+                             as pdfs/<citing-id>.pdf.json)
   citing.json             — all citing works (paginated, cached)
   classified.json         — per-citing-work relationship + evidence
                              (verification_status: "provisional" by default)
@@ -61,7 +61,7 @@ wake-out/<OpenAlex-ID>/
   manual_abstracts.jsonl  — human/PDF-recovered abstracts (wake fill-abstract)
   pdfs/                   — locally-cached PDFs (wake fetch-pdf / wake evidence)
     <citing-id>.pdf         — the PDF itself
-    <citing-id>.json        — its extracted text, cached (pdf_sha256-keyed;
+    <citing-id>.pdf.json    — its extracted text, cached (pdf_sha256-keyed;
                                see evidence.md's "Diagnosing a surprising finding")
   evidence/                — full-text verification dossiers (wake evidence)
     <citing-id>.md          — OKF concept document (human/agent-readable); shows a
@@ -139,7 +139,7 @@ should always read a subsystem's `.json` (or a verb's `--json` response),
 never scrape prose out of a rendered `.md` — the `.md` exists so a human
 can browse the wiki (in a plain editor or Obsidian) without needing to
 run any tooling. The one deliberate exception is an evidence dossier's
-extraction cache (`pdfs/<citing-id>.json`): it's linked directly from the
+extraction cache (`pdfs/<citing-id>.pdf.json`): it's linked directly from the
 dossier's "## Source" section because it's the only artifact that
 answers "did the model see garbled text?", and there's no separate
 human-readable rendering of it to link instead (the PDF itself is

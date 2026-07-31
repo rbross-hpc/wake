@@ -32,7 +32,8 @@ from .seed import load_seed, work_dir
 
 
 def seed_extracted_text_path(seed_id: str, base: Path | None = None) -> Path:
-    return seed_pdf_path(seed_id, base).with_suffix(".pdf.json")
+    from .sources.pdf_fulltext import extracted_text_path
+    return extracted_text_path(seed_pdf_path(seed_id, base))
 
 
 def _extract_seed_text(seed_pdf: Path, *, verbose: bool = False) -> str | None:
@@ -50,8 +51,21 @@ def _extract_seed_text(seed_pdf: Path, *, verbose: bool = False) -> str | None:
 
 
 def _update_seed_json(seed_id: str, seed_pdf_info: dict[str, Any], base: Path | None) -> None:
-    """Persist the seed_pdf sub-object into seed.json."""
+    """Persist the seed_pdf sub-object into seed.json.
+
+    Guards against merging into an already-corrupted seed.json (e.g. a
+    prior extraction-cache collision that clobbered the resolve payload)
+    rather than silently propagating the corruption forward with a
+    seed_pdf sub-object bolted on -- that shape is exactly what made a
+    past version of this bug hard to diagnose (every downstream command
+    failed with a bare KeyError far from the actual cause).
+    """
     cached = load_seed(seed_id, base) or {}
+    if cached and "openalex_id" not in cached:
+        raise RuntimeError(
+            f"seed.json for {seed_id} appears corrupted (missing 'openalex_id'). "
+            f"Run 'wake resolve {seed_id} --force' to restore it, then retry."
+        )
     cached["seed_pdf"] = seed_pdf_info
     p = work_dir(seed_id, base) / "seed.json"
     p.parent.mkdir(parents=True, exist_ok=True)
