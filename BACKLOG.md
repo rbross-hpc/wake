@@ -1027,11 +1027,58 @@ starts:
    and every existing CLI-integration test (`test_show_verbs.py` etc.,
    all driving the real `wake.cli.main.main()` via `sys.argv`) all
    passed with zero test-side changes needed.
-6. `refactor/llm-boundary` — provider-neutral `llm/openai_client.py`
-   interface, typed per-operation response schemas validated
-   immediately after generation, retry policy split by failure class
-   (transport / rate-limit / invalid model output) so a JSON-parse
-   failure no longer silently re-issues (and re-bills) the whole call.
+6. `refactor/llm-boundary` — **BUILT**, see PLAN.md v0.4.5. Confirmed
+   live before fixing: `chat_json`/`chat_text`'s single retry decorator
+   retried *every* `openai.*Error` subclass identically (transient and
+   permanent alike), costing ~4s/3 calls on a request that could never
+   succeed (bad API key reproduced directly). New
+   `_is_transient_openai_error()` splits the retry policy by failure
+   class; a permanent failure now raises a new `LLMInvalidRequestError`
+   immediately (1 call, <1s) instead of being retried into the same
+   guaranteed failure. New `LLMResponseError` replaces tenacity's opaque
+   `RetryError` for a malformed-but-successfully-transported response
+   (pulled the JSON-parsing retry out of the transport retry entirely --
+   distinct failure classes, distinct handling). `cli/main.py`'s
+   top-level dispatch now catches both new types and emits a clean
+   error instead of an uncaught traceback. Scoped narrower than a full
+   "provider-neutral client + typed per-operation response schemas"
+   rewrite: investigating that half of the original ask found
+   `classify.py`/`evidence.py`'s response parsers (`_parse_relationships_
+   response`/`_parse_proposed_relationships`) already deliberately treat
+   a malformed/off-schema response as *recoverable* (unknown labels
+   dropped, bad confidence defaulted, empty result falls back to a safe
+   `background-mention` facet) rather than an error to raise on --
+   adding strict schema validation "immediately after generation" would
+   have regressed that deliberate graceful-degradation design, which is
+   a real strength of wake's classify/evidence pipeline (one malformed
+   response during a 400-work batch run should degrade, not abort the
+   run). Combined with only 4 real call sites total across the codebase,
+   each already wrapping its own caller-appropriate error handling, a
+   provider-neutral abstraction on top of a single thin wrapper had no
+   concrete remaining problem to solve once the retry-policy split and
+   error-type clarity were in place.
+
+This closes the six-phase Structural Hardening plan opened by the
+external assessment. Offline test count grew from 651 (pre-effort
+baseline) to 713 across all six phases, entirely additive.
+
+**Deferred follow-on work, not forgotten, all real:**
+- A whole-packet golden-fixture test for the domain models (Phase 2)
+  against a real pre-model `wake-out/` packet.
+- Replacing the 15 catalogued `_normalize_*`/legacy-shape functions
+  (classify-2↔3, evidence-1↔2, the three dotfile-rename migrations)
+  with explicit versioned migrations, once more of the codebase
+  consumes `models.py` types directly rather than dicts validated
+  against them at the write boundary.
+- Full `WakeContext` threading through all ~90 existing `base:`-taking
+  domain functions (Phase 3 landed the context object and one
+  canonical CLI construction point; `ctx.base` is a verified drop-in
+  for any existing `base=` call site, but the mechanical rewrite of
+  every call site itself was deliberately deferred given the blast
+  radius).
+- A persisted dirty/revision manifest for `wake rebuild` (Phase 4) to
+  track staleness *between* calls, distinct from the per-call summary
+  it already returns.
 
 Explicitly **not** planned: replacing the filesystem-artifact model with
 a database. Both the external assessment and this session's independent

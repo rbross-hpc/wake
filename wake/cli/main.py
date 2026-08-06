@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from ..llm.openai_client import LLMInvalidRequestError, LLMResponseError
 from . import main_helpers
 from .commands import (
     citing,
@@ -46,6 +47,7 @@ from .commands import (
     resolve,
     theme,
 )
+from .emit import emit_error
 
 _work_dir_base = main_helpers._work_dir_base
 
@@ -139,3 +141,11 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\n[wake] Interrupted.", file=sys.stderr)
         sys.exit(130)
+    except (LLMInvalidRequestError, LLMResponseError) as exc:
+        # These are well-defined, expected LLM-boundary failure modes
+        # (see llm/openai_client.py's module docstring) that most
+        # command handlers don't catch individually -- surfaced here as
+        # a clean emit_error rather than an uncaught traceback, matching
+        # every command's own error-handling convention.
+        emit_error(args.command, exc, as_json=args.json_out)
+        sys.exit(1)
