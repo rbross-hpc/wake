@@ -3,10 +3,12 @@
 """Tests for wake.gaps — offline (manual-abstract store, gap-finding logic)."""
 from __future__ import annotations
 
-import pytest
 from unittest.mock import patch
 
+import pytest
+
 from wake import gaps
+
 from .conftest import SAMPLE_CITING_WORKS
 
 

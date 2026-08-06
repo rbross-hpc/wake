@@ -18,8 +18,9 @@ import pytest
 from wake import evidence, evidence_wiki, narrative, themes
 from wake.classify import save_classified
 from wake.report import add_override
-from .wiki_invariants import assert_no_malformed_wikilinks
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
+from .wiki_invariants import assert_no_malformed_wikilinks
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
 
@@ -182,7 +183,7 @@ def test_create_theme_overwrites_on_rerun_without_force(tmp_path):
 def test_create_theme_preserves_created_at_across_rewrites(tmp_path):
     works = _seed_two_classified(tmp_path)
     wid = works[0]["openalex_id"]
-    first = themes.create_theme(
+    themes.create_theme(
         PARALLEL_NETCDF_WORK, "t1", title="T", summary="S", citing_ids=[wid], base=tmp_path,
     )
     loaded1 = themes.load_theme(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path)

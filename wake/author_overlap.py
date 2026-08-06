@@ -41,7 +41,7 @@ def compute_overlap(seed_work: dict[str, Any], citing_work: dict[str, Any]) -> d
     citing_ids = citing_work.get("author_ids", []) or []
 
     overlapping_authors: list[str] = []
-    for name, aid in zip(citing_authors, citing_ids):
+    for name, aid in zip(citing_authors, citing_ids, strict=False):
         if aid and aid in seed_ids and name not in overlapping_authors:
             overlapping_authors.append(name)
 

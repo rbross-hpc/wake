@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
-from .emit import emit, emit_error, is_quiet, progress
+from .emit import emit, emit_error, is_quiet
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -623,8 +622,8 @@ def _work_dir_base(args) -> Path | None:
 
 
 def _resolve_seed_to_work(seed_str: str, args, force: bool = False) -> dict:
-    from ..seed import resolve_and_cache
     from ..errors import SeedNotFound
+    from ..seed import resolve_and_cache
     try:
         return resolve_and_cache(seed_str, base=_work_dir_base(args), force=force)
     except SeedNotFound as exc:
@@ -643,10 +642,10 @@ def run_resolve(args) -> None:
 
 
 def run_status(args) -> None:
-    from .. import config, cost as cost_mod
+    from .. import cost as cost_mod
     from ..citing import load_citing
-    from ..classify import _model as classify_model, load_classified
-    from ..describe import _model as describe_model
+    from ..classify import _model as classify_model
+    from ..classify import load_classified
     from ..pdf_fetch import seed_pdf_path
 
     work = _resolve_seed_to_work(args.seed, args)
@@ -1136,6 +1135,7 @@ def _run_evidence_from_pdf(args, seed_work, citing_work, pdf_path_str, base, qui
     runs; --force bypasses the copy refusal but does not suppress the check."""
     import shutil
     from pathlib import Path as _Path
+
     from ..evidence import build_dossier
     from ..evidence_wiki import append_log_entry
     from ..pdf_fetch import pdf_path as _pdf_dest_path
@@ -1450,7 +1450,7 @@ def run_narrative_refs_check_export(args) -> None:
     def human(d):
         print(f"Refs exported: {d['refs_json_path']} ({d['reference_count']} reference(s))")
         print("  Run ref-checker yourself, e.g.:")
-        print(f"    pipx install git+https://github.com/rbross-hpc/ref-checker.git  # once")
+        print("    pipx install git+https://github.com/rbross-hpc/ref-checker.git  # once")
         print(f"    ref-checker check --refs-json {d['refs_json_path']} "
               f"--results-json {d['refs_json_path'].rsplit('.json', 1)[0]}.results.json")
         print("  Then: wake narrative refs-check summarize <seed> <results.json>")
@@ -1818,8 +1818,8 @@ def run_cost(args) -> None:
 
 
 def run_show(args) -> None:
-    from ..seed import resolve_and_cache, work_dir
     from ..errors import SeedNotFound
+    from ..seed import resolve_and_cache, work_dir
 
     what = args.show_what
     base = _work_dir_base(args)

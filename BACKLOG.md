@@ -900,3 +900,56 @@ wanted, just not next):**
   than one example plus a "check your harness's docs" hand-wave.
   Needs someone to actually verify each harness's path from its source
   the way opencode's was verified here, not guess it.
+
+---
+
+## Theme L — Structural Hardening (engineering, not product features)
+
+Prompted by an external static assessment of `main`: wake's product
+architecture (epistemic-state tracking, thin agent-facing primitives,
+file-first artifacts) was judged sound, but the implementation — a
+2,000+-line CLI dispatch module, an implicit dict-based domain model with
+no schema versioning, dependency rebuilding via bidirectional dynamic
+imports between `evidence`/`evidence_wiki`/`themes`/`narrative`,
+non-transactional JSON+MD dual writes, process-global config/state, a
+weakly-typed LLM boundary, and no CI/static tooling — was flagged as
+outgrowing its current shape. Independently verified against the real
+source before acting on it. Full writeup, verification detail, and
+per-phase build/verification notes live in `PLAN.md` under "Phase 3 —
+Structural Hardening" (this is the BACKLOG-side pointer, not a duplicate).
+
+Five phases, one branch each, offline suite (651 tests) kept green
+throughout, `--no-ff` merged to `main` before the next phase starts:
+
+1. `chore/ci-and-tooling` — CI (Python 3.10–3.13 matrix) + ruff + mypy
+   (scoped to `wake/`, lenient baseline) — **BUILT**, see PLAN.md v0.4.0.
+2. `refactor/domain-models` — explicit Pydantic models (`Work`,
+   `ClassificationFacet`, `EvidenceClaim`, `EvidenceDossier`, `Theme`,
+   `NarrativeSection`, `Override`, `ArtifactReference`) + `schema_version`
+   on every persisted artifact, replacing scattered dict-shape
+   normalization/back-compat branches with explicit migrations.
+3. `refactor/wake-context` — `WakeContext` (workspace, settings,
+   llm_client, source_registry, artifact_repository) threaded through
+   domain functions, removing `Path.cwd()`/`@lru_cache(maxsize=1)`
+   globals from `config.py` and distinguishing malformed from missing
+   `.state.json`.
+4. `refactor/build-layer` — declare JSON canonical, Markdown/indexes
+   deterministic derived products; centralize the `rebuild_*`/
+   `rerender_*` call graph currently spread across bidirectional
+   in-function imports; add `wake rebuild` + a dirty/revision manifest.
+5. `refactor/cli-split` — `cli/commands/<family>.py` per command group,
+   `cli/main.py` reduced to context construction + registration +
+   dispatch. Deliberately sequenced *after* the context/repository work
+   above so the split creates real module boundaries.
+6. `refactor/llm-boundary` — provider-neutral `llm/openai_client.py`
+   interface, typed per-operation response schemas validated
+   immediately after generation, retry policy split by failure class
+   (transport / rate-limit / invalid model output) so a JSON-parse
+   failure no longer silently re-issues (and re-bills) the whole call.
+
+Explicitly **not** planned: replacing the filesystem-artifact model with
+a database. Both the external assessment and this session's independent
+review agree file-first is a real strength of wake's design, not a
+symptom needing a fix — what's missing is a formal schema/manifest/
+build-mechanism layer *around* the existing files, not a different
+storage model.

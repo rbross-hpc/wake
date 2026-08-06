@@ -72,8 +72,8 @@ def load_exclusions(seed_id: str, base: Path | None = None) -> dict[str, dict[st
     return entries
 
 
-def is_excluded(citing_id: str, exclusions: dict[str, dict[str, Any]]) -> bool:
-    entry = exclusions.get(citing_id)
+def is_excluded(citing_id: str | None, exclusions: dict[str, dict[str, Any]]) -> bool:
+    entry = exclusions.get(citing_id) if citing_id else None
     return bool(entry and entry.get("excluded", True))
 
 

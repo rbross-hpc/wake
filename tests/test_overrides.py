@@ -5,15 +5,15 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from wake.report import (
-    add_override,
-    load_overrides,
-    apply_overrides,
-    overrides_path,
     _legacy_overrides_path,
+    add_override,
+    apply_overrides,
+    load_overrides,
+    overrides_path,
 )
-from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
+
+from .conftest import SAMPLE_CITING_WORKS
 
 
 def test_overrides_path(tmp_path):

@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import pytest
-from wake import config
 
+from wake import config
 
 ALL_REQUIRED = list(config._REQUIRED_ENVS.keys())
 ALL_RECOMMENDED = list(config._RECOMMENDED_ENVS.keys())
@@ -30,7 +30,7 @@ def test_env_status_shape_has_three_tiers():
 def test_env_status_all_unset(monkeypatch):
     status = config.env_status()
     for tier in ("required", "recommended", "optional"):
-        for var, info in status[tier].items():
+        for _var, info in status[tier].items():
             assert info["set"] is False
             assert info["value"] is None
 
@@ -143,7 +143,7 @@ def test_init_local_writes_consistent_model_name(tmp_path, monkeypatch):
 def test_init_local_does_not_overwrite(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     path, created_first = config.init_local()
-    original_content = path.read_text()
+    path.read_text()
     path.write_text("# modified by user\n")
     path2, created_second = config.init_local()
     assert created_first is True

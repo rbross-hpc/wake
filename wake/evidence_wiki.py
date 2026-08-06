@@ -29,7 +29,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .evidence import evidence_dir, dossier_path
+from .evidence import dossier_path, evidence_dir
 from .io import atomic_write_text, now_iso
 from .seed import work_dir
 
@@ -250,7 +250,8 @@ def mark_verified(
     it has nothing to mark.
     """
     import copy
-    from .evidence import dossier_json_path, _normalize_proposed_relationships
+
+    from .evidence import _normalize_proposed_relationships, dossier_json_path
 
     json_path = dossier_json_path(seed_id, citing_id, base)
     if not json_path.exists():
@@ -571,7 +572,7 @@ def load_citing_ids(seed_id: str, base: Path | None = None) -> list[str]:
     from .citing import load_citing
 
     try:
-        return [w.get("openalex_id") for w in (load_citing(seed_id, base) or [])]
+        return [wid for w in (load_citing(seed_id, base) or []) if (wid := w.get("openalex_id"))]
     except (OSError, ValueError):
         return []
 

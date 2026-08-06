@@ -38,9 +38,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from pathlib import Path
 from typing import Any
-
 
 _TITLE_THRESHOLD = 0.55
 _LEAD_TEXT_TITLE_CHARS = 800

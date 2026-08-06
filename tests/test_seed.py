@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import pytest
-from wake.seed import _is_doi, _is_arxiv_id, _is_openalex_id, resolve, work_dir
+
 from wake.errors import SeedNotFound
+from wake.seed import _is_arxiv_id, _is_doi, _is_openalex_id, resolve, work_dir
 
 
 def test_is_doi():

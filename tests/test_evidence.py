@@ -24,6 +24,7 @@ import pytest
 
 from wake import evidence
 from wake.sources.pdf_fulltext import extracted_text_path
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"

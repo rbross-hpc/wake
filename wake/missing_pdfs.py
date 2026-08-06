@@ -32,8 +32,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .seed import work_dir
-
 _LOG_LINE_RE = re.compile(
     r"^- (?P<ts>\S+) — (?P<event>\S+) — (?P<ref>\S+?)(?:\s+— (?P<detail>.+))?$"
 )

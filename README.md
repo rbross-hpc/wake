@@ -186,6 +186,19 @@ pytest tests/ -m 'not network'
 pytest tests/
 ```
 
+## Development
+
+```bash
+pip install -e ".[dev,pdf]"
+
+ruff check wake/ tests/   # lint
+mypy                      # typecheck (wake/ package only)
+pytest tests/ -m 'not network'
+```
+
+CI (`.github/workflows/ci.yml`) runs all three across Python 3.10–3.13 on
+every push/PR to `main`.
+
 ## License
 
 BSD 3-Clause. Copyright (c) 2026, UChicago Argonne, LLC, Argonne National Laboratory.

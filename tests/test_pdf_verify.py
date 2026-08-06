@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from wake import pdf_verify
 from wake.classify import save_classified
 from wake.cli.main import main
@@ -19,6 +17,7 @@ from wake.io import atomic_write_json
 from wake.seed import work_dir
 from wake.sources.pdf_fulltext import extracted_text_path
 from wake.state import mark_stage_complete
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"

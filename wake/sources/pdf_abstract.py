@@ -59,11 +59,11 @@ def _try_pypdf(path: Path, max_pages: int) -> str:
 def _try_pdfplumber(path: Path, max_pages: int) -> str:
     try:
         import pdfplumber
-    except ImportError:
+    except ImportError as e:
         raise ImportError(
             "PDF extraction requires pypdf or pdfplumber. "
             "Install with: pip install 'wake[pdf]'"
-        )
+        ) from e
     pages = []
     with pdfplumber.open(str(path)) as pdf:
         for page in pdf.pages[:max_pages]:

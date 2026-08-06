@@ -777,3 +777,111 @@ fixture instead of the shared file in place.
   unchanged (cache file mtime updated, ~7s taken for a real re-extraction
   + re-verification), confirming `force` propagates through both caches
   as designed.
+
+---
+
+# Phase 3 — Structural Hardening
+
+An external static assessment of `main` (source, docs, tests only — no
+runtime execution) judged wake's product architecture — epistemic-state
+tracking (provisional/proposed/verified), thin agent-facing primitives,
+file-first artifacts, source-adapter boundaries — sound, but flagged the
+implementation as outgrowing its current shape: a 2,000+-line CLI dispatch
+module, an implicit dict-based domain model with no schema versioning,
+dependency rebuilding done via bidirectional dynamic imports between
+`evidence`/`evidence_wiki`/`themes`/`narrative`, non-transactional JSON+MD
+dual writes, process-global config/state, a weakly-typed LLM boundary
+(broad retry wraps `json.loads`), and no CI or static tooling. Verified
+independently against the real source (2,029-line `cli/main.py`, 167
+in-function imports, ~180 `dict[str, Any]` annotations, zero dataclass/
+Pydantic/TypedDict usage, no `schema_version` in any artifact, no
+`.github/workflows`) before agreeing to act on it. The 651-test offline
+suite (`pytest tests/ -m 'not network'`, ~4 min) passing cleanly on `main`
+throughout this review is the safety net the whole plan leans on.
+
+Five-phase refactor, one branch per phase, `--no-ff` merge to `main`
+before starting the next, offline suite kept green throughout:
+
+0. `chore/ci-and-tooling` — CI + lint/typecheck (this entry)
+1. `refactor/domain-models` — explicit Pydantic models + `schema_version`
+2. `refactor/wake-context` — `WakeContext` + artifact repository, remove
+   `Path.cwd()`/`lru_cache` globals
+3. `refactor/build-layer` — JSON canonical / MD+indexes derived,
+   centralized rebuild graph, `wake rebuild`
+4. `refactor/cli-split` — `cli/commands/<family>.py`, `main.py` reduced to
+   context-build + register + dispatch
+5. `refactor/llm-boundary` — provider-neutral client, typed per-operation
+   response schemas, split retry policy (transport / rate-limit / invalid
+   output)
+
+Not adopted: replacing the filesystem-artifact model with a database —
+both the assessment and this review agree file-first is a real strength
+of the current design, not a symptom to fix.
+
+## v0.4.0 — CI, ruff, mypy (`chore/ci-and-tooling`)
+
+Guardrails first, before any structural change, so every later phase has
+a cheap, fast signal if it breaks something the 651-test suite doesn't
+directly cover (import cycles, unused code, type confusion at `Any`/`None`
+boundaries).
+
+- `pyproject.toml`: `[tool.ruff]` (`target-version = "py310"`,
+  `line-length = 100`, `select = ["E", "F", "I", "UP", "B"]`, `E501`
+  ignored — prompts/URLs routinely exceed a hard line-length limit and
+  wrapping them buys nothing) and `[tool.mypy]` (scoped to `files =
+  ["wake"]` only — tests are exercised for correctness by pytest, not by
+  mypy; adding type-checking across `tests/` surfaced 560+ pre-existing
+  errors and is a separate, much larger, lower-value cleanup). mypy
+  baseline is intentionally lenient (`disallow_untyped_defs = false`) —
+  wake's domain model is still dict-based (see `refactor/domain-models`
+  below), so strict mode would immediately drown in noise instead of
+  catching real bugs; tighten incrementally as typed models land.
+  `dev` extras gained `ruff`, `mypy`, `pytest-cov`.
+- `.github/workflows/ci.yml`: three jobs (`test` matrixed over Python
+  3.10–3.13 running the offline suite, `lint` running `ruff check`,
+  `typecheck` running `mypy`), on push/PR to `main`.
+- Fixed everything ruff's default+`B`/`UP` rule set flagged in `wake/` and
+  `tests/` (124 issues, 122 auto-fixable: unsorted imports, unused
+  imports, unused variables/loop vars, missing `zip(..., strict=)`,
+  deprecated typing imports) plus 5 issues needing a manual read
+  (`raise ... from err` in `sources/pdf_abstract.py`/`sources/
+  pdf_fulltext.py`'s `ImportError` handlers; a genuinely-dead
+  `selected_ids` binding in `classify.py`). No behavior change — verified
+  by re-running the full offline suite after each batch of fixes.
+- Fixed the 18 real mypy errors surfaced against `wake/` (import-cycle-
+  and `Optional`-narrowing gaps, not schema issues): `sources/
+  arxiv_fetch.py`'s `params` dict widened to `dict[str, str]`-compatible
+  values; `config.py`'s packaged-config path now a concrete `Path` instead
+  of an `importlib.resources.Traversable` (`.exists()`/`open()` aren't
+  guaranteed on the abstract type even though they always work in
+  practice for a real installed package); `pdf_fetch.py`'s per-source
+  dispatch narrowed with explicit `assert`s matching the guards already
+  enforced a few lines above; `exclude.is_excluded()` widened to accept
+  `citing_id: str | None` (several call sites pass a possibly-missing
+  `openalex_id` and a `None` id can never be excluded, so `None` is a
+  legitimate, meaningful input, not a bug to suppress); `classify.py`/
+  `themes.py`/`evidence_wiki.py`/`report.py` — half a dozen
+  `dict.get(key)` / dict-comprehension sites where a work's
+  `openalex_id`/relationship `label`/OpenAlex `type` is typed as
+  `Any | None` at the dict-literal boundary; each fixed by filtering out
+  the falsy/non-`str` case inline (walrus-in-comprehension or an explicit
+  `if not isinstance(...): return "unknown"` guard) rather than suppressing
+  the check, since a missing id/label was already being silently skipped
+  or defaulted at runtime — mypy was catching real (if currently harmless)
+  looseness, not a false positive.
+- `README.md`: new "Development" section documenting `ruff check`/`mypy`/
+  `pytest` as the standard pre-commit gate, pointing at the new CI
+  workflow.
+
+### Verification
+
+- `ruff check wake/ tests/` — clean.
+- `mypy` — clean (46 source files under `wake/`).
+- `pytest tests/ -m 'not network'` — 651 passed, 14 deselected, run
+  immediately after the ruff auto-fix batch, after the manual ruff fixes,
+  and again after all mypy fixes — no regression at any checkpoint.
+- CI workflow not yet exercised on GitHub Actions itself (no push access
+  from this session) — its three jobs replicate exactly the local
+  `pip install -e ".[dev,pdf]"` + `ruff check` + `mypy` + `pytest`
+  sequence verified above, across the four supported Python versions
+  declared in `pyproject.toml`'s `requires-python = ">=3.10"`.

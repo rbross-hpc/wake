@@ -19,8 +19,8 @@ import pytest
 from wake import dedup
 from wake.classify import save_classified
 from wake.report import add_override
-from .conftest import PARALLEL_NETCDF_WORK
 
+from .conftest import PARALLEL_NETCDF_WORK
 
 _PREPRINT = {
     "openalex_id": "W_PREPRINT",
@@ -129,7 +129,7 @@ def test_dedup_candidates_labels_double_publication_without_preprint_signal(tmp_
 
 def test_dedup_candidates_respects_min_title_similarity(tmp_path):
     _seed_classified(tmp_path, [_PREPRINT, _PUBLISHED])
-    candidates = dedup.dedup_candidates(
+    dedup.dedup_candidates(
         PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path, min_title_similarity=0.999,
     )
     # Titles are identical here so this should still match; use a
@@ -267,9 +267,10 @@ def test_narrative_section_refuses_confirmed_duplicate_ref(tmp_path):
     citing the (now-superseded) preprint ID should be refused and
     redirected to the canonical, even though the preprint ID is itself
     still human-verified."""
-    from wake import evidence, narrative
     import shutil
     from unittest.mock import patch
+
+    from wake import evidence, narrative
 
     _seed_classified(tmp_path, [_PREPRINT, _PUBLISHED])
     fixture = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"

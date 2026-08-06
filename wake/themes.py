@@ -44,7 +44,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .evidence import dossier_json_path, dossier_path, evidence_dir
+from .evidence import dossier_json_path, evidence_dir
 from .io import atomic_write_json, atomic_write_text, now_iso, read_json
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -178,7 +178,7 @@ def create_theme(
         )
 
     classified = load_classified(seed_id, base) or []
-    classified_by_id = {w.get("openalex_id"): w for w in classified}
+    classified_by_id = {wid: w for w in classified if (wid := w.get("openalex_id"))}
     overrides = load_overrides(seed_id, base)
 
     citing_works: list[dict[str, Any]] = []
@@ -271,7 +271,7 @@ def confirm_theme(
         raise ValueError(f"No theme {slug!r} found for seed {seed_id}. Run `wake theme create` first.")
 
     classified = load_classified(seed_id, base) or []
-    classified_by_id = {w.get("openalex_id"): w for w in classified}
+    classified_by_id = {wid: w for w in classified if (wid := w.get("openalex_id"))}
     overrides = load_overrides(seed_id, base)
 
     citing_ids = [w["citing_id"] for w in theme["citing_works"]]

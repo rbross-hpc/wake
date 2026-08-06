@@ -79,11 +79,11 @@ def _try_pypdf(path: Path) -> list[str]:
 def _try_pdfplumber(path: Path) -> list[str]:
     try:
         import pdfplumber
-    except ImportError:
+    except ImportError as e:
         raise ImportError(
             "PDF extraction requires pypdf or pdfplumber. "
             "Install with: pip install 'wake[pdf]'"
-        )
+        ) from e
     with pdfplumber.open(str(path)) as pdf:
         return [(page.extract_text() or "").strip() for page in pdf.pages]
 

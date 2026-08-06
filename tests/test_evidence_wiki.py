@@ -12,10 +12,9 @@ import shutil
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from wake import evidence, evidence_wiki, narrative, report, themes
 from wake.classify import save_classified
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import json
-import pytest
+
 from wake.cli.emit import emit, emit_error, is_quiet, progress
 
 

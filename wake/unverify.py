@@ -116,6 +116,7 @@ def unverify_batch(
     if since is not None:
         targets = [e for e in entries if e.get("overridden_at", "") >= since]
     else:
+        assert last is not None
         targets = entries[-last:]
 
     results = [

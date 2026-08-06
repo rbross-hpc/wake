@@ -3,9 +3,6 @@
 """Shared pytest fixtures for wake tests."""
 from __future__ import annotations
 
-import pytest
-
-
 PARALLEL_NETCDF_WORK = {
     "openalex_id": "W2156077349",
     "title": "Parallel netCDF: A High-Performance Scientific I/O Interface",

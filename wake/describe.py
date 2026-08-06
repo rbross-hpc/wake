@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import config, cost as cost_mod
+from . import config
+from . import cost as cost_mod
 from .io import atomic_write_json, now_iso, read_json
 from .llm.openai_client import chat_text
 from .seed import work_dir
