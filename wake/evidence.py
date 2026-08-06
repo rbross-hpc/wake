@@ -34,6 +34,7 @@ from . import config
 from . import cost as cost_mod
 from .io import atomic_write_json, atomic_write_text, now_iso, read_json
 from .llm.openai_client import chat_json
+from .models import EvidenceDossier
 from .pdf_fetch import fetch_pdf
 from .seed import work_dir
 from .sources.pdf_fulltext import (
@@ -865,6 +866,7 @@ def build_dossier(
         "verification_status": "pending-human-review",
         **finding,
     }
+    EvidenceDossier.validate_or_raise(json_payload, context=f"evidence dossier {citing_id!r}")
     atomic_write_json(json_path, json_payload)
 
     if verbose:
@@ -992,6 +994,7 @@ def rerender_dossier_md(
         normalized["extracted_text_path"] = rel
         changed = True
     if changed:
+        EvidenceDossier.validate_or_raise(normalized, context=f"evidence dossier {citing_id!r}")
         atomic_write_json(dossier_json_path(seed_id, citing_id, base), normalized)
 
     return md_path

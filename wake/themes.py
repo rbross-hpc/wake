@@ -46,6 +46,7 @@ from typing import Any
 
 from .evidence import dossier_json_path, evidence_dir
 from .io import atomic_write_json, atomic_write_text, now_iso, read_json
+from .models import Theme
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -223,6 +224,8 @@ def create_theme(
         "needs_evidence": needs_evidence,
     }
 
+    Theme.validate_or_raise(payload, context=f"theme {slug!r}")
+
     wd = themes_dir(seed_id, base)
     wd.mkdir(parents=True, exist_ok=True)
     json_path = theme_json_path(seed_id, slug, base)
@@ -299,6 +302,8 @@ def confirm_theme(
     theme["citing_works"] = refreshed
     theme["needs_evidence"] = []
     theme["updated_at"] = now_iso()
+
+    Theme.validate_or_raise(theme, context=f"theme {slug!r}")
 
     json_path = theme_json_path(seed_id, slug, base)
     md_path = theme_path(seed_id, slug, base)

@@ -61,6 +61,7 @@ from .citing import sort_works
 from .gaps import apply_manual_abstracts, load_manual_abstracts
 from .io import atomic_write_json, now_iso, read_json
 from .llm.openai_client import chat_json
+from .models import ClassificationResult
 from .seed import work_dir
 from .state import mark_stage_complete
 
@@ -435,6 +436,7 @@ def _load_sidecar(seed_id: str, citing_id: str, base: Path | None = None) -> dic
 
 
 def _write_sidecar(seed_id: str, citing_id: str, result: dict, base: Path | None = None) -> None:
+    ClassificationResult.validate_or_raise(result, context=f"classification sidecar {citing_id!r}")
     _migrate_legacy_sidecar_dir_if_needed(seed_id, base)
     p = _sidecar_path(seed_id, citing_id, base)
     p.parent.mkdir(parents=True, exist_ok=True)

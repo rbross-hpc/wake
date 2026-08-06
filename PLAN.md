@@ -885,3 +885,138 @@ boundaries).
   `pip install -e ".[dev,pdf]"` + `ruff check` + `mypy` + `pytest`
   sequence verified above, across the four supported Python versions
   declared in `pyproject.toml`'s `requires-python = ">=3.10"`.
+
+## v0.4.1 — Explicit domain models (`refactor/domain-models`)
+
+Before writing any model code, ran a research pass (Task agent, no code
+changes) inventorying the *actual* runtime shapes of every dict-based
+"domain object" — `Work`, classification results, evidence dossiers,
+themes, narrative outlines/sections, overrides, and the `[ref:ID]`
+reference-marker family — across `classify.py`, `evidence.py`,
+`evidence_wiki.py`, `themes.py`, `narrative.py`, and `report.py`. Found
+15 distinct legacy-shape normalization functions (classify-2/classify-3
+and evidence-1/evidence-2 dual LLM response shapes, `.classify`/
+`.overrides.jsonl`/`.manual_abstracts.jsonl` dotfile-rename migrations,
+relative-vs-absolute `pdf_path` duality) and confirmed wake has never
+written a literal `schema_version` field anywhere — every existing
+"version" signal is per-LLM-stage (`prompt_version`+`model`) or
+`.state.json`'s own `tool_version`. Given that surface area, scoped this
+phase deliberately narrow rather than attempting a full rip-and-replace
+of every dict call site in one pass: an additive schema layer plus
+write-time validation at the real persistence boundaries, leaving every
+function's existing dict-based signature and return type untouched.
+Later phases (`refactor/wake-context`, `refactor/build-layer`) can adopt
+the models more deeply once this foundation is in place.
+
+- `pyproject.toml`: added `pydantic>=2.0` to core `dependencies` (not
+  `dev` — the models are meant to be used by the library itself, not
+  just by tests).
+- New `wake/models.py`: `Work`, `RelationshipFacet`, `ClassificationResult`,
+  `EvidenceQuote`, `EvidenceDossier`, `ThemeWork`, `Theme`,
+  `NarrativeComponent`, `NarrativeOutline`, `NarrativeSection`,
+  `Override`, and `ArtifactReference` (the `[ref:ID]` marker family,
+  modeled as `{kind: "seed"|"citing_work", id: str}` — see the module's
+  own docstring for why the *rendered* forms of a reference, e.g. `[Rn]`
+  links or relative frontmatter paths, stay presentation logic, not part
+  of the model). Every model:
+  - carries a new `schema_version` field (`SCHEMA_VERSION = 1`),
+    defaulted so a pre-existing, pre-model artifact on disk (no
+    `schema_version` key at all) still validates -- non-breaking for
+    every wake-out/ packet that predates this change;
+  - is `extra="allow"` (tolerant of fields this pass hasn't modeled,
+    e.g. `EvidenceDossier.provisional`/`.proposed` stay `dict[str, Any]`
+    rather than fully nested models -- the multi-facet-vs-legacy-scalar
+    shape duality documented in the research pass is exactly the kind of
+    thing better handled by a future explicit migration than by
+    encoding both shapes into a strict schema right now);
+  - exposes `.to_json_dict()` (excludes unset optionals, matching
+    today's dict-based writers, which omit e.g. `human_verification`
+    entirely rather than writing it `null`) and a shared
+    `validate_or_raise(data, context=...)` classmethod that wraps
+    pydantic's `ValidationError` in a plain `ValueError` naming the
+    model and the call site, so callers never need to import pydantic.
+  - Deliberately duplicates `CANONICAL_RELATIONSHIPS` from classify.py
+    rather than importing it, and imports nothing from the rest of wake
+    at all -- a hard constraint (mechanically enforced by an AST-walking
+    test in test_models.py, not just a docstring claim) so `models.py`
+    can be adopted by any other module without circular-import risk.
+- Wired `validate_or_raise` into every real write site for these five
+  artifact types, immediately before the `atomic_write_json`/
+  `atomic_write_text` call, so a future shape regression fails loudly at
+  the point of writing rather than surfacing later as a confusing read-
+  side KeyError: `classify.py::_write_sidecar` (`ClassificationResult`);
+  `evidence.py::build_dossier` and `evidence.py::rerender_dossier_md`'s
+  opportunistic path-migration branch, plus `evidence_wiki.py::
+  mark_verified`/`mark_pending` (`EvidenceDossier`, 4 call sites total —
+  every place a dossier JSON sidecar is written or patched);
+  `themes.py::create_theme` and `confirm_theme` (`Theme`, 2 sites);
+  `narrative.py::create_outline`, `create_section`, and `confirm_section`
+  (`NarrativeOutline`/`NarrativeSection`, 3 sites); `report.py::
+  add_override` (`Override`, 1 site). No behavior change to any
+  function's inputs, outputs, or the on-disk JSON shape itself — the
+  guard only ever raises on a payload that was already wrong.
+- One real (if narrow) bug caught immediately by wiring the guard in:
+  `tests/test_classify.py::test_write_sidecar_migrates_legacy_dotfile_dir_in_place`
+  called `_write_sidecar` with a bare `{"relationship": "extends"}` --
+  missing `confidence`/`justification`/`relationships` entirely. It
+  happened to work before only because nothing downstream of that
+  specific migration-focused test ever read those fields back. Fixed the
+  test to use a realistic payload rather than loosening the model.
+
+### Tests
+
++25 in new `tests/test_models.py`:
+- Round-trips every model against a *real* function call (mocked
+  LLM/network, same fixtures/patterns as each module's own tests), not
+  just synthetic dicts: `classify_one`'s return value and
+  `classify_all`'s sidecar shape, `build_dossier`'s JSON sidecar before
+  and after a real `add_override(..., verification_source=
+  "evidence-dossier")` call (proving `EvidenceDossier` validates both
+  the pending-review and verified shapes), `create_theme`'s sidecar,
+  `create_outline`'s and `create_section`'s sidecars, and
+  `add_override`'s `overrides.jsonl` entry via `load_overrides`.
+- Confirms non-breaking adoption directly: a real on-disk dossier
+  sidecar (predating this change, no `schema_version` key at all) parses
+  with `schema_version == SCHEMA_VERSION` filled in by the model's
+  default, and `"schema_version" not in <the raw sidecar>` is asserted
+  in the same test to make the "old data, new model" claim concrete
+  rather than assumed.
+- Rejection-path tests: unknown relationship label, empty `relationships`
+  list, invalid theme/section slug shape -- each via `pydantic.
+  ValidationError` directly against the model.
+- Contract tests for the `validate_or_raise` write-guard itself (not the
+  models in isolation): confirms it raises a plain `ValueError` (never a
+  raw `pydantic.ValidationError`) naming both the model class and the
+  caller-supplied context string; exercises the *actual* write-site
+  guards in `classify.py::_write_sidecar` and `report.py::add_override`
+  with a genuinely malformed payload and confirms nothing was written to
+  disk (`load_overrides(...) == {}`, no `wake-out/` directory created).
+- `test_models_module_has_no_wake_imports` -- an AST-based test walking
+  `wake/models.py`'s own import statements, mechanically enforcing the
+  "no dependency on the rest of wake" design constraint rather than
+  leaving it as a docstring claim a future edit could quietly violate.
+- `test_canonical_relationships_matches_classify_module` -- pins
+  `models.py`'s deliberately-duplicated `CANONICAL_RELATIONSHIPS` tuple
+  identical to `classify.py`'s own source-of-truth copy.
+
+### Verification
+
+- `ruff check wake/ tests/` — clean.
+- `mypy` — clean (47 source files under `wake/`, up from 46 with the new
+  `models.py`).
+- `pytest tests/ -m 'not network'` — 676 passed, 14 deselected (up from
+  651 at the start of this phase: +25 in `test_models.py` covering the
+  new module, including 5 tests exercising the real write-site guards in
+  `classify.py`/`report.py`/`themes.py`), run after every write-site
+  wiring change (classify, evidence, evidence_wiki, themes, narrative,
+  report) with zero regressions at any checkpoint.
+- Not yet done, left for a later pass once real `wake-out/` packets exist
+  again in a working session: a golden-fixture test that loads a
+  packet built by pre-`refactor/domain-models` wake (i.e. a real
+  `classified.json`/dossier/theme/section/`overrides.jsonl` with no
+  `schema_version` key anywhere) and confirms every model in
+  `models.py` parses every relevant file in it without modification --
+  the in-test coverage above proves this at the unit level (see the
+  "non-breaking adoption" bullet), a full-packet-level golden test is
+  the natural next-step reinforcement, called out explicitly in
+  BACKLOG.md Theme L rather than silently dropped.
