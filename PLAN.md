@@ -1346,3 +1346,136 @@ no config change needed.
   new capability needing new coverage).
 - `wake --help` and every subcommand's own `--help` manually diffed
   against the pre-split output — identical.
+
+## v0.4.5 — Split LLM retry policy by failure class (`refactor/llm-boundary`)
+
+Final phase of the structural-hardening plan. Confirmed the assessment's
+concrete complaint live before fixing it: `wake/llm/openai_client.py`'s
+single `@retry(stop=stop_after_attempt(3), wait=wait_exponential(...))`
+decorator on `chat_json`/`chat_text` retried *every* `openai.*Error`
+subclass identically -- a genuinely transient failure (rate limit,
+timeout, connection error, 5xx) and a permanent one (bad API key,
+malformed request, unknown model, 4xx) both got the same 3-attempt,
+~4s-of-backoff treatment. Reproduced directly: mocking a bad-API-key
+`AuthenticationError` cost 3 calls and ~4.0s before this fix, 1 call and
+~0.13s after.
+
+Scoped narrower than a full "provider-neutral client interface +
+per-operation typed response schemas" rewrite, for a concrete reason
+found while investigating the second half of that ask: `classify.py`'s
+`_parse_relationships_response` (and evidence.py's analogous
+`_parse_proposed_relationships`) already deliberately treat a
+malformed/off-schema LLM response as *recoverable*, not an error --
+unknown labels are dropped, missing/unparseable confidence defaults to
+0.5, and a response with nothing usable left falls back to a safe
+`background-mention` facet rather than raising. Adding strict schema
+validation "immediately after generation" as originally proposed would
+have been a regression against that deliberate graceful-degradation
+design, which is a real strength of wake's classify/evidence pipeline
+(a single malformed classification during a 400-work batch run should
+degrade to a low-confidence guess, not abort the whole run). Only 4 real
+call sites exist across the whole codebase (`classify.py`, `evidence.py`
+via `chat_json`; `describe.py`, `abstract_extract.py` via `chat_text`),
+each already wrapping its own call in caller-appropriate error handling
+(`classify_all`'s broad `except Exception` records `error`/`error_at`
+and continues the batch, rather than crashing it) -- so a provider-
+neutral abstraction layer on top of a single already-thin OpenAI-
+compatible wrapper had no concrete problem left to solve once the
+retry-policy split and error-type clarity below were in place.
+
+**What was built:**
+
+- **Retry policy split by failure class.** New `_is_transient_openai_error()`
+  classifies an `openai.OpenAIError` as retry-worthy (`APIConnectionError`,
+  `APITimeoutError`, `RateLimitError`, `InternalServerError`) or not
+  (`AuthenticationError`, `BadRequestError`, `NotFoundError`,
+  `PermissionDeniedError`, `UnprocessableEntityError`, `ConflictError`,
+  or any non-OpenAI exception). `_stream_completion()`'s `@retry` decorator
+  now uses `retry_if_exception(_is_transient_openai_error)` instead of
+  retrying unconditionally -- a permanent failure raises immediately
+  instead of being retried into the same guaranteed failure 3 times.
+- **New `LLMInvalidRequestError`** -- raised (wrapping the original
+  `openai.*Error` as `__cause__`, never discarded) for a request that
+  cannot succeed regardless of retry count. Distinguishable by type from
+  a transient failure that exhausted its retries (`tenacity.RetryError`,
+  unchanged for that case).
+- **New `LLMResponseError`**, and the JSON-parsing retry pulled out of
+  `chat_json` into a separate `_parse_json_response()` helper -- a
+  malformed response body (valid HTTP response, invalid JSON even after
+  the existing prefixed-prose recovery pass) is a distinct failure class
+  from a transport failure: re-sending the identical request is unlikely
+  to help, since the model already produced a complete response that
+  simply wasn't valid JSON. Previously this surfaced as tenacity's opaque
+  `RetryError` wrapping a `json.JSONDecodeError` (the whole
+  network-retry-with-backoff machinery ran again for a failure a retry
+  could never fix); now it's a single, clearly-labeled
+  `LLMResponseError` raised on the first and only parse attempt.
+- **`cli/main.py`'s top-level dispatch** now catches
+  `LLMInvalidRequestError`/`LLMResponseError` and emits a clean
+  `emit_error` (matching every command's own convention) instead of an
+  uncaught traceback -- these are now well-defined, nameable failure
+  modes rather than an arbitrary `openai.*Error`/`RetryError` bubbling
+  to the top uncaught.
+- `classify_all`'s existing broad `except Exception` (records
+  `error`/`error_at` per work, continues the batch) needed no change --
+  it already catches these new, more specific exception types
+  transparently, and now reports a clearer `str(exc)` message
+  (`"AuthenticationError: ... -- not retrying, this request cannot
+  succeed..."` instead of a bare `RetryError` repr) in the per-work
+  error sidecar and CLI warning line.
+
+### Tests
+
++14 in `tests/test_openai_client.py`: `_is_transient_openai_error`
+classification for every `_PERMANENT_OPENAI_ERRORS` member, both
+transient error types, and a non-OpenAI exception; the core regression
+fix itself (`test_chat_json_fails_fast_on_permanent_error_no_retry_no_backoff`
+-- asserts exactly 1 call and <1s elapsed for an `AuthenticationError`,
+pinning the bug this phase fixes so it can't silently regress); the
+complementary case (`test_chat_json_retries_transient_error_with_backoff`
+-- a `RateLimitError` still gets the full 3-attempt treatment, confirming
+the fix didn't accidentally stop retrying errors worth retrying);
+`__cause__` preservation on `LLMInvalidRequestError`; the updated
+JSON-parse-failure test (`LLMResponseError`, replacing the old
+`tenacity.RetryError` assertion -- a deliberate, documented behavior
+improvement, not an incidental test change); and one CLI-level
+end-to-end test (`wake describe` via the real `wake.cli.main.main()`,
+with the OpenAI client mocked to raise `AuthenticationError`) confirming
+`main()`'s new top-level catch emits a clean `--json` error envelope
+(`{"ok": false, "error": {"type": "LLMInvalidRequestError", ...}}`)
+rather than propagating an uncaught traceback.
+
+### Verification
+
+- `ruff check wake/ tests/` — clean.
+- `mypy` — clean (64 source files under `wake/`, unchanged count --
+  this phase modified `llm/openai_client.py` and `cli/main.py` in
+  place, no new modules).
+- `pytest tests/ -m 'not network'` — 713 passed, 14 deselected (up from
+  699 at the start of this phase: +14 `test_openai_client.py`).
+- The core fix (1 call / <1s for a permanent error, vs. 3 calls / ~4s
+  before) was reproduced live with a standalone script before writing
+  any test, then re-verified via the same repro after, matching the
+  verification discipline used throughout every phase of this plan.
+
+---
+
+This closes out the six-phase "Structural Hardening" plan (chore/
+ci-and-tooling through refactor/llm-boundary) opened by the external
+assessment reviewed at the start of this effort. Summary of what
+changed across all six phases: CI + lint/typecheck (v0.4.0); explicit
+Pydantic domain models with write-time validation (v0.4.1); WakeContext
+plus two confirmed-live process-global bugs fixed (v0.4.2); a
+centralized `wake rebuild` closing three real derived-artifact-rebuild
+gaps (v0.4.3); `cli/main.py` split from 2,073 lines/~90 functions into
+13 command modules with zero behavior change (v0.4.4); and the LLM
+retry policy split by failure class (v0.4.5). Offline test count grew
+from 651 (pre-effort baseline) to 713, entirely additive -- no existing
+test was deleted, only a small number updated where a fix deliberately
+changed an exception type for the better. Remaining follow-on work
+identified but deliberately deferred, all tracked in BACKLOG.md Theme
+L: a whole-packet golden-fixture test for the domain models, replacing
+the 15 catalogued legacy-shape normalization functions with explicit
+versioned migrations, full `WakeContext` threading through all ~90
+existing `base:`-taking domain functions, and a persisted dirty/
+revision manifest for `wake rebuild` to track staleness between calls.
