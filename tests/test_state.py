@@ -56,3 +56,48 @@ def test_state_path(tmp_path):
     p = state_path(tmp_path)
     assert p.name == ".state.json"
     assert p.parent == tmp_path
+
+
+def test_load_state_malformed_returns_empty_and_warns(tmp_path, capsys):
+    """Malformed state must be handled distinctly from missing state
+    (see load_state's docstring): both return {} to the caller (the
+    fail-safe "re-run everything" behavior is correct either way), but
+    malformed state must not fail silently -- it should warn and
+    quarantine the bad file rather than mimicking a brand-new seed."""
+    p = state_path(tmp_path)
+    p.write_text("{not valid json", encoding="utf-8")
+
+    result = load_state(tmp_path)
+
+    assert result == {}
+    captured = capsys.readouterr()
+    assert "malformed" in captured.err
+    assert str(p) in captured.err
+
+
+def test_load_state_malformed_quarantines_the_bad_file(tmp_path):
+    p = state_path(tmp_path)
+    p.write_text("{not valid json", encoding="utf-8")
+
+    load_state(tmp_path)
+
+    assert not p.exists()
+    quarantined = list(tmp_path.glob(".state.json.corrupt-*"))
+    assert len(quarantined) == 1
+    assert quarantined[0].read_text(encoding="utf-8") == "{not valid json"
+
+
+def test_load_state_malformed_does_not_repeat_the_warning_on_next_call(tmp_path, capsys):
+    """Once quarantined, a second load_state call sees a plain missing
+    file (the corrupt one has been renamed aside) -- no repeated warning
+    spam on every subsequent stage check in the same process."""
+    p = state_path(tmp_path)
+    p.write_text("{not valid json", encoding="utf-8")
+
+    load_state(tmp_path)
+    capsys.readouterr()  # discard the first warning
+    result = load_state(tmp_path)
+
+    assert result == {}
+    captured = capsys.readouterr()
+    assert captured.err == ""

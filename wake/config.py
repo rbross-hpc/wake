@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import os
-from functools import lru_cache
+from functools import cache
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -66,14 +66,22 @@ def _local_config() -> Path:
     return Path.cwd() / _LOCAL_CONFIG_NAME
 
 
-@lru_cache(maxsize=1)
-def load() -> dict[str, Any]:
+@cache
+def _load_cached(local_config_path: str) -> dict[str, Any]:
+    """Cache key is the *resolved* local-config path, not a bare zero-arg
+    slot -- a bare @lru_cache(maxsize=1) here silently ignored any cwd
+    change after the first call in a process (confirmed: running wake as
+    a library against two different working directories in one process
+    returned the first directory's config for both). Keying by path means
+    each distinct wake.config.yaml still only reads/merges from disk once
+    per process, but a genuinely different cwd/config is never masked.
+    """
     if not _PACKAGED_CONFIG.exists():
         raise FileNotFoundError(f"Packaged config.yaml not found at {_PACKAGED_CONFIG}")
     with open(_PACKAGED_CONFIG, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
-    lc = _local_config()
+    lc = Path(local_config_path)
     if lc.exists():
         with open(lc, encoding="utf-8") as f:
             local = yaml.safe_load(f) or {}
@@ -82,8 +90,12 @@ def load() -> dict[str, Any]:
     return cfg
 
 
+def load() -> dict[str, Any]:
+    return _load_cached(str(_local_config()))
+
+
 def reload() -> dict[str, Any]:
-    load.cache_clear()
+    _load_cached.cache_clear()
     return load()
 
 

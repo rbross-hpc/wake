@@ -949,11 +949,30 @@ starts:
    belonging to `refactor/build-layer` or its own follow-on phase once
    more of the codebase actually consumes `models.py` types directly
    rather than dicts validated against them at the boundary.
-3. `refactor/wake-context` — `WakeContext` (workspace, settings,
-   llm_client, source_registry, artifact_repository) threaded through
-   domain functions, removing `Path.cwd()`/`@lru_cache(maxsize=1)`
-   globals from `config.py` and distinguishing malformed from missing
-   `.state.json`.
+3. `refactor/wake-context` — **BUILT**, see PLAN.md v0.4.2. Fixed two
+   confirmed-live bugs stemming from the "too process-global" complaint:
+   `config.load()`'s `@lru_cache(maxsize=1)` masked a real cwd change
+   (fixed by keying the cache on the resolved local-config path instead
+   of a bare zero-arg slot); `.state.json`'s malformed-vs-missing
+   conflation (fixed: malformed state now warns to stderr, names the
+   path, and quarantines the corrupt file, rather than silently
+   mimicking a brand-new seed). Landed `wake/context.py::WakeContext`
+   (workspace/`.base`, settings, plus forward-looking `llm_client_factory`/
+   `source_registry` fields) as a real, tested, constructible object with
+   one canonical construction point (`WakeContext.from_cli_args`, wired
+   into `cli/main.py::_work_dir_base`) -- deliberately **not** threaded
+   through every domain function in this pass. Before writing code,
+   checked the actual blast radius: ~90 existing call sites already take
+   `base: Path | None = None`, and 11 modules call `config.py`'s
+   per-section accessors directly. Rewriting all of that to take an
+   injected `WakeContext` instead is real, valuable, deferred work --
+   `ctx.base` is already a drop-in value for any of those 90 `base=`
+   call sites today (verified by a test constructing a `WakeContext` and
+   passing `.base` straight into `seed.work_dir()`), so the mechanical
+   part of that follow-on rewrite has a proven-safe seam to build on,
+   whether it happens as its own phase or folds into `refactor/
+   build-layer`/`refactor/cli-split` below once those phases' actual
+   shape is clearer.
 4. `refactor/build-layer` — declare JSON canonical, Markdown/indexes
    deterministic derived products; centralize the `rebuild_*`/
    `rerender_*` call graph currently spread across bidirectional

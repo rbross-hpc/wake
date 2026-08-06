@@ -1020,3 +1020,101 @@ the models more deeply once this foundation is in place.
   "non-breaking adoption" bullet), a full-packet-level golden test is
   the natural next-step reinforcement, called out explicitly in
   BACKLOG.md Theme L rather than silently dropped.
+
+## v0.4.2 — WakeContext, and fixing two real process-global bugs (`refactor/wake-context`)
+
+Before writing any code, checked how invasive a full "thread WakeContext
+through every domain function" rewrite would actually be: ~90 existing
+call sites already take an optional `base: Path | None = None` parameter
+(seed.py::work_dir() resolves it against `$WAKE_WORK_DIR`/cwd when
+omitted), and 11 modules call one of `config.py`'s per-section accessors
+(`config.classify_cfg()`, `config.models()`, etc.) directly. Rewriting
+all of that in one pass to take an injected context object instead would
+be the single largest-blast-radius change in the whole "Structural
+Hardening" plan -- scoped this phase the same way as Phase 1 (`refactor/
+domain-models`): fix the two concrete, verifiable bugs the assessment's
+"too process-global" complaint was actually about, and land `WakeContext`
+as a real, tested, constructible object with one canonical construction
+point, rather than force a mechanical signature rewrite across every
+domain module in the same pass that introduces the type.
+
+**Bug 1 (confirmed live before fixing): `config.load()`'s cache masked a
+real cwd change.** `@lru_cache(maxsize=1)` cached against zero arguments,
+so the *first* call in a process pinned the merged config forever --
+running wake as a library against two different working directories
+(each with a different `wake.config.yaml`) in the same process silently
+returned the first directory's config for both. Reproduced directly:
+`cd dir1; config.load()` then `cd dir2` (with a different
+`wake.config.yaml`) then `config.load()` returned dir1's config both
+times. Fixed by keying the cache on the *resolved* local-config path
+(`_load_cached(local_config_path: str)`, `@functools.cache`) rather than
+a bare zero-arg slot: each distinct `wake.config.yaml` still only reads/
+merges from disk once per process (no perf regression for the CLI's
+normal one-process-one-cwd case), but a genuinely different cwd/config
+is never masked. Re-verified the exact repro now returns the correct
+per-directory config both times. `reload()` (used by `wake config init`
+and tests) updated to call `_load_cached.cache_clear()`.
+
+**Bug 2: malformed `.state.json` was silently indistinguishable from
+missing state.** `load_state()` returned `{}` for both "brand new seed,
+nothing has run yet" (normal, expected, silent) and "the state file
+exists but is corrupt JSON" (e.g. a process killed mid-write before
+`atomic_write_json`'s `os.replace` landed, or hand-editing gone wrong) --
+identical silent behavior for two very different situations. `{}` is
+still the *correct* fail-safe return value in both cases (every consumer
+only ever uses this for cache-invalidation via `is_stage_current` --
+"assume nothing has completed, re-run the stage" is safe either way),
+but the *visibility* now differs: a malformed file triggers a stderr
+warning naming the exact path and error, and the unreadable file is
+quarantined (renamed to `.state.json.corrupt-<timestamp>`) so the warning
+doesn't repeat on every subsequent call in the same session, and a human/
+agent debugging a work_dir later can find the quarantined file and see
+exactly what went wrong instead of it having vanished.
+
+**New `wake/context.py`: `WakeContext`.** A dataclass bundling
+`workspace` (aliased as `.base`, exactly the `Path | None` every existing
+domain function's `base=` parameter already accepts -- `ctx.base` is a
+drop-in value for any of those ~90 call sites today), `settings`
+(defaults to `config.load()`'s process-wide resolved config if unset),
+and two forward-looking, currently-trivial extension points
+(`llm_client_factory`, `source_registry`) that later phases can wire in
+without another dataclass-shape change. `WakeContext.from_cli_args(args)`
+is the one canonical construction point, wired into `cli/main.py`'s
+`_work_dir_base()` helper (every one of the CLI's ~40 `run_*()` handlers
+already calls `_work_dir_base(args)`, so this is a one-line internal
+change with identical external behavior, not a rewrite of every command
+handler). Explicitly scoped as additive: constructing `WakeContext()`
+with no arguments reproduces today's implicit cwd/`$WAKE_WORK_DIR`/
+`config.load()` behavior exactly -- nothing downstream breaks, and the
+module's own docstring states plainly that full domain-function-level
+adoption (passing `ctx` instead of `base=`/direct `config.*_cfg()` calls
+throughout `classify.py`/`evidence.py`/etc.) is deferred to a follow-on
+pass, tracked in BACKLOG.md Theme L.
+
+### Tests
+
++12: `tests/test_context.py` (9) -- default-context behavior, `.base`/
+`.workspace` aliasing, `settings_or_default()`'s explicit-vs-fallback
+behavior, `from_cli_args()`'s work-dir resolution (explicit, absent,
+attribute-missing-entirely), the actual `cli/main.py::_work_dir_base`
+delegation (not just the context class in isolation), and a direct
+drop-in-compatibility check against `seed.work_dir()`. `tests/
+test_state.py` (+3) -- malformed-state returns `{}` and warns (path and
+"malformed" both asserted in the captured stderr), the corrupt file is
+actually quarantined and its original bytes preserved, and a second
+`load_state()` call on the same work_dir doesn't repeat the warning
+(the corrupt file has already been renamed aside, so the second call
+just sees an ordinary missing file).
+
+### Verification
+
+- `ruff check wake/ tests/` — clean (one incidental fix along the way:
+  `@lru_cache(maxsize=None)` → `@functools.cache`, ruff's UP033).
+- `mypy` — clean (48 source files under `wake/`, up from 47 with the new
+  `context.py`).
+- `pytest tests/ -m 'not network'` — 688 passed, 14 deselected (up from
+  676 at the start of this phase: +9 `test_context.py`, +3
+  `test_state.py`).
+- Both bugs reproduced live (via a standalone script exercising the real
+  module, not just inferred from reading the source) before fixing, and
+  re-verified fixed with the same repro after.

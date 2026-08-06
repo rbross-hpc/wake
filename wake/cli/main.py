@@ -617,8 +617,14 @@ def _build_skill_parser(sub) -> None:
 
 
 def _work_dir_base(args) -> Path | None:
-    wd = getattr(args, "work_dir", None)
-    return Path(wd).resolve() if wd else None
+    """The workspace root every command resolves wake-out/<seed>/
+    against. Delegates to WakeContext.from_cli_args (see context.py) --
+    this helper is kept as the CLI's actual call-site shim (every
+    run_*() handler calls `_work_dir_base(args)`, not WakeContext
+    directly) so the ~40 existing call sites don't all need touching in
+    this pass; the context construction itself is centralized here."""
+    from ..context import WakeContext
+    return WakeContext.from_cli_args(args).base
 
 
 def _resolve_seed_to_work(seed_str: str, args, force: bool = False) -> dict:
