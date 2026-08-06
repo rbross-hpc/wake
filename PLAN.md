@@ -1468,14 +1468,96 @@ Pydantic domain models with write-time validation (v0.4.1); WakeContext
 plus two confirmed-live process-global bugs fixed (v0.4.2); a
 centralized `wake rebuild` closing three real derived-artifact-rebuild
 gaps (v0.4.3); `cli/main.py` split from 2,073 lines/~90 functions into
-13 command modules with zero behavior change (v0.4.4); and the LLM
-retry policy split by failure class (v0.4.5). Offline test count grew
-from 651 (pre-effort baseline) to 713, entirely additive -- no existing
-test was deleted, only a small number updated where a fix deliberately
-changed an exception type for the better. Remaining follow-on work
-identified but deliberately deferred, all tracked in BACKLOG.md Theme
-L: a whole-packet golden-fixture test for the domain models, replacing
-the 15 catalogued legacy-shape normalization functions with explicit
-versioned migrations, full `WakeContext` threading through all ~90
-existing `base:`-taking domain functions, and a persisted dirty/
-revision manifest for `wake rebuild` to track staleness between calls.
+13 command modules with zero behavior change (v0.4.4); LLM retry policy
+split by failure class (v0.4.5); and dossier versioning made real
+(v0.4.6). Offline test count grew from 651 (pre-effort baseline) to
+722, entirely additive. Remaining follow-on work identified but
+deliberately deferred, all tracked in BACKLOG.md Theme L: a
+whole-packet golden-fixture test on a real OSTI packet (deferred for an
+interactive session), replacing the 15 catalogued legacy-shape
+normalization functions with explicit versioned migrations for the other
+artifact families (themes, narrative, classification, overrides), full
+`WakeContext` threading through all ~90 existing `base:`-taking domain
+functions, and a persisted dirty/revision manifest for `wake rebuild`.
+
+## v0.4.6 — Dossier versioning: make schema_version real (`refactor/dossier-versioning`)
+
+**Second-look assessment driver:** The assessment (20260806-wake-assessment-2.md) confirmed
+that every write site called `Model.validate_or_raise(payload)` then `atomic_write_json(path,
+payload)` -- discarding the validated model and writing the raw dict. This meant `schema_version`
+was checked but never persisted, `extra="allow"` on the write model accepted misspelled fields
+into canonical state, and the path-normalization migration in `rerender_dossier_md` only ran on
+rerender, not on every load. The assessment described this as converting the schema layer from
+advisory to genuine persistent format management.
+
+**Scoped to dossiers only** -- a proven pattern to replicate for the other four artifact families
+(themes, narrative, classification, overrides) in future passes, once a real golden-packet
+acceptance test is in hand.
+
+### What changed
+
+**`wake/models.py`**
+
+- `EVIDENCE_DOSSIER_VERSION = 2` -- the current on-disk version for newly written dossiers.
+- `EvidenceDossierWrite(EvidenceDossier)` -- strict write subclass with `extra="forbid"`;
+  `EvidenceDossier` (read model) keeps `extra="allow"` so old or forward-versioned JSON is always
+  tolerated at read boundaries (index rebuilds in evidence_wiki.py, etc.).
+- `migrate_dossier(raw, *, sidecar_dir=None) -> dict` -- explicit v0→v1→v2 migration chain:
+  - v0→v1: add `schema_version: 1` (makes implicit default explicit, no shape change).
+  - v1→v2: normalize legacy absolute `pdf_path`/`extracted_text_path` to relative-from-sidecar
+    form (previously done only opportunistically in `rerender_dossier_md`; now happens at every
+    read through `load_dossier`). Bump `schema_version` to 2.
+  - When `sidecar_dir=None` (unit tests without filesystem), path normalization is skipped.
+  - Idempotent: calling on an already-current dict is a no-op.
+
+**`wake/evidence.py`**
+
+- `load_dossier()` now calls `migrate_dossier(raw, sidecar_dir=p.parent)` before returning,
+  making every load path version-aware (not only rerenders).
+- `build_dossier()` write site: payload now includes `"schema_version": 2` explicitly; write
+  uses `EvidenceDossierWrite.validate_or_raise(...).to_json_dict()` rather than the raw dict --
+  the first time a validated model's canonical shape (not the caller's raw dict) is what lands
+  on disk.
+- `rerender_dossier_md()` opportunistic-migration block: replaced the manual absolute-path diff
+  with a schema-version check; if the on-disk file pre-dates the migration, the already-migrated
+  (post-`load_dossier`) payload is persisted via `EvidenceDossierWrite`.
+
+### Tests
+
+9 new tests (713→722 offline passing), split between `tests/test_models.py` and
+`tests/test_build.py`:
+
+- `test_migrate_dossier_v0_no_sidecar_dir` -- v0 dict gets `schema_version=2`, absolute paths
+  untouched when no sidecar_dir.
+- `test_migrate_dossier_v0_with_sidecar_dir` -- absolute paths become relative.
+- `test_migrate_dossier_already_current` -- no-op on a v2 dict.
+- `test_migrate_dossier_idempotent` -- calling twice returns equal result.
+- `test_old_unversioned_dossier_round_trips_through_load_dossier` -- a pre-v0 JSON file on disk
+  is returned with `schema_version=2` and relative paths by `load_dossier`.
+- `test_new_dossier_persists_schema_version_on_disk` -- the file on disk has `schema_version=2`
+  after `build_dossier` (the specific gap the assessment named).
+- `test_evidence_dossier_write_rejects_unknown_field` -- `EvidenceDossierWrite` raises on
+  misspelled fields.
+- `test_evidence_dossier_read_model_accepts_unknown_field` -- `EvidenceDossier` (read model)
+  accepts an unknown field (forward-compat guarantee).
+- `test_rebuild_seed_over_pre_migration_dossier` -- `rebuild_seed` succeeds on a wiki whose
+  dossier JSON has `schema_version` stripped out; the JSON is upgraded to v2 in place.
+
+### Updated existing test
+
+`test_evidence_dossier_validates_real_build_dossier_json_sidecar` in `test_models.py` previously
+asserted `"schema_version" not in sidecar` (the old advisory-only behavior). Updated to assert
+`sidecar["schema_version"] == EVIDENCE_DOSSIER_VERSION`.
+
+### Explicitly deferred
+
+- Replicating the strict-write / permissive-read split and migration chain to the other four
+  artifact families (themes, narrative, classification, overrides): same pattern, deferred until
+  the golden-packet acceptance test is in hand.
+- Moving the path-normalization migration to a `rerender_dossier_md` post-write is now
+  unnecessary (migration happens at load time); the rerender path persists the upgraded form as
+  a side effect.
+
+### Verification
+
+ruff, mypy, 722/722 offline tests passing.

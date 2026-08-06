@@ -1062,14 +1062,34 @@ This closes the six-phase Structural Hardening plan opened by the
 external assessment. Offline test count grew from 651 (pre-effort
 baseline) to 713 across all six phases, entirely additive.
 
+7. `refactor/dossier-versioning` — **BUILT**, see PLAN.md v0.4.6.
+   Driven by second-look assessment (20260806-wake-assessment-2.md):
+   confirmed that every write site called `validate_or_raise(payload)`
+   then `atomic_write_json(path, payload)`, discarding the validated
+   model and writing the raw dict -- `schema_version` was validated but
+   never persisted, `extra="allow"` accepted misspelled fields into
+   canonical state, and the path-normalization migration in
+   `rerender_dossier_md` only ran on rerender, not on every load.
+   Scoped to dossiers only. Added `EVIDENCE_DOSSIER_VERSION=2`,
+   `EvidenceDossierWrite(EvidenceDossier)` with `extra="forbid"` (read
+   model stays permissive), and `migrate_dossier()` (v0→v1→v2 chain:
+   make `schema_version` explicit; normalize absolute paths to relative).
+   `load_dossier()` now calls `migrate_dossier` on every read.
+   `build_dossier()` write site now persists `validated.to_json_dict()`
+   with a real `schema_version=2`. 9 new tests (713→722). One existing
+   test updated (asserted `schema_version not in sidecar`; now asserts
+   `== EVIDENCE_DOSSIER_VERSION`).
+
 **Deferred follow-on work, not forgotten, all real:**
-- A whole-packet golden-fixture test for the domain models (Phase 2)
-  against a real pre-model `wake-out/` packet.
+- A whole-packet golden-fixture test (interactive session on a real
+  OSTI packet, PDFs stripped/licensed) -- this will retroactively serve
+  as the acceptance test for the dossier migration above.
+- Replicating the strict-write / permissive-read split and migration
+  chain to the other four artifact families (themes, narrative,
+  classification, overrides): same pattern, gated on the golden-packet
+  acceptance test being in hand.
 - Replacing the 15 catalogued `_normalize_*`/legacy-shape functions
-  (classify-2↔3, evidence-1↔2, the three dotfile-rename migrations)
-  with explicit versioned migrations, once more of the codebase
-  consumes `models.py` types directly rather than dicts validated
-  against them at the write boundary.
+  with the migration-chain pattern now established by dossiers.
 - Full `WakeContext` threading through all ~90 existing `base:`-taking
   domain functions (Phase 3 landed the context object and one
   canonical CLI construction point; `ctx.base` is a verified drop-in

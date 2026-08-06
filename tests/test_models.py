@@ -24,15 +24,18 @@ from wake import evidence, narrative, themes
 from wake.classify import CANONICAL_RELATIONSHIPS as CLASSIFY_CANONICAL_RELATIONSHIPS
 from wake.classify import classify_one, save_classified
 from wake.models import (
+    EVIDENCE_DOSSIER_VERSION,
     SCHEMA_VERSION,
     ArtifactReference,
     ClassificationResult,
     EvidenceDossier,
+    EvidenceDossierWrite,
     NarrativeOutline,
     NarrativeSection,
     Override,
     Theme,
     Work,
+    migrate_dossier,
 )
 from wake.report import add_override, load_overrides
 
@@ -198,10 +201,8 @@ def test_evidence_dossier_validates_real_build_dossier_json_sidecar(tmp_path):
     assert parsed.seed_openalex_id == PARALLEL_NETCDF_WORK["openalex_id"]
     assert parsed.verification_status == "pending-human-review"
     assert parsed.human_verification is None
-    assert parsed.schema_version == SCHEMA_VERSION  # models.py's default -- the real
-    # sidecar on disk predates schema_version entirely, so absence must
-    # still validate (this is exactly the non-breaking-adoption guarantee).
-    assert "schema_version" not in sidecar
+    assert parsed.schema_version == EVIDENCE_DOSSIER_VERSION
+    assert sidecar["schema_version"] == EVIDENCE_DOSSIER_VERSION
 
 
 def test_evidence_dossier_validates_after_human_verification(tmp_path):
@@ -220,6 +221,90 @@ def test_evidence_dossier_validates_after_human_verification(tmp_path):
     assert parsed.verification_status == "verified"
     assert parsed.human_verification is not None
     assert "verified_at" in parsed.human_verification
+
+
+# --- migrate_dossier / EvidenceDossierWrite (Phase 6) ---------------------
+
+_MINIMAL_DOSSIER_V0: dict = {
+    "seed_openalex_id": "W1",
+    "citing_openalex_id": "W2",
+    "generated_at": "2025-01-01T00:00:00",
+    "prompt_version": "v1",
+    "model": "gpt-4o",
+    "pdf_path": "/absolute/path/to/citing.pdf",
+    "extracted_text_path": "/absolute/path/to/citing.pdf.json",
+    "provisional": {"relationship": "extends", "confidence": 0.5, "justification": "x", "quotes": []},
+    "proposed": {"relationship": "extends", "confidence": 0.9, "justification": "y"},
+}
+
+
+def test_migrate_dossier_v0_no_sidecar_dir():
+    raw = dict(_MINIMAL_DOSSIER_V0)
+    migrated = migrate_dossier(raw)
+    assert migrated["schema_version"] == EVIDENCE_DOSSIER_VERSION
+    assert migrated["pdf_path"] == "/absolute/path/to/citing.pdf"
+
+
+def test_migrate_dossier_v0_with_sidecar_dir(tmp_path):
+    sidecar_dir = tmp_path / "evidence"
+    sidecar_dir.mkdir()
+    raw = dict(_MINIMAL_DOSSIER_V0)
+    migrated = migrate_dossier(raw, sidecar_dir=sidecar_dir)
+    assert migrated["schema_version"] == EVIDENCE_DOSSIER_VERSION
+    assert not Path(migrated["pdf_path"]).is_absolute()
+    assert not Path(migrated["extracted_text_path"]).is_absolute()
+
+
+def test_migrate_dossier_already_current():
+    raw = {**_MINIMAL_DOSSIER_V0, "schema_version": EVIDENCE_DOSSIER_VERSION, "pdf_path": "../pdfs/W2.pdf", "extracted_text_path": "../pdfs/W2.pdf.json"}
+    migrated = migrate_dossier(raw)
+    assert migrated["schema_version"] == EVIDENCE_DOSSIER_VERSION
+    assert migrated["pdf_path"] == "../pdfs/W2.pdf"
+
+
+def test_migrate_dossier_idempotent(tmp_path):
+    sidecar_dir = tmp_path / "evidence"
+    sidecar_dir.mkdir()
+    raw = dict(_MINIMAL_DOSSIER_V0)
+    once = migrate_dossier(raw, sidecar_dir=sidecar_dir)
+    twice = migrate_dossier(once, sidecar_dir=sidecar_dir)
+    assert once == twice
+
+
+def test_old_unversioned_dossier_round_trips_through_load_dossier(tmp_path):
+    import json as _json
+
+    from wake.evidence import load_dossier
+    seed_id = "W1"
+    citing_id = "W2"
+    sidecar_dir = tmp_path / "wake-out" / seed_id / "evidence"
+    sidecar_dir.mkdir(parents=True)
+    sidecar_path = sidecar_dir / f"{citing_id}.json"
+    sidecar_path.write_text(_json.dumps(_MINIMAL_DOSSIER_V0))
+    result = load_dossier(seed_id, citing_id, base=tmp_path)
+    assert result is not None
+    assert result["schema_version"] == EVIDENCE_DOSSIER_VERSION
+    assert not Path(result["pdf_path"]).is_absolute()
+
+
+def test_new_dossier_persists_schema_version_on_disk(tmp_path):
+    import json as _json
+    result = _build_dossier(tmp_path)
+    assert result["ok"] is True
+    sidecar = _json.loads(Path(result["dossier_json_path"]).read_text())
+    assert sidecar.get("schema_version") == EVIDENCE_DOSSIER_VERSION
+
+
+def test_evidence_dossier_write_rejects_unknown_field():
+    good = {**_MINIMAL_DOSSIER_V0, "schema_version": 2, "pdf_path": "../p.pdf", "extracted_text_path": "../p.pdf.json"}
+    with pytest.raises(ValueError, match="schema"):
+        EvidenceDossierWrite.validate_or_raise({**good, "typo_field": "oops"}, context="test")
+
+
+def test_evidence_dossier_read_model_accepts_unknown_field():
+    raw = {**_MINIMAL_DOSSIER_V0, "future_field": "ok"}
+    parsed = EvidenceDossier.model_validate(raw)
+    assert parsed.seed_openalex_id == "W1"
 
 
 # --- Theme -----------------------------------------------------------------

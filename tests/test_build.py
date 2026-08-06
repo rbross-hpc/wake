@@ -262,3 +262,32 @@ def test_cli_rebuild_json_output(tmp_path, capsys):
         "dossiers", "evidence_index", "themes", "themes_index",
         "outline", "sections", "narrative", "impact", "wiki_orientation",
     }
+
+
+def test_rebuild_seed_over_pre_migration_dossier(tmp_path):
+    """rebuild_seed must succeed when the evidence/ dir contains a legacy
+    dossier (no schema_version) produced by an older Wake version.  The
+    rebuild re-renders the .md from the .json sidecar via rerender_dossier_md,
+    which in turn persists the migrated (schema_version=2) form.
+    """
+    import json as _json
+
+    from wake.evidence import dossier_json_path
+    from wake.models import EVIDENCE_DOSSIER_VERSION
+
+    fixture = _build_full_wiki(tmp_path)
+    seed_id = fixture["seed_id"]
+    citing_id = fixture["w0"]["openalex_id"]
+
+    json_path = dossier_json_path(seed_id, citing_id, tmp_path)
+    current = _json.loads(json_path.read_text())
+    current.pop("schema_version", None)
+    json_path.write_text(_json.dumps(current))
+
+    assert "schema_version" not in _json.loads(json_path.read_text())
+
+    result = rebuild_seed(PARALLEL_NETCDF_WORK, base=tmp_path, verbose=False)
+    assert result["ok"] is True
+
+    on_disk = _json.loads(json_path.read_text())
+    assert on_disk.get("schema_version") == EVIDENCE_DOSSIER_VERSION
