@@ -86,6 +86,7 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake narrative refs-check export <seed>` | Write `narrative/refs.json` for the external `ref-checker` tool |
 | `wake narrative refs-check summarize <seed> <results.json>` | Summarize a `ref-checker` results sidecar into OK/flagged counts |
 | `wake bake <seed>` | Assemble `impact.md` + `impact.json` from whatever is classified so far |
+| `wake rebuild <seed>` | Resync every derived Markdown/index file (dossiers, indexes, theme/narrative docs, `impact.md`, `README.md`/`AGENTS.md`) from whatever JSON is already on disk; no LLM/network call |
 | `wake override <seed> <id>` | Record a human-reviewed relationship correction (`--verification-source human-judgment\|evidence-dossier`) |
 | `wake unverify <seed> <id> --reason "..."` | Reverse a mistaken verification; also `--since <timestamp>`/`--last N` for batch recovery |
 | `wake cost <seed>` | Estimated LLM token/cost usage so far |

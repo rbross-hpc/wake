@@ -981,14 +981,25 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     lines.append("## Regenerating derived files")
     lines.append("")
     lines.append(
-        "If you have wake installed (`pip install wake`), these verbs "
-        "regenerate a rendered view from the JSON already on disk, with no "
-        "LLM calls:"
+        "If you have wake installed (`pip install wake`), `wake rebuild "
+        "<seed>` resyncs every derived file below (dossiers, evidence/"
+        "index.md, theme docs + their index, narrative outline/sections/"
+        "narrative.md, impact.md, and this folder's own README.md/"
+        "AGENTS.md) from whatever JSON is already on disk, in one call, "
+        "with no LLM/network calls — e.g. after hand-editing a JSON "
+        "sidecar, or restoring from a partial backup. It skips any "
+        "artifact type that has no JSON backing yet for this seed."
+    )
+    lines.append("")
+    lines.append(
+        "Individual verbs remain available for a narrower, targeted "
+        "re-render instead of the full `wake rebuild`:"
     )
     lines.append("")
     lines.append("- `wake bake` — regenerate impact.md/json and this folder's orientation files")
     lines.append("- `wake evidence --rerender-all` — regenerate all dossier .md files from .json")
     lines.append("- `wake theme rerender-all` — regenerate all theme .md files from .json")
+    lines.append("- `wake narrative section rerender-all` — regenerate all section .md files from .json")
     lines.append("- `wake narrative stitch` — regenerate narrative.md from sections")
     lines.append("")
     lines.append(

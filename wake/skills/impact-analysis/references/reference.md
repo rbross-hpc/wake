@@ -52,6 +52,7 @@ wake --json narrative show "<seed>"
 wake --json narrative refs-check export "<seed>"
 wake --json narrative refs-check summarize "<seed>" <results.json>
 wake --json bake "<seed>"
+wake --json rebuild "<seed>"
 wake --json override "<seed>" <citing-id> --relationship <class> --justification "..." [--verification-source human-judgment|evidence-dossier]
 wake --json exclude "<seed>" <citing-id> --reason "..." [--category not-about-seed|poster-or-abstract|irrelevant|other]
 wake --json unexclude "<seed>" <citing-id> --reason "..."

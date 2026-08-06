@@ -49,6 +49,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _build_theme_parser(sub)
     _build_narrative_parser(sub)
     _build_bake_parser(sub)
+    _build_rebuild_parser(sub)
     _build_override_parser(sub)
     _build_exclude_parser(sub)
     _build_unexclude_parser(sub)
@@ -467,6 +468,19 @@ def _build_bake_parser(sub) -> None:
         "bake",
         help="Assemble impact.md + impact.json from whatever has been classified so far. "
              "Works on partial data (marks coverage) or a fully classified set.",
+    )
+    p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
+
+
+def _build_rebuild_parser(sub) -> None:
+    p = sub.add_parser(
+        "rebuild",
+        help="Resync every derived Markdown/index file (dossiers, evidence/index.md, "
+             "theme docs + their index, narrative outline/sections/stitched narrative.md, "
+             "impact.md, README.md/AGENTS.md) from whatever JSON is currently on disk for "
+             "this seed. No LLM/network call -- pure re-render, safe to run any time, e.g. "
+             "after hand-editing a JSON sidecar or restoring from a partial backup. Skips "
+             "any artifact type that has no JSON backing yet for this seed.",
     )
     p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
@@ -1697,6 +1711,28 @@ def run_bake(args) -> None:
          human=lambda d: print(f"Report written:\n  {d['impact_md']}\n  {d['impact_json']}"))
 
 
+def run_rebuild(args) -> None:
+    work = _resolve_seed_to_work(args.seed, args)
+    from ..build import rebuild_seed
+    base = _work_dir_base(args)
+    quiet = is_quiet(args)
+
+    result = rebuild_seed(work, base=base, verbose=not quiet)
+
+    def _human(d):
+        print("Rebuild complete:")
+        for step in d["steps"]:
+            name = step["step"]
+            rebuilt = step["rebuilt"]
+            if isinstance(rebuilt, list):
+                label = f"{len(rebuilt)} rebuilt" if rebuilt else "skipped (nothing to rebuild)"
+            else:
+                label = "rebuilt" if rebuilt else "skipped (nothing to rebuild)"
+            print(f"  {name}: {label}")
+
+    emit("rebuild", result, as_json=args.json_out, human=_human)
+
+
 def run_override(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
     from ..report import add_override
@@ -2012,6 +2048,8 @@ def main() -> None:
             run_narrative(args)
         elif args.command == "bake":
             run_bake(args)
+        elif args.command == "rebuild":
+            run_rebuild(args)
         elif args.command == "override":
             run_override(args)
         elif args.command == "exclude":
