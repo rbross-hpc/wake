@@ -2,38 +2,29 @@
 # Copyright (c) 2026, UChicago Argonne, LLC, Argonne National Laboratory.
 """Explicit domain models for wake's core artifacts.
 
-This module is the first step of the "Structural Hardening" effort (see
-PLAN.md, "Phase 3 -- Structural Hardening" and BACKLOG.md Theme L): wake's
-domain data has always been passed around as ``dict[str, Any]``, validated
-ad hoc at each read site, with legacy/multi-facet shape differences
-reconciled by scattered ``_normalize_*`` functions across classify.py,
-evidence.py, themes.py, narrative.py, report.py, and evidence_wiki.py.
+Phase 6 (v0.4.6) extended this module with genuine dossier versioning:
+``EVIDENCE_DOSSIER_VERSION``, ``migrate_dossier()``, and
+``EvidenceDossierWrite`` turn the advisory schema layer into real persistent
+format management for dossiers.  See PLAN.md v0.4.6 for the full account.
 
-These Pydantic models exist to give that data a name and a schema without
-changing wake's on-disk format: every model's ``.to_json_dict()`` produces
-(and every model's ``model_validate()`` accepts) the *exact* dict shape
-already read/written by the modules above, verified against real fixtures
-in tests/test_models.py. Nothing in this module talks to the filesystem or
-to an LLM -- it is a pure, dependency-free (aside from pydantic) schema
-layer that other modules can adopt incrementally.
-
-``SCHEMA_VERSION`` is a new field this module introduces on every model:
-none of wake's existing persisted JSON carries an explicit schema version
-today (see the assessment that prompted this effort) -- versioning has
-been entirely implicit, via each LLM stage's own ``prompt_version``/
-``model`` pair plus ``.state.json``'s ``tool_version``. Every model here
-defaults ``schema_version`` to 1 and accepts a missing key on read (an
-old, pre-model artifact silently reads as schema_version 1) so adopting
-this layer is non-breaking for every existing wake-out/ packet.
+``SCHEMA_VERSION`` (= 1) is the baseline version all other artifact families
+default to.  ``EVIDENCE_DOSSIER_VERSION`` (= 2) is the current on-disk
+version for newly written dossiers; old packets with no ``schema_version``
+key are treated as v0 and migrated forward through ``migrate_dossier()``.
+Nothing in this module talks to the filesystem or to an LLM.
 """
 from __future__ import annotations
 
+import os
 import re
+from pathlib import Path
 from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 SCHEMA_VERSION = 1
+
+EVIDENCE_DOSSIER_VERSION = 2
 
 # The fixed, canonical set of relationship labels. Duplicated from
 # classify.py (rather than imported) to keep this module import-free of
@@ -220,6 +211,73 @@ class EvidenceDossier(WakeModel):
     author_overlap: bool = False
     overlapping_authors: list[str] = Field(default_factory=list)
     human_verification: dict[str, Any] | None = None
+
+
+class EvidenceDossierWrite(EvidenceDossier):
+    """Strict write variant of EvidenceDossier.
+
+    Read paths (``load_dossier``, index rebuilds in evidence_wiki.py) use
+    the permissive ``EvidenceDossier`` (``extra="allow"``) so that old or
+    forward-versioned JSON is always tolerated.  Write paths use this
+    subclass, which sets ``extra="forbid"``, so a misspelled or obsolete
+    field in a newly constructed payload is caught at write time rather
+    than silently persisted.
+
+    The on-disk shape is identical to ``EvidenceDossier``; only validation
+    strictness differs.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+def migrate_dossier(
+    raw: dict[str, Any],
+    *,
+    sidecar_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Migrate a raw dossier dict forward to ``EVIDENCE_DOSSIER_VERSION``.
+
+    Idempotent: calling on an already-current dict is a no-op (returns the
+    same dict unchanged if no migration step touches it).
+
+    ``sidecar_dir`` is the directory that contains the dossier's ``.json``
+    file.  It is used only for the v1 → v2 path-normalization step; when
+    ``None`` (e.g. in unit tests that don't touch the filesystem) that step
+    is skipped.
+
+    Migration chain
+    ---------------
+    v0 (no key)  →  v1  Add ``schema_version: 1``.  No shape change; the
+                        read model has always defaulted the missing key to 1,
+                        so this only makes the implicit explicit.
+
+    v1            →  v2  Normalize legacy absolute ``pdf_path`` and
+                        ``extracted_text_path`` values to paths relative to
+                        ``sidecar_dir``.  New dossiers have stored relative
+                        paths since the write-order fix in v0.4.3; older
+                        packets written before that convention store absolute
+                        paths.  ``rerender_dossier_md`` previously did this
+                        opportunistically at render time; the migration moves
+                        it to read time so any load path benefits, not only
+                        rerenders.  Bump ``schema_version`` to 2.
+    """
+    result = dict(raw)
+    version = result.get("schema_version", 0)
+
+    if version < 1:
+        result["schema_version"] = 1
+        version = 1
+
+    if version < 2:
+        if sidecar_dir is not None:
+            for field_name in ("pdf_path", "extracted_text_path"):
+                value = result.get(field_name)
+                if value and Path(value).is_absolute():
+                    result[field_name] = os.path.relpath(value, sidecar_dir)
+        result["schema_version"] = 2
+        version = 2
+
+    return result
 
 
 class ThemeWork(WakeModel):

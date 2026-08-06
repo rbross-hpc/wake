@@ -34,7 +34,7 @@ from . import config
 from . import cost as cost_mod
 from .io import atomic_write_json, atomic_write_text, now_iso, read_json
 from .llm.openai_client import chat_json
-from .models import EvidenceDossier
+from .models import EvidenceDossierWrite, migrate_dossier
 from .pdf_fetch import fetch_pdf
 from .seed import work_dir
 from .sources.pdf_fulltext import (
@@ -855,6 +855,7 @@ def build_dossier(
     # for the read side, which resolves these back to absolute paths before
     # re-rendering the markdown.
     json_payload = {
+        "schema_version": 2,
         "seed_openalex_id": seed_id,
         "citing_openalex_id": citing_id,
         "citing_title": citing_work.get("title"),
@@ -869,8 +870,8 @@ def build_dossier(
         "verification_status": "pending-human-review",
         **finding,
     }
-    EvidenceDossier.validate_or_raise(json_payload, context=f"evidence dossier {citing_id!r}")
-    atomic_write_json(json_path, json_payload)
+    validated = EvidenceDossierWrite.validate_or_raise(json_payload, context=f"evidence dossier {citing_id!r}")
+    atomic_write_json(json_path, validated.to_json_dict())
 
     md_text = _render_dossier_markdown(
         seed_work, citing_work, finding,
@@ -989,24 +990,20 @@ def rerender_dossier_md(
     md_path = dossier_path(seed_id, citing_id, base)
     atomic_write_text(md_path, md_text)
 
-    # Opportunistic migration: normalize a legacy absolute pdf_path/
-    # extracted_text_path in the JSON sidecar to relative-from-sidecar
-    # form, so a --rerender-all pass across an older wiki also fixes up
-    # its JSON, not just its markdown. Idempotent (no-op once already
-    # relative); skipped entirely if there's nothing to normalize.
-    normalized = dict(payload)
-    changed = False
-    if pdf_path_str and payload.get("pdf_path") != (rel := _relpath_from(Path(pdf_path_str), wd)):
-        normalized["pdf_path"] = rel
-        changed = True
-    if extracted_text_path_str and payload.get("extracted_text_path") != (
-        rel := _relpath_from(Path(extracted_text_path_str), wd)
-    ):
-        normalized["extracted_text_path"] = rel
-        changed = True
-    if changed:
-        EvidenceDossier.validate_or_raise(normalized, context=f"evidence dossier {citing_id!r}")
-        atomic_write_json(dossier_json_path(seed_id, citing_id, base), normalized)
+    # Opportunistic persistence of migration: load_dossier() already ran
+    # migrate_dossier() on the raw JSON, so `payload` is current-version.
+    # If the on-disk file pre-dates the migration (no schema_version or
+    # schema_version < 2), persist the migrated, validated form now so the
+    # next reader sees a fully current file.  Idempotent -- already-current
+    # dossiers compare equal and the write is skipped.
+    import json as _json
+    json_path_rerender = dossier_json_path(seed_id, citing_id, base)
+    _on_disk_version = _json.loads(json_path_rerender.read_text()).get("schema_version", 0)
+    if _on_disk_version < 2:
+        _validated = EvidenceDossierWrite.validate_or_raise(
+            payload, context=f"evidence dossier {citing_id!r}"
+        )
+        atomic_write_json(json_path_rerender, _validated.to_json_dict())
 
     return md_path
 
@@ -1030,4 +1027,5 @@ def load_dossier(seed_id: str, citing_id: str, base: Path | None = None) -> dict
     p = dossier_json_path(seed_id, citing_id, base)
     if not p.exists():
         return None
-    return read_json(p)
+    raw = read_json(p)
+    return migrate_dossier(raw, sidecar_dir=p.parent)
