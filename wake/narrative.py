@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from .io import atomic_write_json, atomic_write_text, now_iso, read_json
+from .models import NarrativeOutline, NarrativeSection
 from .seed import work_dir
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -313,6 +314,8 @@ def create_outline(
         "updated_at": now_iso(),
     }
 
+    NarrativeOutline.validate_or_raise(payload, context="narrative outline")
+
     d = narrative_dir(seed_id, base)
     d.mkdir(parents=True, exist_ok=True)
     atomic_write_json(outline_json_path(seed_id, base), payload)
@@ -417,6 +420,8 @@ def create_section(
         "updated_at": now_iso(),
     }
 
+    NarrativeSection.validate_or_raise(payload, context=f"narrative section {slug!r}")
+
     d = sections_dir(seed_id, base)
     d.mkdir(parents=True, exist_ok=True)
     atomic_write_json(section_json_path(seed_id, slug, base), payload)
@@ -487,6 +492,7 @@ def confirm_section(
     section["confirmed_at"] = now_iso()
     section["updated_at"] = now_iso()
 
+    NarrativeSection.validate_or_raise(section, context=f"narrative section {slug!r}")
     atomic_write_json(section_json_path(seed_id, slug, base), section)
     atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, section, base))
 

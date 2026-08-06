@@ -31,6 +31,7 @@ from typing import Any
 
 from .evidence import dossier_path, evidence_dir
 from .io import atomic_write_text, now_iso
+from .models import EvidenceDossier
 from .seed import work_dir
 
 _STATUS_SECTION_RE = re.compile(
@@ -307,6 +308,7 @@ def mark_verified(
         proposed["model_relationships"] = model_facets_snapshot
         payload["human_verification"]["corrected_from"] = model_top_label
 
+    EvidenceDossier.validate_or_raise(payload, context=f"evidence dossier {citing_id!r}")
     atomic_write_text(json_path, json.dumps(payload, indent=2, default=str))
 
     # Full re-render, not the old targeted string replace: the dossier's
@@ -379,6 +381,7 @@ def mark_pending(
         for f in proposed.get("relationships", []) or []:
             f["verified"] = False
 
+    EvidenceDossier.validate_or_raise(payload, context=f"evidence dossier {citing_id!r}")
     atomic_write_text(json_path, json.dumps(payload, indent=2, default=str))
 
     # Full re-render (see mark_verified()'s comment on why a targeted

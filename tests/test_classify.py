@@ -182,7 +182,14 @@ def test_write_sidecar_migrates_legacy_dotfile_dir_in_place(tmp_path):
     legacy_dir.mkdir(parents=True, exist_ok=True)
     (legacy_dir / "W_old.json").write_text(json.dumps({"relationship": "extends"}), encoding="utf-8")
 
-    _write_sidecar(seed_id, "W_new", {"relationship": "uses-as-tool"}, base=tmp_path)
+    _write_sidecar(
+        seed_id, "W_new",
+        {
+            "relationship": "uses-as-tool", "confidence": 0.8, "justification": "x",
+            "relationships": [{"label": "uses-as-tool", "confidence": 0.8, "justification": "x"}],
+        },
+        base=tmp_path,
+    )
 
     assert not legacy_dir.exists()
     new_dir = _sidecar_dir(seed_id, base=tmp_path)

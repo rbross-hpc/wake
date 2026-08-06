@@ -918,16 +918,37 @@ source before acting on it. Full writeup, verification detail, and
 per-phase build/verification notes live in `PLAN.md` under "Phase 3 —
 Structural Hardening" (this is the BACKLOG-side pointer, not a duplicate).
 
-Five phases, one branch each, offline suite (651 tests) kept green
-throughout, `--no-ff` merged to `main` before the next phase starts:
+Five phases, one branch each, offline suite (651 tests at the start)
+kept green throughout, `--no-ff` merged to `main` before the next phase
+starts:
 
 1. `chore/ci-and-tooling` — CI (Python 3.10–3.13 matrix) + ruff + mypy
    (scoped to `wake/`, lenient baseline) — **BUILT**, see PLAN.md v0.4.0.
 2. `refactor/domain-models` — explicit Pydantic models (`Work`,
-   `ClassificationFacet`, `EvidenceClaim`, `EvidenceDossier`, `Theme`,
-   `NarrativeSection`, `Override`, `ArtifactReference`) + `schema_version`
-   on every persisted artifact, replacing scattered dict-shape
-   normalization/back-compat branches with explicit migrations.
+   `RelationshipFacet`/`ClassificationResult`, `EvidenceDossier`,
+   `Theme`, `NarrativeOutline`/`NarrativeSection`, `Override`,
+   `ArtifactReference`) + a new `schema_version` field on every model,
+   wired as write-time validation at every real persistence site for
+   these five artifact types — **BUILT**, see PLAN.md v0.4.1. Scoped
+   deliberately narrower than "replace every dict call site": additive
+   and non-breaking (models default `schema_version` and tolerate extra
+   keys, so every existing `wake-out/` packet still validates), with
+   `EvidenceDossier.provisional`/`.proposed` deliberately left as
+   `dict[str, Any]` rather than fully nested models — the classify-2/3
+   and evidence-1/2 legacy-vs-multi-facet shape duality documented in
+   this phase's research pass is exactly the kind of thing better
+   handled by an explicit migration in a later pass than by encoding
+   both shapes into a strict schema now. Deferred to a later pass (not
+   forgotten): a golden-fixture test loading a full real `wake-out/`
+   packet built by pre-model wake and confirming every model parses
+   every relevant file in it unmodified (the current test suite proves
+   this at the unit/field level, not yet at the whole-packet level);
+   replacing the 15 catalogued `_normalize_*`/legacy-shape functions
+   with explicit versioned migrations (classify-2↔3, evidence-1↔2, the
+   three dotfile-rename migrations) is real remaining work, likely
+   belonging to `refactor/build-layer` or its own follow-on phase once
+   more of the codebase actually consumes `models.py` types directly
+   rather than dicts validated against them at the boundary.
 3. `refactor/wake-context` — `WakeContext` (workspace, settings,
    llm_client, source_registry, artifact_repository) threaded through
    domain functions, removing `Path.cwd()`/`@lru_cache(maxsize=1)`

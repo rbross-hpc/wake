@@ -12,6 +12,7 @@ from typing import Any
 from . import config
 from .classify import relationship_strength
 from .io import atomic_write_json, atomic_write_text, now_iso
+from .models import Override
 from .seed import work_dir
 from .state import mark_stage_complete
 
@@ -116,6 +117,7 @@ def add_override(
         # (classify.relationship_strength) reranks this override too.
         "overridden_at": now_iso(),
     }
+    Override.validate_or_raise(entry, context=f"override for {citing_id!r}")
     _migrate_legacy_overrides_if_needed(seed_id, base)
     p = overrides_path(seed_id, base)
     p.parent.mkdir(parents=True, exist_ok=True)
