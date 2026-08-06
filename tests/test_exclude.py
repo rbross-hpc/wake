@@ -14,6 +14,7 @@ import pytest
 from wake import exclude, narrative, themes
 from wake.classify import save_classified
 from wake.report import add_override, bake_and_save
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"

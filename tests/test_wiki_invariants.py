@@ -22,8 +22,9 @@ import pytest
 
 from wake import evidence, narrative, report, themes
 from wake.classify import save_classified
-from wake.report import add_override
 from wake.evidence_wiki import rebuild_wiki_orientation
+from wake.report import add_override
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 from .wiki_invariants import (
     assert_agents_md_declares_all_types,

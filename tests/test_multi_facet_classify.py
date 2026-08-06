@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from wake import classify
 from wake.classify import (
     MAX_FACETS,
     MIN_FACET_CONFIDENCE,
@@ -25,8 +24,8 @@ from wake.classify import (
     _system_prompt,
     classify_one,
 )
-from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
+from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 # --- _system_prompt -----------------------------------------------------
 

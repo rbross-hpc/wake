@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from wake.llm.openai_client import _strip_markdown_fence, _extract_json_object, chat_json
+from wake.llm.openai_client import _extract_json_object, _strip_markdown_fence, chat_json
 
 
 def test_strip_markdown_fence_removes_fence():

@@ -33,8 +33,9 @@ from __future__ import annotations
 import sys
 import time
 import urllib.parse
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import requests
 
@@ -177,10 +178,13 @@ def _fetch_pdf_to(
         tried.append(source_name)
         try:
             if source_name == "arxiv":
+                assert title is not None
                 url = arxiv_fetch.find_pdf_url_by_title(title)
             elif source_name == "core":
+                assert doi is not None
                 url = core.get_oa_pdf_url_by_doi(doi)
             else:
+                assert func is not None and doi is not None
                 url = func(doi)
         except Exception as exc:
             if verbose:

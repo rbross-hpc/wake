@@ -3,11 +3,9 @@
 """Tests for wake.backfill — lazy abstract backfill, offline (mocked sources)."""
 from __future__ import annotations
 
-import pytest
 from unittest.mock import patch
 
 from wake import backfill
-
 
 WORK_NO_ABSTRACT = {
     "openalex_id": "W1",

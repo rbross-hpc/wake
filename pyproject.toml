@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-mock"]
+dev = ["pytest", "pytest-mock", "pytest-cov", "ruff", "mypy"]
 pdf = ["pypdf>=4.0", "pdfplumber>=0.10"]
 
 [project.scripts]
@@ -36,3 +36,29 @@ wake = ["config.yaml", "skills/impact-analysis/**/*"]
 markers = [
     "network: marks tests that make real network calls (deselect with -m 'not network')",
 ]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "E501",  # line length handled loosely; long strings/URLs are common in prompts and docs
+]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["wake"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+# Baseline is intentionally lenient: wake's domain model is still dict-based
+# (see PLAN.md "Phase 3 - Structural Hardening" / refactor/domain-models).
+# Tighten (disallow_untyped_defs, strict_optional, etc.) as typed models land.
+disallow_untyped_defs = false
+no_implicit_optional = true
+# Scoped to the wake/ package only -- tests are exercised for correctness
+# by pytest, not for typing; adding mypy across tests/ is a separate,
+# much larger cleanup with little safety payoff.

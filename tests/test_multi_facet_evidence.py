@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from wake import evidence
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
@@ -238,7 +239,7 @@ def test_build_dossier_multi_facet_frontmatter_lists_one_entry_per_facet(tmp_pat
 
 
 def test_build_dossier_multi_facet_json_sidecar_round_trips(tmp_path):
-    result = _build_multi_facet_dossier(tmp_path)
+    _build_multi_facet_dossier(tmp_path)
     loaded = evidence.load_dossier(
         PARALLEL_NETCDF_WORK["openalex_id"], CLASSIFIED_CITING_WORK["openalex_id"], base=tmp_path,
     )
@@ -249,8 +250,8 @@ def test_build_dossier_multi_facet_json_sidecar_round_trips(tmp_path):
 def test_rerender_dossier_md_preserves_multi_facet_shape(tmp_path):
     """wake evidence --rerender-all must round-trip a multi-facet dossier
     without collapsing it back to single-facet."""
-    result = _build_multi_facet_dossier(tmp_path)
-    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    _build_multi_facet_dossier(tmp_path)
+    PARALLEL_NETCDF_WORK["openalex_id"]
     citing_id = CLASSIFIED_CITING_WORK["openalex_id"]
 
     md_path = evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, citing_id, base=tmp_path)

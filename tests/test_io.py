@@ -4,11 +4,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-import pytest
-
-from wake.io import atomic_write_json, atomic_write_text, read_json, sha256_text, now_iso
+from wake.io import atomic_write_json, atomic_write_text, now_iso, read_json, sha256_text
 
 
 def test_atomic_write_text(tmp_path):

@@ -3,11 +3,9 @@
 """Tests for wake.pdf_fetch — the PDF-acquisition orchestrator, offline."""
 from __future__ import annotations
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from wake import pdf_fetch
-
 
 _FAKE_PDF_BYTES = b"%PDF-1.4\n" + b"x" * 3000  # valid-looking, above min_valid_pdf_bytes
 _FAKE_HTML_BYTES = b"<html><body>Access Denied</body></html>" + b"x" * 3000

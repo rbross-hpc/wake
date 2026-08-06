@@ -26,8 +26,8 @@ from unittest.mock import patch
 
 import pytest
 
-from wake.sources import pdf_abstract
 from wake import abstract_extract
+from wake.sources import pdf_abstract
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
 

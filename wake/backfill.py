@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import sys
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from . import config
 from .sources import osti, semanticscholar

@@ -19,6 +19,7 @@ import pytest
 from wake import evidence, narrative, themes
 from wake.classify import save_classified
 from wake.report import add_override
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 from .wiki_invariants import assert_no_malformed_wikilinks, assert_r_anchors_resolve
 
@@ -184,7 +185,7 @@ def test_create_outline_writes_json_and_markdown(tmp_path):
 
 
 def test_create_outline_overwrites_and_preserves_created_at(tmp_path):
-    first = narrative.create_outline(
+    narrative.create_outline(
         PARALLEL_NETCDF_WORK,
         components=[{"slug": "intro", "title": "Introduction", "kind": "free"}],
         base=tmp_path,

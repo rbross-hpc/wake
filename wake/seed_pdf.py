@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from .io import atomic_write_json, now_iso
-from .pdf_fetch import fallback_links, fetch_seed_pdf, seed_pdf_path
+from .pdf_fetch import fetch_seed_pdf, seed_pdf_path
 from .seed import load_seed, work_dir
 
 
@@ -150,6 +150,7 @@ def acquire_seed_pdf_from_path(
     Returns the same result shape as acquire_seed_pdf.
     """
     import shutil
+
     from .evidence_wiki import append_log_entry
     from .pdf_verify import check_pdf_metadata
     from .sources.pdf_abstract import extract_lead_text

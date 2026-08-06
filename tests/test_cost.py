@@ -3,15 +3,14 @@
 """Tests for wake.cost — estimate-only telemetry."""
 from __future__ import annotations
 
-import pytest
 from wake.cost import (
-    estimate_tokens,
-    estimate_cost_usd,
-    record_call,
-    read_log,
-    summarize,
-    estimate_remaining_classify_cost,
     cost_log_path,
+    estimate_cost_usd,
+    estimate_remaining_classify_cost,
+    estimate_tokens,
+    read_log,
+    record_call,
+    summarize,
 )
 
 

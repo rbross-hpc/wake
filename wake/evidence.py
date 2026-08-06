@@ -30,12 +30,17 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import config, cost as cost_mod
+from . import config
+from . import cost as cost_mod
 from .io import atomic_write_json, atomic_write_text, now_iso, read_json
 from .llm.openai_client import chat_json
 from .pdf_fetch import fetch_pdf
 from .seed import work_dir
-from .sources.pdf_fulltext import extract_full_text_from_pages, extract_pages_cached, extracted_text_path
+from .sources.pdf_fulltext import (
+    extract_full_text_from_pages,
+    extract_pages_cached,
+    extracted_text_path,
+)
 
 _STAGE = "evidence"
 

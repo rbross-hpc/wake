@@ -6,19 +6,17 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from wake import missing_pdfs
 from wake.classify import save_classified
 from wake.cli.main import main
 from wake.evidence_wiki import append_log_entry, log_path
 from wake.io import atomic_write_json
-from wake.pdf_fetch import pdf_path, fetch_pdf
+from wake.pdf_fetch import fetch_pdf, pdf_path
 from wake.seed import work_dir
 from wake.state import mark_stage_complete
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 

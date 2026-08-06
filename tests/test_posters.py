@@ -11,14 +11,12 @@ conference-abstract` and/or a `Poster:`/`Abstract:` title prefix.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from wake import exclude, posters
 from wake.classify import save_classified
-from .conftest import PARALLEL_NETCDF_WORK
 
+from .conftest import PARALLEL_NETCDF_WORK
 
 _POSTER_TYPE_AND_PREFIX = {
     "openalex_id": "W_POSTER_1",

@@ -55,7 +55,7 @@ def find_pdf_url_by_title(title: str, min_similarity: float = _MIN_TITLE_SIMILAR
 
     resp = _session().get(
         _BASE,
-        params={"search_query": f'ti:"{title}"', "max_results": 5},
+        params={"search_query": f'ti:"{title}"', "max_results": "5"},
         timeout=30,
     )
     raise_for_rate_limit(resp, SOURCE_NAME)

@@ -55,14 +55,14 @@ from pathlib import Path
 from typing import Any
 
 from . import backfill as backfill_mod
-from . import config, cost as cost_mod
+from . import config
+from . import cost as cost_mod
 from .citing import sort_works
-from .errors import RateLimited
 from .gaps import apply_manual_abstracts, load_manual_abstracts
 from .io import atomic_write_json, now_iso, read_json
 from .llm.openai_client import chat_json
 from .seed import work_dir
-from .state import is_stage_current, mark_stage_complete
+from .state import mark_stage_complete
 
 _STAGE = "classify"
 
@@ -570,7 +570,6 @@ def classify_all(
         citing_works = apply_manual_abstracts(citing_works, manual_abstracts)
 
     selected = select_for_classification(citing_works, ids=ids, limit=limit, sort=sort)
-    selected_ids = {w.get("openalex_id") for w in selected}
 
     # Seed by_id with any *previously* classified data for every citing work
     # (not just the current selection) so a scoped run (--ids/--limit) never
@@ -578,7 +577,9 @@ def classify_all(
     by_id: dict[str, dict[str, Any]] = {}
     for w in citing_works:
         wid = w.get("openalex_id")
-        prior = _load_sidecar(seed_id, wid, base) if wid else None
+        if not wid:
+            continue
+        prior = _load_sidecar(seed_id, wid, base)
         if prior and prior.get("prompt_version") == pv and prior.get("model") == model:
             by_id[wid] = {**w, **prior}
         else:
@@ -658,7 +659,7 @@ def classify_all(
             )
 
     # Preserve original ordering of citing_works.
-    return [by_id.get(w.get("openalex_id"), w) for w in citing_works]
+    return [by_id[wid] if (wid := w.get("openalex_id")) in by_id else w for w in citing_works]
 
 
 def save_classified(

@@ -36,7 +36,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .io import atomic_write_text, now_iso
+from .io import now_iso
 from .seed import work_dir
 from .similarity import title_ratio
 
@@ -199,7 +199,7 @@ def dedup_candidates(
             b_ids = {aid_ for aid_ in b.get("author_ids", []) or [] if aid_}
             overlapping_ids = a_ids & b_ids
             overlapping_authors = [
-                name for name, oid in zip(a.get("authors", []) or [], a.get("author_ids", []) or [])
+                name for name, oid in zip(a.get("authors", []) or [], a.get("author_ids", []) or [], strict=False)
                 if oid in overlapping_ids
             ]
 

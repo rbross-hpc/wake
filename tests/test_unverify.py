@@ -18,6 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from wake import evidence, evidence_wiki, report, unverify
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"

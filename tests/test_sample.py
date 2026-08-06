@@ -3,8 +3,8 @@
 """Tests for wake.citing sort/sample primitives."""
 from __future__ import annotations
 
-import pytest
-from wake.citing import sort_works, sample_works, filter_works
+from wake.citing import filter_works, sample_works, sort_works
+
 from .conftest import SAMPLE_CITING_WORKS
 
 

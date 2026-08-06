@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import pytest
-from wake.similarity import title_ratio, _normalize
+
+from wake.similarity import title_ratio
 
 
 def test_identical_titles():

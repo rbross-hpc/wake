@@ -13,7 +13,7 @@ from typing import Any
 
 import requests
 
-from ..errors import OpenAlexError, RateLimited
+from ..errors import OpenAlexError
 from ..similarity import title_ratio
 from ._http import raise_for_rate_limit
 

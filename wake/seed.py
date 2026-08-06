@@ -13,8 +13,8 @@ from . import config
 from .errors import SeedNotFound
 from .io import atomic_write_json, now_iso, read_json
 from .sources.openalex import (
-    get_work_by_doi,
     get_work_by_arxiv_id,
+    get_work_by_doi,
     get_work_by_openalex_id,
     search_work_by_title,
 )

@@ -30,8 +30,9 @@ from pathlib import Path
 from typing import Any
 
 from . import config
-from .backfill import is_enabled as _backfill_enabled, backfill_one
-from .io import atomic_write_text, now_iso, read_json
+from .backfill import backfill_one
+from .backfill import is_enabled as _backfill_enabled
+from .io import now_iso
 from .seed import work_dir
 
 _MANUAL_ABSTRACTS_FILE = "manual_abstracts.jsonl"

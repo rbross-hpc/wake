@@ -4,13 +4,21 @@
 from __future__ import annotations
 
 import pytest
-from wake.report import build_metrics, bake_markdown, relationship_score, _score, _venue_type_or_fallback
+
+from wake.report import (
+    _score,
+    _venue_type_or_fallback,
+    bake_markdown,
+    build_metrics,
+    relationship_score,
+)
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 
 def _make_classified(works, relationships, verification_status="provisional"):
     result = []
-    for w, rel in zip(works, relationships):
+    for w, rel in zip(works, relationships, strict=False):
         result.append({
             **w,
             "relationship": rel,
@@ -152,6 +160,7 @@ def test_bake_markdown_nav_line_reflects_existing_wiki_artifacts(tmp_path):
     import shutil
     from pathlib import Path as _Path
     from unittest.mock import patch
+
     from wake import evidence, narrative, themes
     from wake.classify import save_classified
     from wake.report import add_override
@@ -215,6 +224,7 @@ def test_bake_markdown_nav_line_reflects_cwd_wiki_artifacts_without_explicit_bas
     import shutil
     from pathlib import Path as _Path
     from unittest.mock import patch
+
     from wake import evidence, narrative, themes
     from wake.classify import save_classified
     from wake.report import add_override, bake_and_save
@@ -709,9 +719,10 @@ def test_bake_markdown_nature_of_impact_summary_counts():
 
 
 def test_add_override_defaults_to_human_judgment_source():
-    from wake.report import add_override
     import tempfile
     from pathlib import Path
+
+    from wake.report import add_override
     with tempfile.TemporaryDirectory() as tmp:
         entry = add_override(
             "W123", "W456", relationship="extends", justification="test", base=Path(tmp),
@@ -721,9 +732,10 @@ def test_add_override_defaults_to_human_judgment_source():
 
 
 def test_add_override_accepts_evidence_dossier_source():
-    from wake.report import add_override
     import tempfile
     from pathlib import Path
+
+    from wake.report import add_override
     with tempfile.TemporaryDirectory() as tmp:
         entry = add_override(
             "W123", "W456", relationship="extends", justification="quoted text",

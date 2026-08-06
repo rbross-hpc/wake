@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_PACKAGED_CONFIG = files("wake") / "config.yaml"
+_PACKAGED_CONFIG = Path(str(files("wake") / "config.yaml"))
 _LOCAL_CONFIG_NAME = "wake.config.yaml"
 
 # Three tiers, in descending order of urgency. This registry backs both

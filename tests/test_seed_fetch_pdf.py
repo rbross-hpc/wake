@@ -26,6 +26,7 @@ from wake.pdf_fetch import fetch_seed_pdf, seed_pdf_path
 from wake.seed import load_seed, work_dir
 from wake.seed_pdf import acquire_seed_pdf, acquire_seed_pdf_from_path
 from wake.state import mark_stage_complete
+
 from .conftest import PARALLEL_NETCDF_WORK
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf"
@@ -398,7 +399,7 @@ def test_resolve_and_cache_auto_attempts_seed_pdf(tmp_path):
         mock_get.return_value.status_code = 200
         mock_get.return_value.content = fake_pdf
         from wake.seed import resolve_and_cache
-        work = resolve_and_cache(_SEED["openalex_id"], base=tmp_path)
+        resolve_and_cache(_SEED["openalex_id"], base=tmp_path)
 
     assert seed_pdf_path(_SEED["openalex_id"], tmp_path).exists()
     cached = load_seed(_SEED["openalex_id"], tmp_path)
@@ -414,7 +415,7 @@ def test_resolve_and_cache_auto_attempt_silent_on_failure(tmp_path):
          patch("wake.pdf_fetch.core.is_enabled", return_value=False), \
          patch("wake.pdf_fetch.time.sleep"):
         from wake.seed import resolve_and_cache
-        work = resolve_and_cache(_SEED["openalex_id"], base=tmp_path)
+        resolve_and_cache(_SEED["openalex_id"], base=tmp_path)
 
     assert not seed_pdf_path(_SEED["openalex_id"], tmp_path).exists()
     cached = load_seed(_SEED["openalex_id"], tmp_path)

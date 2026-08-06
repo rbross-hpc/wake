@@ -4,25 +4,26 @@
 from __future__ import annotations
 
 import json
-import pytest
-from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from wake.classify import (
     CANONICAL_RELATIONSHIPS,
     RELATIONSHIPS,
     _legacy_sidecar_dir,
     _legacy_sidecar_path,
+    _load_sidecar,
     _sidecar_dir,
     _sidecar_path,
     _validate_relationship_strength,
     _write_sidecar,
-    _load_sidecar,
     classify_all,
     classify_one,
     relationship_strength,
     select_for_classification,
 )
+
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 
@@ -78,27 +79,27 @@ def test_validate_relationship_strength_unknown_label_suggests_closest_match():
 
 
 def test_validate_relationship_strength_rejects_missing_label():
-    incomplete = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8)) if k != "related-infrastructure"}
+    incomplete = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8), strict=False) if k != "related-infrastructure"}
     with pytest.raises(ValueError, match="missing required label.*related-infrastructure"):
         _validate_relationship_strength(incomplete)
 
 
 def test_validate_relationship_strength_rejects_zero():
-    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8))}
+    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8), strict=False)}
     bad["extends"] = 0
     with pytest.raises(ValueError, match="must be a positive number"):
         _validate_relationship_strength(bad)
 
 
 def test_validate_relationship_strength_rejects_negative():
-    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8))}
+    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8), strict=False)}
     bad["extends"] = -3
     with pytest.raises(ValueError, match="must be a positive number"):
         _validate_relationship_strength(bad)
 
 
 def test_validate_relationship_strength_rejects_non_numeric():
-    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8))}
+    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8), strict=False)}
     bad["extends"] = "high"
     with pytest.raises(ValueError, match="must be a positive number"):
         _validate_relationship_strength(bad)
@@ -107,14 +108,14 @@ def test_validate_relationship_strength_rejects_non_numeric():
 def test_validate_relationship_strength_rejects_bool():
     """bool is a subclass of int in Python -- must be explicitly excluded
     or `True`/`False` would silently pass as strength 1/0."""
-    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8))}
+    bad = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8), strict=False)}
     bad["extends"] = True
     with pytest.raises(ValueError, match="must be a positive number"):
         _validate_relationship_strength(bad)
 
 
 def test_validate_relationship_strength_accepts_float():
-    ok = {k: float(v) for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8))}
+    ok = {k: float(v) for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8), strict=False)}
     result = _validate_relationship_strength(ok)
     assert result["extends"] == 1.0
 

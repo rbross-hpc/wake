@@ -5,13 +5,13 @@ from __future__ import annotations
 
 import json
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from . import config
 from .classify import relationship_strength
-from .io import atomic_write_json, atomic_write_text, now_iso, read_json
+from .io import atomic_write_json, atomic_write_text, now_iso
 from .seed import work_dir
 from .state import mark_stage_complete
 
@@ -123,7 +123,12 @@ def add_override(
         f.write(json.dumps(entry, default=str) + "\n")
 
     if verification_source == "evidence-dossier":
-        from .evidence_wiki import append_log_entry, mark_verified, rebuild_index, rebuild_wiki_orientation
+        from .evidence_wiki import (
+            append_log_entry,
+            mark_verified,
+            rebuild_index,
+            rebuild_wiki_orientation,
+        )
         if mark_verified(
             seed_id, citing_id, justification=justification,
             relationship=relationship, base=base,
@@ -208,7 +213,7 @@ def apply_overrides(
     return result
 
 
-def relationship_score(relationships: "list[dict] | str", cited_by_count: int | None) -> float:
+def relationship_score(relationships: list[dict] | str, cited_by_count: int | None) -> float:
     """Single source of truth for the ranking formula used both for the
     impact brief's "Strongest Evidence" (this module) and the evidence
     wiki's index.md ranking (evidence_wiki.py) -- MAX facet strength x
@@ -240,7 +245,10 @@ def relationship_score(relationships: "list[dict] | str", cited_by_count: int | 
     if isinstance(relationships, str):
         best = strengths.get(relationships, 1)
     else:
-        labels = [f.get("label") for f in (relationships or []) if isinstance(f, dict)]
+        labels = [
+            label for f in (relationships or [])
+            if isinstance(f, dict) and isinstance(label := f.get("label"), str)
+        ]
         best = max((strengths.get(label, 1) for label in labels), default=1)
     downstream = cited_by_count or 0
     return best * math.log1p(downstream)
@@ -290,6 +298,8 @@ def _venue_type_or_fallback(work: dict) -> str:
     if vt:
         return vt
     oa_type = work.get("type")
+    if not isinstance(oa_type, str):
+        return "unknown"
     return _OPENALEX_TYPE_TO_VENUE_TYPE.get(oa_type, "unknown")
 
 
@@ -761,7 +771,7 @@ def bake_and_save(
     rebuild_wiki_orientation(seed_id, seed_work, base=base)
 
     if verbose:
-        print(f"[wake] Report written:", file=sys.stderr)
+        print("[wake] Report written:", file=sys.stderr)
         print(f"  {md_path}", file=sys.stderr)
         print(f"  {json_path}", file=sys.stderr)
 

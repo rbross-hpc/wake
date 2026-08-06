@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import pytest
+
 from wake.sources.openalex import (
     _normalize_doi,
     _normalize_openalex_id,
@@ -122,7 +123,7 @@ def test_live_get_by_doi():
 
 @pytest.mark.network
 def test_live_iter_citing_works():
-    from wake.sources.openalex import iter_citing_works, count_citing_works
+    from wake.sources.openalex import count_citing_works, iter_citing_works
     count = count_citing_works("W2156077349")
     assert count >= 100
 

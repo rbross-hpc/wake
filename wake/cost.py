@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .io import atomic_write_text, now_iso
+from .io import now_iso
 from .seed import work_dir
 
 _CHARS_PER_TOKEN = 4.0

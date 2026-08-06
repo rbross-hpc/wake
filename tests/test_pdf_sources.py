@@ -5,11 +5,11 @@ tests (URL/parsing logic mocked or exercised against synthetic data) plus
 a few @pytest.mark.network live checks against real, known DOIs."""
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
-from wake.sources import osti, semanticscholar, unpaywall, arxiv_fetch, core
-
+from wake.sources import arxiv_fetch, core, osti, semanticscholar, unpaywall
 
 # ---- OSTI fulltext link ----
 

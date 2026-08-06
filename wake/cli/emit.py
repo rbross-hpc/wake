@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .. import __version__
 

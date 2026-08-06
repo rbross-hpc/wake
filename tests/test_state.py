@@ -3,12 +3,11 @@
 """Tests for wake.state."""
 from __future__ import annotations
 
-import pytest
 from wake.state import (
-    load_state,
-    save_state,
     is_stage_current,
+    load_state,
     mark_stage_complete,
+    save_state,
     state_path,
 )
 
