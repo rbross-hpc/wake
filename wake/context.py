@@ -1,47 +1,28 @@
 # BSD 3-Clause License
 # Copyright (c) 2026, UChicago Argonne, LLC, Argonne National Laboratory.
 """WakeContext: an explicit, constructible bundle of the environment a
-wake operation runs against (workspace root, resolved settings, and --
-in later phases -- an LLM client and source registry), as an
-alternative to resolving those things implicitly from the process's
-current working directory and module-global caches.
+wake operation runs against (workspace root, resolved settings, and an
+LLM client factory), as an alternative to resolving those things
+implicitly from the process's current working directory and module-global
+caches.
 
-This is a deliberately incremental step (see PLAN.md "Phase 3 --
-Structural Hardening" / BACKLOG.md Theme L): wake's ~90 existing domain
-functions all take an optional `base: Path | None = None` parameter
-that resolves against cwd/WAKE_WORK_DIR when omitted (see seed.py::
-work_dir()), and `config.load()` reads `./wake.config.yaml` relative to
-cwd with its own process-wide cache. Rewriting every one of those call
-sites to take a `WakeContext` instead of `base=`/implicit config lookup
-is real, valuable, but large-blast-radius work -- deferred to a
-follow-on pass once more of the codebase has settled on this shape.
+Fields:
+  - `.workspace` / `.base`: the `Path | None` every domain function's
+    `base=` parameter already accepts; `ctx.base` is a drop-in for any
+    such call.
+  - `.settings`: resolved config dict for this context; when None,
+    `wake.config.load()` is used.
+  - `.llm_client_factory`: zero-arg factory returning an LLM client;
+    when None, the real OpenAI client is used.  Allows tests/embedders
+    to substitute a fake client without monkeypatching module globals.
 
-What *is* done in this pass:
-  - WakeContext exists as a real, constructible, testable object with a
-    single canonical construction point (`WakeContext.from_cli_args` in
-    cli/main.py) rather than being purely aspirational.
-  - `.base` is exactly the `Path | None` every domain function's `base=`
-    parameter already accepts, so passing `ctx.base` into any existing
-    call is a drop-in replacement for the CLI's current
-    `_work_dir_base(args)` helper -- this is the seam later phases
-    thread further.
-  - `.settings` is the resolved config dict for that context (by
-    default, wake.config.py's own process-wide `load()`), letting a
-    caller override configuration per-context without touching the
-    global cache config.py still uses internally.
-  - `.llm_client`/`.source_registry` are present as explicit,
-    typed-but-currently-trivial extension points: today they default to
-    thin callables/namespaces that delegate to the existing
-    llm/openai_client.py module functions and wake/sources/ modules
-    respectively, so nothing downstream breaks, but a future test or
-    embedder can already substitute a fake/mock client or a
-    restricted source set by constructing a WakeContext directly
-    instead of monkeypatching module globals.
+Threading `WakeContext` through all ~90 existing `base:`-taking domain
+functions is real, valuable, deferred work -- see BACKLOG.md Theme L.
 """
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -79,14 +60,6 @@ class WakeContext:
     llm.openai_client._client()'s own real OpenAI(...) construction."
     A future test/embedder can substitute a fake client without
     monkeypatching wake.llm.openai_client module state."""
-
-    source_registry: dict[str, Any] = field(default_factory=dict)
-    """Reserved for a future explicit registry of bibliographic/PDF
-    source adapters (wake/sources/*.py) keyed by name -- currently
-    unused by any call site (those modules are still imported directly
-    by name, e.g. `from .sources import openalex`), but present on the
-    context now so a later phase can wire it in without another
-    dataclass-shape change."""
 
     @property
     def base(self) -> Path | None:

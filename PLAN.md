@@ -1561,3 +1561,58 @@ asserted `"schema_version" not in sidecar` (the old advisory-only behavior). Upd
 ### Verification
 
 ruff, mypy, 722/722 offline tests passing.
+
+## v0.4.7 — Single source of truth for relationship vocabulary + WakeContext cleanup (`refactor/domain-vocabulary`)
+
+**Assessment drivers:** (1) `CANONICAL_RELATIONSHIPS` was duplicated between `models.py` and
+`classify.py` -- two sources of truth kept identical only by an equality assertion test.  (2)
+`WakeContext.source_registry` was a never-consumed extension point; the assessment said "avoid
+adding more unused context fields until there is a real consumer."
+
+**Changes:**
+
+**`wake/vocabulary.py`** (new, dependency-free)
+
+Single source of truth for the relationship vocabulary:
+
+- `CANONICAL_RELATIONSHIPS: tuple[str, ...]`
+- `RelationshipLabel` (the corresponding `Literal` type)
+
+No dependencies on any other wake module.  `models.py` and `classify.py` both import from here.
+
+**`wake/models.py`**
+
+Removed the duplicated `CANONICAL_RELATIONSHIPS` tuple and `RelationshipLabel` alias.  Replaced
+with `from wake.vocabulary import CANONICAL_RELATIONSHIPS, RelationshipLabel`.  Re-exported with
+`# noqa: F401` for backward compatibility (any existing `from wake.models import
+CANONICAL_RELATIONSHIPS` keeps working).
+
+**`wake/classify.py`**
+
+Replaced the local `CANONICAL_RELATIONSHIPS = (...)` tuple definition with `from
+.vocabulary import CANONICAL_RELATIONSHIPS`.  No behavior change -- the tuple value is
+identical.
+
+**`wake/context.py`**
+
+Removed `source_registry: dict[str, Any]` field (zero consumers; second-look assessment
+explicitly named it as an unused extension point to remove).  Updated module docstring to
+reflect current fields.  Removed unused `field` import from `dataclasses`.
+
+**`tests/test_models.py`**
+
+Replaced `test_canonical_relationships_matches_classify_module` (equality assertion, two-source
+workaround) with two tests:
+
+- `test_canonical_relationships_is_single_source` -- confirms `models.CANONICAL_RELATIONSHIPS`
+  and `classify.CANONICAL_RELATIONSHIPS` are the *same object* (structural identity, not a
+  copied tuple).
+- `test_models_module_only_imports_vocabulary_from_wake` -- updated no-wake-imports guard;
+  `wake.vocabulary` is now the single allowed wake import in `models.py`.
+
+**Test count:** 722/722 (net zero -- one test replaced by two, but the equality test is subsumed
+by the identity test + the allowlist test).
+
+### Verification
+
+ruff, mypy, 722/722 offline tests passing.

@@ -21,7 +21,6 @@ import pytest
 from pydantic import ValidationError
 
 from wake import evidence, narrative, themes
-from wake.classify import CANONICAL_RELATIONSHIPS as CLASSIFY_CANONICAL_RELATIONSHIPS
 from wake.classify import classify_one, save_classified
 from wake.models import (
     EVIDENCE_DOSSIER_VERSION,
@@ -38,6 +37,7 @@ from wake.models import (
     migrate_dossier,
 )
 from wake.report import add_override, load_overrides
+from wake.vocabulary import CANONICAL_RELATIONSHIPS
 
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
@@ -53,27 +53,32 @@ def _copy_fixture_pdf(tmp_path: Path) -> Path:
 
 # --- module-level invariants ------------------------------------------
 
-def test_canonical_relationships_matches_classify_module():
-    """models.py deliberately duplicates this tuple rather than importing
-    it (see module docstring: models.py must stay import-free of the rest
-    of wake) -- this pins the two copies identical."""
-    from wake.models import CANONICAL_RELATIONSHIPS as MODELS_CANONICAL_RELATIONSHIPS
-    assert MODELS_CANONICAL_RELATIONSHIPS == CLASSIFY_CANONICAL_RELATIONSHIPS
+def test_canonical_relationships_is_single_source():
+    """Both models.py and classify.py now import CANONICAL_RELATIONSHIPS
+    from wake.vocabulary -- confirm the single source matches what
+    classify.py exposes (structural identity, not a copied tuple)."""
+    from wake.classify import CANONICAL_RELATIONSHIPS as CLS_CR
+    from wake.models import CANONICAL_RELATIONSHIPS as MDL_CR
+    assert MDL_CR is CLS_CR
+    assert MDL_CR == CANONICAL_RELATIONSHIPS
 
 
-def test_models_module_has_no_wake_imports():
-    """Enforces the "models.py has no dependency on the rest of wake"
-    design constraint mechanically, not just by docstring claim."""
+def test_models_module_only_imports_vocabulary_from_wake():
+    """Enforces the design constraint: models.py may import from
+    wake.vocabulary (the dependency-free vocabulary module) but from no
+    other wake.* module."""
     import ast
+    _ALLOWED = {"wake.vocabulary"}
     src = Path(__file__).parent.parent / "wake" / "models.py"
     tree = ast.parse(src.read_text())
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("wake"):
-            pytest.fail(f"models.py imports from {node.module!r} -- must stay dependency-free")
+            if node.module not in _ALLOWED:
+                pytest.fail(f"models.py imports from {node.module!r} -- only wake.vocabulary is allowed")
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name.startswith("wake."):
-                    pytest.fail(f"models.py imports {alias.name!r} -- must stay dependency-free")
+                if alias.name.startswith("wake.") and alias.name not in _ALLOWED:
+                    pytest.fail(f"models.py imports {alias.name!r} -- only wake.vocabulary is allowed")
 
 
 # --- Work ----------------------------------------------------------------

@@ -1080,6 +1080,17 @@ baseline) to 713 across all six phases, entirely additive.
    test updated (asserted `schema_version not in sidecar`; now asserts
    `== EVIDENCE_DOSSIER_VERSION`).
 
+8. `refactor/domain-vocabulary` — **BUILT**, see PLAN.md v0.4.7.
+   Created `wake/vocabulary.py` as the single dependency-free source for
+   `CANONICAL_RELATIONSHIPS` and `RelationshipLabel`; both `models.py`
+   and `classify.py` now import from it, eliminating the duplicate tuple
+   and the equality-assertion workaround test. Removed the dead
+   `source_registry` field from `WakeContext` (zero consumers; assessment
+   explicitly named it as an unused extension point to remove). Updated
+   the no-wake-imports guard in `test_models.py` to an allowlist test
+   (only `wake.vocabulary` is permitted; no other wake modules). Test
+   count stays 722 (equality test replaced by identity + allowlist tests).
+
 **Deferred follow-on work, not forgotten, all real:**
 - A whole-packet golden-fixture test (interactive session on a real
   OSTI packet, PDFs stripped/licensed) -- this will retroactively serve

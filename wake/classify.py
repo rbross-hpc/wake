@@ -64,20 +64,9 @@ from .llm.openai_client import chat_json
 from .models import ClassificationResult
 from .seed import work_dir
 from .state import mark_stage_complete
+from .vocabulary import CANONICAL_RELATIONSHIPS
 
 _STAGE = "classify"
-
-# The fixed, canonical set of relationship labels -- see module docstring
-# for why this list itself is not configurable (only the strengths are).
-CANONICAL_RELATIONSHIPS = (
-    "extends",
-    "builds-on",
-    "uses-as-tool",
-    "benchmarks",
-    "applies-to-domain",
-    "related-infrastructure",
-    "background-mention",
-)
 
 # Default strengths, used when config.yaml has no
 # classify.relationship_strength override (or a local wake.config.yaml

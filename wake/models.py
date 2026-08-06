@@ -22,35 +22,11 @@ from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from wake.vocabulary import CANONICAL_RELATIONSHIPS, RelationshipLabel  # noqa: F401
+
 SCHEMA_VERSION = 1
 
 EVIDENCE_DOSSIER_VERSION = 2
-
-# The fixed, canonical set of relationship labels. Duplicated from
-# classify.py (rather than imported) to keep this module import-free of
-# the rest of wake -- classify.py/evidence.py/themes.py/narrative.py will
-# import *from* models.py, not the reverse. classify.py's own
-# CANONICAL_RELATIONSHIPS remains the source of truth for prompt text and
-# is asserted identical to this tuple in tests/test_models.py.
-CANONICAL_RELATIONSHIPS = (
-    "extends",
-    "builds-on",
-    "uses-as-tool",
-    "benchmarks",
-    "applies-to-domain",
-    "related-infrastructure",
-    "background-mention",
-)
-
-RelationshipLabel = Literal[
-    "extends",
-    "builds-on",
-    "uses-as-tool",
-    "benchmarks",
-    "applies-to-domain",
-    "related-infrastructure",
-    "background-mention",
-]
 
 VerificationStatus = Literal["provisional", "pending-human-review", "verified"]
 VerificationSource = Literal["human-judgment", "evidence-dossier"]
