@@ -1118,3 +1118,119 @@ just sees an ordinary missing file).
 - Both bugs reproduced live (via a standalone script exercising the real
   module, not just inferred from reading the source) before fixing, and
   re-verified fixed with the same repro after.
+
+## v0.4.3 — Centralized build layer + `wake rebuild` (`refactor/build-layer`)
+
+Before writing any code, ran a research pass (Task agent, no code
+changes) mapping every `rebuild_*`/`rerender_*`/`mark_verified`/
+`mark_pending`/`append_log_entry`/`_refresh_*` function's reads, writes,
+callers (module-level vs. in-function imports), and trigger conditions,
+plus a call-graph table of which of the 13 functions each real write
+operation (`wake evidence`, `wake override`, `wake unverify`, `wake
+theme create/confirm`, `wake narrative outline/section create/confirm`,
+`wake exclude`/`unexclude`, `wake dedup confirm`/`reject`) triggers,
+directly or transitively. Confirmed several concrete things the
+assessment predicted, plus some it didn't call out specifically:
+
+- **JSON+MD writes are never one atomic transaction** (confirmed, as
+  expected) -- every site is two independent `atomic_write_text`/
+  `atomic_write_json` calls. But the research also found the *ordering*
+  is inconsistent across the codebase: `themes.py`/`narrative.py`/
+  `evidence_wiki.py`'s `mark_verified`/`mark_pending` all write JSON
+  before MD (safer -- every `rerender_*` function treats JSON as ground
+  truth, so a crash mid-write leaves a recoverable `.json`-only state).
+  `evidence.py::build_dossier()` did the *opposite* -- MD before JSON --
+  which is the riskier order (a crash leaves an orphan `.md` with no
+  `.json` backing it at all, and every index/orientation function globs
+  `*.json`, never `*.md`, so that orphan wouldn't even be counted
+  anywhere). Fixed by reordering `build_dossier()` to write JSON first,
+  matching the safer convention already used everywhere else.
+- **Two derived artifacts had no standalone rebuild entry point at
+  all**: `evidence_wiki.rebuild_index()` (evidence/index.md) and
+  `evidence_wiki.rebuild_themes_index()` (evidence/themes/index.md) were
+  only ever reachable as an implicit side effect of `build_dossier`/
+  `add_override`/`unverify_work` or `create_theme`/`confirm_theme`
+  respectively -- if a human deleted or hand-edited one of those index
+  files directly, there was no command that could regenerate it without
+  re-running an unrelated write operation.
+- **The two existing bulk "rerender-all" commands don't call the index
+  rebuild they logically feed**: `wake theme rerender-all` re-renders
+  every theme's own `.md` but never calls `rebuild_themes_index`; `wake
+  narrative section rerender-all` re-renders every section's `.md` but
+  never calls `_refresh_outline_md`, so `outline.md`'s live per-component
+  status column can go stale even right after running it.
+- **No single "rebuild everything for this seed" entry point existed**
+  (confirmed via exhaustive grep -- no `rebuild_all`/`resync`/
+  `rebuild_seed`/`rebuild_everything` anywhere). `AGENTS.md`'s own
+  "Regenerating derived files" section (the wiki's self-documentation)
+  listed 4 commands but not `wake narrative section rerender-all`, and
+  even running all 4 in the listed order still leaves `evidence/
+  index.md`/`evidence/themes/index.md` stale per the point above.
+- Every derived artifact this project's docs describe as regeneratable
+  (dossiers, theme docs, outline, sections, narrative.md, impact.md,
+  README.md, AGENTS.md) does have a pure, LLM-free, JSON-sidecar-driven
+  render function -- except `evidence/log.md`, which is fundamentally
+  append-only (no `log.json` exists; past events can only be appended
+  to, never reconstructed from other JSON).
+
+**New `wake/build.py::rebuild_seed(seed_work, base=, verbose=)`.** A
+single, explicit entry point that walks every derived artifact type
+*that currently has JSON backing on disk for this seed* (skipping any
+type with none, same "no-op if nothing to do" convention every
+individual `rerender_*` already follows), in dependency order: dossiers
+→ evidence/index.md → theme docs → themes/index.md → narrative sections
+→ outline.md → narrative.md → impact.md → README.md/AGENTS.md (last,
+since the orientation counts summarize everything rebuilt above it).
+No LLM or network call anywhere in this path -- verified directly by a
+test that monkeypatches `chat_json`/`chat_text` to raise if called at
+all during a full rebuild. Returns a structured per-step summary
+(`{"step": "...", "rebuilt": [...] | bool}`) so a caller (CLI or agent)
+can see exactly what was and wasn't touched, closing both of the
+"orphaned rebuild function" and "no single entry point" gaps found in
+the research pass. Deliberately does **not** call `mark_verified`/
+`mark_pending`/`unverify_work` -- those represent a human verification
+decision, not a re-render of already-decided data, and are out of scope
+for a pure rebuild.
+
+**New `wake rebuild <seed>` CLI command** (`cli/main.py`), following the
+same `--json`/human-output/`_work_dir_base` conventions as every other
+command. Documented in `docs/workflow.md`'s command table, the SKILL's
+`references/reference.md` full command list, and — most importantly —
+`AGENTS.md`'s own "Regenerating derived files" section (the file wake
+writes *into every packet*, read by whatever agent picks up the folder
+next), rewritten to lead with `wake rebuild` as the one-call answer
+while keeping the individual `--rerender-all`/`stitch`/`bake` verbs
+documented for a narrower, targeted re-render.
+
+### Tests
+
++11 in new `tests/test_build.py`, reusing `test_wiki_invariants.py`'s
+`_build_full_wiki` fixture (a complete real packet: dossiers, a
+confirmed theme, a stitched narrative, a baked impact brief) rather than
+reimplementing multi-stage setup: empty-packet no-op behavior, every
+populated artifact type actually gets touched, a deleted dossier `.md`
+is restored purely from its still-present `.json` sidecar, the two
+previously-orphaned index files (`evidence/index.md`, `evidence/themes/
+index.md`) are restored after manual deletion, a hand-edited section
+JSON's status change is reflected in a refreshed `outline.md` (closing
+the "rerender-all doesn't refresh outline.md" gap directly), the
+`impact` step's `citing.json` precondition (mirrors `wake bake`'s own
+requirement) both when absent and when present, the never-calls-an-LLM
+guarantee, and a full wiki-invariants pass (frontmatter/link validity)
+after a rebuild to confirm rebuilding never degrades output quality
+relative to the original write path. +2 CLI-level tests (`wake rebuild`
+via `wake.cli.main.main()`, both `--json` and human-output modes),
+following `test_show_verbs.py`'s existing end-to-end CLI-test convention.
+
+### Verification
+
+- `ruff check wake/ tests/` — clean.
+- `mypy` — clean (49 source files under `wake/`, up from 48 with the new
+  `build.py`).
+- `pytest tests/ -m 'not network'` — 699 passed, 14 deselected (up from
+  688 at the start of this phase: +11 `test_build.py`).
+- The `build_dossier()` MD/JSON write-order fix was verified against the
+  full evidence test suite (`test_evidence.py`, `test_evidence_wiki.py`,
+  `test_multi_facet_evidence.py`, `test_models.py`,
+  `test_wiki_invariants.py`) immediately after the change, before moving
+  on to `build.py` itself, to isolate any regression to that one change.

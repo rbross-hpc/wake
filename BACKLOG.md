@@ -973,10 +973,37 @@ starts:
    whether it happens as its own phase or folds into `refactor/
    build-layer`/`refactor/cli-split` below once those phases' actual
    shape is clearer.
-4. `refactor/build-layer` — declare JSON canonical, Markdown/indexes
-   deterministic derived products; centralize the `rebuild_*`/
-   `rerender_*` call graph currently spread across bidirectional
-   in-function imports; add `wake rebuild` + a dirty/revision manifest.
+4. `refactor/build-layer` — **BUILT**, see PLAN.md v0.4.3. Research pass
+   first (call-graph audit of all 13 `rebuild_*`/`rerender_*`/
+   `mark_verified`/`mark_pending`/`append_log_entry`/`_refresh_*`
+   functions) confirmed the assessment's "JSON+MD not written
+   transactionally" claim and found two sharper, previously-undocumented
+   gaps: (1) `build_dossier()` wrote MD *before* JSON — the riskier
+   order, since every rebuild/index function treats JSON as ground
+   truth and globs `*.json` only — fixed to JSON-then-MD, matching the
+   safer convention `themes.py`/`narrative.py`/`mark_verified`/
+   `mark_pending` already used; (2) `evidence_wiki.rebuild_index()` and
+   `rebuild_themes_index()` had **no standalone entry point at all**
+   (only reachable as an implicit side effect of an unrelated write),
+   and the two existing bulk `--rerender-all` commands didn't call the
+   index/outline rebuilds they logically feed. New `wake/build.py::
+   rebuild_seed()` + `wake rebuild <seed>` CLI command: a single,
+   dependency-ordered entry point that resyncs every derived artifact
+   with current JSON backing (dossiers → evidence index → theme docs →
+   themes index → sections → outline → narrative.md → impact.md →
+   README/AGENTS.md), no LLM/network call, closing both the missing-
+   single-entry-point gap and the two orphaned-rebuild-function gaps in
+   one command. `AGENTS.md`'s own "Regenerating derived files" section
+   (written into every packet) now leads with `wake rebuild` as the
+   one-call answer. Did **not** attempt a formal "dirty/revision
+   manifest" or partial-render detection in this pass — `rebuild_seed`'s
+   own per-step summary (`{"step": ..., "rebuilt": [...]/bool}`) gives
+   an agent/human visibility into what was actually touched on a given
+   call, which covers the practical need this phase was scoped to
+   address; a persisted manifest tracking staleness *between* calls
+   (so e.g. `wake status` could say "3 dossiers are stale, run `wake
+   rebuild`" without actually running it) is real, deferred follow-on
+   work, distinct from the rebuild mechanism itself.
 5. `refactor/cli-split` — `cli/commands/<family>.py` per command group,
    `cli/main.py` reduced to context construction + registration +
    dispatch. Deliberately sequenced *after* the context/repository work

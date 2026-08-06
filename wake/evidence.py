@@ -832,20 +832,23 @@ def build_dossier(
         seed_id=seed_id, base=base,
     )
 
-    md_text = _render_dossier_markdown(
-        seed_work, citing_work, finding,
-        pdf_path=Path(pdf_path_str), pdf_source=pdf_source,
-        extracted_text_path_str=extracted_text_path_str,
-        base=base,
-    )
-
     wd = evidence_dir(seed_id, base)
     wd.mkdir(parents=True, exist_ok=True)
     md_path = dossier_path(seed_id, citing_id, base)
     json_path = dossier_json_path(seed_id, citing_id, base)
 
-    atomic_write_text(md_path, md_text)
-
+    # JSON is canonical; the .md is a deterministic render derived from it
+    # (see rerender_dossier_md(), which always reads the .json as source
+    # of truth and never the .md) -- so JSON is written first. If the
+    # process is interrupted between the two writes below, the result is
+    # a .json with no .md yet, which `wake evidence --rerender-all` or
+    # `wake rebuild` (see build.py) can regenerate purely from the JSON
+    # with no LLM call. The reverse order (a .md with no .json backing
+    # it) is not recoverable the same way, since every rebuild_*/
+    # rerender_* function in evidence_wiki.py/evidence.py treats the
+    # .json sidecars as the sole source of truth and globs *.json, never
+    # *.md.
+    #
     # Stored relative to this sidecar's own directory (evidence/), not
     # absolute -- so the whole wake-out/<seed>/ tree stays self-consistent
     # if it's ever moved or shared. See _relpath_from()/rerender_dossier_md()
@@ -868,6 +871,14 @@ def build_dossier(
     }
     EvidenceDossier.validate_or_raise(json_payload, context=f"evidence dossier {citing_id!r}")
     atomic_write_json(json_path, json_payload)
+
+    md_text = _render_dossier_markdown(
+        seed_work, citing_work, finding,
+        pdf_path=Path(pdf_path_str), pdf_source=pdf_source,
+        extracted_text_path_str=extracted_text_path_str,
+        base=base,
+    )
+    atomic_write_text(md_path, md_text)
 
     if verbose:
         print(f"[wake] Dossier written: {md_path}", file=sys.stderr)
