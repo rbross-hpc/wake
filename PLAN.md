@@ -1234,3 +1234,115 @@ following `test_show_verbs.py`'s existing end-to-end CLI-test convention.
   `test_multi_facet_evidence.py`, `test_models.py`,
   `test_wiki_invariants.py`) immediately after the change, before moving
   on to `build.py` itself, to isolate any regression to that one change.
+
+## v0.4.4 — Split `cli/main.py` by command family (`refactor/cli-split`)
+
+`cli/main.py` had grown to 2,073 lines across ~90 functions (26
+`_build_*_parser` argparse builders + ~64 `run_*` handlers), the exact
+"god module" the external assessment flagged first. Sequenced
+deliberately last among the four completed phases, per the assessment's
+own recommended order ("split the CLI after the context/repository
+interfaces exist, so the split creates real boundaries rather than
+merely more files") -- `WakeContext`/`_work_dir_base` (Phase 2) and
+`wake/build.py` (Phase 3) already existed by the time this phase
+started, so the split didn't have to invent those boundaries itself.
+
+**Mechanical extraction, not a rewrite.** Every function's line range
+was mapped programmatically first (a script walking `def name(` at
+column 0 to get exact start/end boundaries for all 83 top-level
+functions), verified to partition the file completely (every function
+assigned to exactly one of 13 command-family groups, zero missed, zero
+duplicated) before any file was written, then each group's functions
+were extracted into `wake/cli/commands/<family>.py` byte-for-byte from
+the original source -- no logic was retyped by hand, eliminating the
+main risk of a large manual split (a transcription slip silently
+changing behavior). The one genuinely manual step was fixing relative
+import depth: every function's in-function `from ..module import x`
+became a `wake.cli.module` reference once literally copy-pasted one
+directory deeper (`cli/main.py` -> `cli/commands/<family>.py`), so every
+occurrence needed promoting to `from ...module import x` to still reach
+top-level `wake/*.py` modules -- done via a second script matching
+against the known set of top-level module names (to avoid
+over-promoting the handful of genuinely `wake.cli.*`-relative imports:
+`..emit`, `..main_helpers`, and `misc.py`'s `from ..skill import
+run_skill`), then hand-verified via `ruff`'s `F821` (undefined name)
+check, which caught exactly one real cross-module dependency the
+mechanical split didn't handle: `evidence.py`'s `_find_classified_work`
+called a private helper (`_find_citing_work`) that had been extracted
+into `pdf.py` instead. Moved that helper into the new
+`main_helpers.py` (alongside `_work_dir_base`/`_resolve_seed_to_work`,
+the two helpers already shared cross-module) rather than leaving it
+duplicated or awkwardly cross-imported between two command modules.
+
+**Final shape:**
+```
+wake/cli/
+  main.py            # 141 lines (from 2,073): _build_parser() delegating
+                      # to each family's _build_*_parser, a dict-based
+                      # _DISPATCH (command name -> run_* handler) replacing
+                      # the old ~50-branch if/elif chain, KeyboardInterrupt
+                      # handling. _work_dir_base re-exported for
+                      # backward compat (tests/other modules imported it
+                      # directly from wake.cli.main before this split).
+  main_helpers.py     # _work_dir_base, _resolve_seed_to_work,
+                      # _find_citing_work -- shared across command
+                      # modules, living outside main.py to avoid a
+                      # circular import (every commands/*.py imports
+                      # from main_helpers, not from main.py itself).
+  commands/
+    resolve.py        # wake resolve / wake status (108 lines)
+    citing.py         # wake citing / sample / describe (92 lines)
+    classify.py        # wake classify (91 lines)
+    gaps.py            # wake gaps / missing-pdfs (150 lines)
+    dedup.py           # wake dedup candidates/confirm/reject (138 lines)
+    posters.py         # wake posters candidates/keep (94 lines)
+    pdf.py              # wake fill-abstract / fetch-pdf (110 lines)
+    evidence.py         # wake evidence (231 lines)
+    theme.py            # wake theme create/confirm/queue/show/rerender-all (188 lines)
+    narrative.py        # wake narrative outline/section/stitch/refs-check/show (377 lines)
+    report.py           # wake bake / rebuild / override (126 lines)
+    exclude.py          # wake exclude/unexclude/unverify (161 lines)
+    misc.py             # wake cost/show/seed/config/skill (250 lines)
+```
+Every module follows the same shape: a module docstring naming its
+command family and pointing at this PLAN.md entry, `_build_*_parser`
+functions first, `run_*` handlers after, in the same order they
+appeared in the original file (no reordering beyond grouping, to keep
+the diff-against-history reviewable).
+
+**No behavior change anywhere** -- confirmed by: `wake --help`'s output
+byte-identical in command list/help text to before the split (all 26
+subcommands, same help strings, same argument definitions); the full
+699-test offline suite passing unchanged; and every existing CLI-level
+integration test (`test_show_verbs.py`, `test_evidence_rendering.py`,
+`test_missing_pdfs.py`, `test_pdf_verify.py`, `test_seed_fetch_pdf.py`,
+`test_cli_skill.py`, `test_build.py` -- all of which invoke the real
+`wake.cli.main.main()` via `sys.argv`, not a mock) passing without any
+test-side changes, since `from wake.cli.main import main` and
+`from wake.cli.main import _work_dir_base` both still resolve exactly
+as before.
+
+New `wake/cli/commands/__init__.py` (empty, matching the existing
+`wake/cli/__init__.py`/`wake/sources/__init__.py` convention) --
+confirmed `wake.cli.commands` is picked up by
+`pyproject.toml`'s existing `[tool.setuptools.packages.find]`
+(`include = ["wake*"]`, which recurses into any matching subpackage) with
+no config change needed.
+
+### Verification
+
+- `ruff check wake/ tests/` — clean (one real fix along the way: a
+  second pass normalizing inconsistent single-vs-double blank lines
+  between top-level functions left over from the mechanical
+  concatenation, plus the expected batch of now-unused `emit_error`/
+  `sys`/`Path` imports per module once each module only used a subset of
+  the original file's shared imports).
+- `mypy` — clean (64 source files under `wake/`, up from 49 — 13 new
+  command modules + `main_helpers.py` + the new `commands/` package).
+- `pytest tests/ -m 'not network'` — 699 passed, 14 deselected,
+  unchanged from the end of Phase 3 (this phase added no new tests by
+  design -- it is a pure internal reorganization with an existing,
+  already-comprehensive CLI-level test suite as its safety net, not a
+  new capability needing new coverage).
+- `wake --help` and every subcommand's own `--help` manually diffed
+  against the pre-split output — identical.

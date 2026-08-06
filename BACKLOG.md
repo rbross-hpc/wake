@@ -1004,10 +1004,29 @@ starts:
    (so e.g. `wake status` could say "3 dossiers are stale, run `wake
    rebuild`" without actually running it) is real, deferred follow-on
    work, distinct from the rebuild mechanism itself.
-5. `refactor/cli-split` — `cli/commands/<family>.py` per command group,
-   `cli/main.py` reduced to context construction + registration +
-   dispatch. Deliberately sequenced *after* the context/repository work
-   above so the split creates real module boundaries.
+5. `refactor/cli-split` — **BUILT**, see PLAN.md v0.4.4. `cli/main.py`
+   (2,073 lines, ~90 functions — the exact "god module" the assessment
+   flagged first) split into `cli/commands/<family>.py` (13 modules) +
+   `cli/main_helpers.py` (shared `_work_dir_base`/`_resolve_seed_to_work`/
+   `_find_citing_work`), `cli/main.py` itself reduced to 141 lines:
+   `_build_parser()` delegation + a dict-based dispatch table + top-level
+   `KeyboardInterrupt` handling. Sequenced last, as planned, since
+   `WakeContext`/`_work_dir_base` (phase 3 above) and `wake/build.py`
+   (phase 4 above) already existed as real boundaries to split around.
+   Extraction was mechanical (every function's exact line range mapped
+   and verified to partition the file completely before any file was
+   written; no logic retyped by hand) rather than a rewrite, specifically
+   to avoid a transcription slip silently changing CLI behavior — the
+   one manual step (fixing relative-import depth once functions moved
+   one directory deeper) was itself caught and verified via `ruff`'s
+   `F821` undefined-name check, which also surfaced the one real
+   cross-module dependency the split needed to handle explicitly
+   (`evidence.py`'s `_find_classified_work` calling a helper that had
+   landed in `pdf.py`; resolved by promoting it to `main_helpers.py`).
+   No behavior change: `wake --help` output, the full 699-test suite,
+   and every existing CLI-integration test (`test_show_verbs.py` etc.,
+   all driving the real `wake.cli.main.main()` via `sys.argv`) all
+   passed with zero test-side changes needed.
 6. `refactor/llm-boundary` — provider-neutral `llm/openai_client.py`
    interface, typed per-operation response schemas validated
    immediately after generation, retry policy split by failure class
