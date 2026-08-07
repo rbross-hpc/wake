@@ -372,6 +372,15 @@ network call — pure re-render, safe to run any time. Run it:
 - At the natural end of a session, so the packet you leave behind is
   fully rendered, not just fully recorded.
 
+Every `wake rebuild` call also reports a `changes` block: which JSON
+sources (dossiers, themes, sections, outline, overrides, seed/citing/
+classified) were added, changed, or removed since the *previous*
+`wake rebuild` call for this seed (persisted in
+`rebuild-manifest.json`). This is purely informational — it never skips
+a render step, every artifact type is always re-rendered — but it's a
+quick way to tell the human (or yourself, resuming a session) what's
+new since the wiki was last brought up to date.
+
 ### 12. (Optional) Deep-dive verification of a specific finding
 
 Every classification in the brief is `[PROVISIONAL]` by default — an

@@ -2155,3 +2155,59 @@ rendering is a distinct act for it to report a diff against. Scope per the user'
 manifest records what changed *between* renders (a diff/report), not an incremental-skip
 optimization of `rebuild_seed()` -- `rebuild_seed()` continues to unconditionally re-render
 everything; the manifest is additive, not a behavior change to the render path itself.
+
+## v0.4.17 — Persisted rebuild manifest (`feature/rebuild-manifest`)
+
+Phase 2 of the Structural Hardening follow-on above: the manifest itself. Per the user's framing
+("I couldn't care less if things are always in sync ... I think the manifest is more about
+showing what has changed from one rendering to the next"), this is a report of what changed on
+the *input* side (the JSON render sources) since the previous `wake rebuild` call -- not an
+incremental-skip optimization. `rebuild_seed()` still unconditionally re-renders every artifact
+type on every call; the manifest never gates or skips a step.
+
+### What was built
+
+`models.RebuildManifest` (+ `RebuildManifestWrite`, `MANIFEST_VERSION = 1`, `migrate_manifest()`),
+following the same schema-version/migration convention as every other artifact family in this
+module. Persisted at `wake-out/<seed>/rebuild-manifest.json`: `{schema_version, rendered_at,
+sources: {<source-key>: <sha256>}}`.
+
+`build.py` gained `_collect_source_hashes()` (hashes every JSON file that currently feeds a
+render for this seed -- `seed.json`, `citing.json`, `classified.json`, `overrides.jsonl`, every
+`evidence/<id>.json` dossier, every `evidence/themes/<slug>.json` theme, `narrative/outline.json`,
+every `narrative/sections/<slug>.json` -- keyed by a stable path-like string relative to the
+seed's work dir; rendered `.md`/index output is never hashed) and `_diff_and_write_manifest()`
+(loads the prior manifest if any, diffs current vs. prior hashes into added/changed/removed sets,
+writes the refreshed manifest, and returns the report). `rebuild_seed()` calls the latter once,
+after every render step, and adds the result under a new `"changes"` key in its return dict:
+`{first_render, previous_render, added, changed, removed}`. `narrative/refs.json` and
+`refs-results.json` (ref-checker scratch files) were confirmed to feed no renderer and are
+deliberately excluded from the source set.
+
+`wake rebuild`'s CLI human output (`run_rebuild` in `cli/commands/report.py`) now prints a
+compact summary after the per-step list: "First render — N sources tracked." on a packet's first
+ever rebuild, "No source changes since `<iso>`." when nothing changed, or an
+Added/Changed/Removed breakdown (with source-key lists) otherwise. `--json` output passes the
+full `"changes"` block through unchanged; `emit()` needed no changes.
+
+### Docs
+
+`build.py`'s module + `rebuild_seed()` docstrings extended to describe the manifest and its
+report-only guarantee. `references/output-layout.md` gained a `rebuild-manifest.json` entry.
+SKILL.md's "Rendering the Wiki" section gained a paragraph on the `changes` block.
+`docs/workflow.md`'s "Rendering the Wiki" section, same addition. `wake rebuild`'s `--help` text
+mentions the manifest. `PLAN.md`/`BACKLOG.md`: this closes the second of the two remaining
+Structural Hardening follow-ons (only `WakeContext` threading remains open).
+
+### Verification
+
+New `tests/test_rebuild_manifest.py` (13 tests): first-render reports all current sources as
+added and writes the manifest; a no-op second rebuild reports nothing changed; editing a dossier
+JSON is reported `changed`; deleting a theme JSON is reported `removed`; adding a new dossier
+between rebuilds is reported `added`; hand-editing a rendered `.md` (not its JSON) never shows up
+in any diff (confirms outputs are never hashed); a legacy manifest with no `schema_version` key
+round-trips through `migrate_manifest()` without breaking `rebuild_seed()`; every artifact type
+still re-renders even when the manifest reports zero source changes (confirms report-only, not
+incremental); CLI `--json`/human-output coverage for both first-render and no-change paths.
+`rtk ruff check wake/ tests/` clean, `rtk mypy` clean. Full offline suite under CI-parity
+conditions: 803 passed, 14 deselected (790 prior baseline + 13 new tests, no regressions).

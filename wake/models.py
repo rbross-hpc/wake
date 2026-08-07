@@ -580,3 +580,44 @@ class ArtifactReference(WakeModel):
         if raw_id == "SEED":
             return cls(kind="seed", id=raw_id)
         return cls(kind="citing_work", id=raw_id)
+
+
+class RebuildManifest(WakeModel):
+    """build.py::rebuild_seed()'s persisted-between-calls sidecar
+    (rebuild-manifest.json): a sha256 per JSON render-input source this
+    seed currently has (seed.json, citing.json, classified.json,
+    overrides.jsonl, each dossier/theme/section JSON, outline.json),
+    keyed by a stable relative-path-style source key.
+
+    This is the input side of "what changed between renders" -- it never
+    hashes rendered Markdown/index output, and it is never consulted to
+    decide whether to render something (`rebuild_seed()` re-renders every
+    artifact type unconditionally on every call, always). It exists
+    purely so a rebuild can report which sources changed, were added, or
+    were removed since the previous rebuild -- see build.py's module
+    docstring for the full rationale.
+    """
+
+    schema_version: int = SCHEMA_VERSION
+    rendered_at: str
+    sources: dict[str, str] = Field(default_factory=dict)
+
+
+MANIFEST_VERSION = 1
+
+
+class RebuildManifestWrite(RebuildManifest):
+    """Strict write variant of RebuildManifest -- see ThemeWrite/
+    EvidenceDossierWrite for the read-permissive/write-strict rationale."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+def migrate_manifest(raw: dict[str, Any]) -> dict[str, Any]:
+    """Migrate a raw rebuild-manifest dict forward to MANIFEST_VERSION.
+    Idempotent. v0 (no key) -> v1: stamp schema_version -- no shape
+    change."""
+    result = dict(raw)
+    if result.get("schema_version", 0) < 1:
+        result["schema_version"] = MANIFEST_VERSION
+    return result

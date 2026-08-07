@@ -134,19 +134,27 @@ migration — see
 [`docs/design/normalize-audit.md`](docs/design/normalize-audit.md) for
 the full determination.
 
-v0.4.16 is Phase 1 of the persisted dirty/revision manifest item below:
-rendering is now a single explicit step (`wake rebuild`), not a
+v0.4.16 was Phase 1 of the persisted dirty/revision manifest item:
+rendering became a single explicit step (`wake rebuild`), not a
 write-time side effect of `wake evidence`/`override`/`unverify`/`theme
 create`/`confirm`/`narrative outline create`/`section create`/`confirm`
 — a prerequisite for a manifest that reports what changed *between*
 renders, per the user's framing (a diff/report, not an incremental-skip
 optimization).
 
-**Next phase:** Phase 2 — the persisted dirty/revision manifest itself,
-now that rendering is a distinct act for it to report a diff against.
-Or, independently, full `WakeContext` threading through the ~90 existing
-`base:`-taking domain functions — see `BACKLOG.md`'s "Open / Not Yet
-Built" section for current sequencing.
+v0.4.17 closed Phase 2, the manifest itself: `wake rebuild` now persists
+a sha256-per-JSON-source `rebuild-manifest.json` and reports a
+`changes` block (added/changed/removed sources since the previous
+rebuild) in its return value and human/`--json` output.
+`rebuild_seed()` remains fully unconditional — the manifest is
+report-only, never a gate. This closes the second of the two remaining
+Structural Hardening follow-ons.
+
+**Next phase:** full `WakeContext` threading through the ~90 existing
+`base:`-taking domain functions — the one remaining Structural Hardening
+follow-on — see `BACKLOG.md`'s "Open / Not Yet Built" section for
+current sequencing. Otherwise, product features (Theme B/G/H, Theme K
+Pass 2) are the next candidates.
 
 **Deferred, real, not forgotten:**
 - Product features: Theme B (DOE-relevance signals), Theme G (timeline

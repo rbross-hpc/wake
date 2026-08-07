@@ -17,19 +17,20 @@ sections in one of those two files, or below if still open — see the
 The current actionable list, roughly in order of what's most likely
 next. See each linked section below for full detail.
 
-**Structural Hardening follow-ons** (Theme L closed; one of three
-original items closed by audit, two remain):
-1. A persisted dirty/revision manifest for `wake rebuild` -- **Phase 1
-   done** (v0.4.16: rendering is now a single explicit `wake rebuild`
-   step, not a write-time side effect of `evidence`/`override`/
-   `unverify`/`theme create`/`confirm`/`narrative outline create`/
-   `section create`/`confirm`). **Phase 2 remaining:** the manifest
-   itself, reporting what changed *between* renders (a diff/report, per
-   the user's framing — not an incremental-skip optimization of
-   `rebuild_seed()`, which continues to unconditionally re-render
-   everything). *(Next phase.)*
+**Structural Hardening follow-ons** (Theme L closed; two of three
+original items closed, one remains):
+1. ~~A persisted dirty/revision manifest for `wake rebuild`~~ —
+   **closed** (v0.4.16 Phase 1: rendering is now a single explicit
+   `wake rebuild` step, not a write-time side effect of `evidence`/
+   `override`/`unverify`/`theme create`/`confirm`/`narrative outline
+   create`/`section create`/`confirm`; v0.4.17 Phase 2: `wake rebuild`
+   persists a sha256-per-JSON-source `rebuild-manifest.json` and reports
+   a `changes` block — sources added/changed/removed since the previous
+   rebuild — in its return value and CLI output. Report-only:
+   `rebuild_seed()` still unconditionally re-renders everything on every
+   call, per the user's framing).
 2. Full `WakeContext` threading through the ~90 `base:`-taking domain
-   functions.
+   functions. *(Next phase.)*
 
 (Formalizing the remaining `_normalize_*`/legacy-shape functions was
 closed by audit rather than by migration code — see
@@ -207,7 +208,7 @@ Revisit only if/when MinerU or another genuinely slow step gets adopted.
 ## Theme L follow-on — Structural Hardening deferred work
 
 Theme L (Structural Hardening) itself closed — see the "Built" index
-below. It had three deferred follow-ons; one is now also closed:
+below. It had three deferred follow-ons; two are now also closed:
 
 - ~~Formalize the remaining `_normalize_*`/legacy-shape functions~~ —
   **closed by audit** (v0.4.15): every remaining candidate was either
@@ -217,13 +218,9 @@ below. It had three deferred follow-ons; one is now also closed:
   view-derivers). See
   [`docs/design/normalize-audit.md`](docs/design/normalize-audit.md)
   for the full function-by-function determination.
-
-Two remain open:
-
-- **A persisted dirty/revision manifest for `wake rebuild`** to track
-  staleness *between* calls, distinct from the per-call summary it
-  already returns. **Phase 1 done** (v0.4.16, `refactor/explicit-render`):
-  rendering is now a single explicit `wake rebuild` step -- every
+- ~~A persisted dirty/revision manifest for `wake rebuild`~~ — **closed**
+  in two phases. **Phase 1** (v0.4.16, `refactor/explicit-render`):
+  rendering became a single explicit `wake rebuild` step -- every
   JSON-mutating command (`evidence`, `override`, `unverify`, `theme
   create`/`confirm`, `narrative outline create`, `section
   create`/`confirm`) writes only JSON and returns `"rebuild_needed":
@@ -232,10 +229,20 @@ Two remain open:
   refresh README.md/AGENTS.md as a side effect. This was a prerequisite
   the user identified directly: a manifest reporting "what changed since
   the last render" is only meaningful once rendering is a distinct act,
-  not something every write already did inline. **Phase 2 remaining:**
-  the manifest itself -- a diff/report of what changed between renders,
-  not an incremental-skip optimization of `rebuild_seed()` (which stays
-  unconditional).
+  not something every write already did inline. **Phase 2** (v0.4.17,
+  `feature/rebuild-manifest`): the manifest itself. `wake rebuild`
+  hashes (sha256) every JSON render-input source (seed.json,
+  citing.json, classified.json, overrides.jsonl, every dossier/theme/
+  section JSON, outline.json), persists them in `rebuild-manifest.json`
+  (`models.RebuildManifest`), and reports a `changes` block (sources
+  added/changed/removed since the previous rebuild) in its return value
+  and CLI output. Report-only, as the user specified: `rebuild_seed()`
+  still unconditionally re-renders every artifact type on every call --
+  the manifest never gates or skips a render step, it only answers "what
+  changed since I last looked."
+
+One remains open:
+
 - **Full `WakeContext` threading** through all ~90 existing
   `base:`-taking domain functions. Phase 3 landed the context object and
   one canonical CLI construction point; `ctx.base` is a verified drop-in
