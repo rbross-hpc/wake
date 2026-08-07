@@ -1,0 +1,26 @@
+{
+  "seed_openalex_id": "W4414299303",
+  "slug": "provenance-capture",
+  "title": "Mofka as a Foundation for Workflow Provenance",
+  "summary": "Mofka's persistent event-streaming model provides the infrastructure for HPC workflow provenance systems, enabling capture of data movement and computational events that can be queried and audited. Provenance-focused systems reference Mofka as a candidate broker for provenance message transport in tightly coupled HPC environments.",
+  "theme_status": "draft",
+  "created_at": "2026-08-07T12:42:53+00:00",
+  "updated_at": "2026-08-07T12:42:53+00:00",
+  "citing_works": [
+    {
+      "citing_id": "W4416004498",
+      "status": "verified",
+      "has_dossier": true,
+      "title": "LLM Agents for Interactive Workflow Provenance: Reference Architecture and Evaluation Methodology"
+    },
+    {
+      "citing_id": "W4414909013",
+      "status": "provisional",
+      "has_dossier": false,
+      "title": "ControlA: Agentic Workflow Control Mechanisms for Reliable Science"
+    }
+  ],
+  "needs_evidence": [
+    "W4414909013"
+  ]
+}

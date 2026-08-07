@@ -1,0 +1,154 @@
+{
+  "seed_openalex_id": "W4414299303",
+  "fetched_at": "2026-08-07T12:40:18+00:00",
+  "min_year": null,
+  "count": 4,
+  "works": [
+    {
+      "openalex_id": "W4414909013",
+      "title": "ControlA: Agentic Workflow Control Mechanisms for Reliable Science",
+      "authors": [
+        "Amal Gueroudji",
+        "Tanwi Mallick",
+        "Renan P. Souza",
+        "Rafael Ferreira da Silva",
+        "Robert Ross",
+        "Matthieu Dorier",
+        "Philip Carns",
+        "Kyle Chard",
+        "Ian Foster"
+      ],
+      "author_ids": [
+        "A5102942440",
+        "A5037238294",
+        "A5042209170",
+        "A5072339196",
+        "A5036808423",
+        "A5070907426",
+        "A5080710173",
+        "A5065464552",
+        "A5028082797"
+      ],
+      "year": 2025,
+      "venue": null,
+      "venue_type": null,
+      "doi": "10.1109/escience65000.2025.00086",
+      "url": "https://doi.org/10.1109/escience65000.2025.00086",
+      "cited_by_count": 1,
+      "type": "conference-paper",
+      "abstract": "AI-driven scientific discovery has emerged as a transformative fifth paradigm in research, with agentic AI playing an increasingly prominent role across scientific domains. Agentic AI can enable collaborative AI-human or even fully autonomous decision-making, but it also introduces significant reliability challenges due to the dynamic and evolutionary nature of the AI agents. Specifically, foundation model-powered agents are prone to generating hallucinated, misleading, or adversarial outputs that can propagate silently through workflows and corrupt downstream results. In this paper we present a conceptual framework for a unified approach that integrates agentic workflow-level instrumentation and agent-level safeguards to enhance the reliability of the wider system, particularly critical in science. Embedding these mechanisms into a provenance-augmented infrastructure enables early detection, containment, and recovery from erroneous behavior, ultimately enhancing reliability and reproducibility in AI-assisted scientific workflows.",
+      "topics": [
+        "Decision Sciences"
+      ]
+    },
+    {
+      "openalex_id": "W4416004498",
+      "title": "LLM Agents for Interactive Workflow Provenance: Reference Architecture and Evaluation Methodology",
+      "authors": [
+        "Renan Souza",
+        "Timothy Poteet",
+        "Brian D. Etz",
+        "Daniel Rosendo",
+        "Amal Gueroudji",
+        "Woong Shin",
+        "Prasanna Balaprakash",
+        "Rafael Ferreira da Silva"
+      ],
+      "author_ids": [
+        "A5101762558",
+        "A5120297698",
+        "A5005043233",
+        "A5103164271",
+        "A5102942440",
+        "A5082901516",
+        "A5068721920",
+        "A5072339196"
+      ],
+      "year": 2025,
+      "venue": null,
+      "venue_type": null,
+      "doi": "10.1145/3731599.3767582",
+      "url": "https://doi.org/10.1145/3731599.3767582",
+      "cited_by_count": 1,
+      "type": "conference-paper",
+      "abstract": "Modern scientific discovery increasingly relies on workflows that process data across the Edge, Cloud, and High Performance Computing (HPC) continuum. Comprehensive and in-depth analyses of these data are critical for hypothesis validation, anomaly detection, reproducibility, and impactful findings. Although workflow provenance techniques support such analyses, at large scale, the provenance data become complex and difficult to analyze. Existing systems depend on custom scripts, structured queries, or static dashboards, limiting data interaction. In this work, we introduce an evaluation methodology, reference architecture, and open-source implementation that leverages interactive Large Language Model (LLM) agents for runtime data analysis. Our approach uses a lightweight, metadata-driven design that translates natural language into structured provenance queries. Evaluations across LLaMA, GPT, Gemini, and Claude, covering diverse query classes and a real-world chemistry workflow, show that modular design, prompt tuning, and Retrieval-Augmented Generation (RAG) enable accurate and insightful LLM agent responses beyond recorded provenance.",
+      "topics": [
+        "Decision Sciences",
+        "Materials Science",
+        "Computer Science"
+      ]
+    },
+    {
+      "openalex_id": "W4416004574",
+      "title": "RESILIO : A Scalable and Composable Architecture for Tomographic Reconstruction Workflows",
+      "authors": [
+        "Amal Gueroudji",
+        "Matthieu Dorier",
+        "Philip Carns",
+        "Parth Patel",
+        "Tekin Bi\u00e7er",
+        "Robert Latham",
+        "Robert Ross",
+        "Kyle Chard",
+        "Ian Foster"
+      ],
+      "author_ids": [
+        "A5102942440",
+        "A5070907426",
+        "A5080710173",
+        "A5040241694",
+        "A5038566298",
+        "A5044270964",
+        "A5036808423",
+        "A5065464552",
+        "A5032231503"
+      ],
+      "year": 2025,
+      "venue": null,
+      "venue_type": null,
+      "doi": "10.1145/3731599.3767575",
+      "url": "https://doi.org/10.1145/3731599.3767575",
+      "cited_by_count": 1,
+      "type": "conference-paper",
+      "abstract": "Tomographic reconstruction (TR) aims to reconstruct a 3D object from a finite number of 2D projections. It is an important technique across domains such as medical imaging, materials science, and security, where high-resolution volumetric data is essential for decision-making. With advanced facilities such as the upgraded Advanced Photon Source enabling unprecedented data acquisition rates, TR pipelines struggle to handle large data volumes while maintaining low latency in time-sensitive domains, fault tolerance, and scalability. Traditional, tightly coupled, batch-oriented workflows are increasingly inadequate in such high-performance contexts. In response, we propose ResiliO , a composable, high-performance TR framework built atop the Mochi ecosystem that uses Mofka to improve resilience through persistent streaming and fully leverage high-performance computing platforms. Our design enables scalable and elastic execution across heterogeneous environments and programming models and languages. We contribute a reimagined TR pipeline architecture, its implementation using Mochi services, and an empirical evaluation showing up to 3490 \u00d7 reduction in the per-event overhead compared to the original ZeroMQ implementation, and up to 3268 \u00d7 improvement in throughput with performance-tuned configurations using Mofka.",
+      "topics": [
+        "Medicine",
+        "Decision Sciences",
+        "Computer Science"
+      ]
+    },
+    {
+      "openalex_id": "W7167027240",
+      "title": "StreamGuard: Low-Overhead Resilience for Real-time HPC Data Streams",
+      "authors": [
+        "Hai Thanh Nguyen",
+        "Bogdan Nicolae",
+        "Tekin Bi\u00e7er",
+        "Amal Gueroudji",
+        "Matthieu Dorier",
+        "Kyle Chard",
+        "Ian Foster"
+      ],
+      "author_ids": [
+        "A5101994317",
+        "A5085745891",
+        "A5038566298",
+        "A5102942440",
+        "A5070907426",
+        "A5065464552",
+        "A5032231503"
+      ],
+      "year": 2026,
+      "venue": null,
+      "venue_type": null,
+      "doi": "10.1145/3797905.3807872",
+      "url": "https://doi.org/10.1145/3797905.3807872",
+      "cited_by_count": 0,
+      "type": "conference-paper",
+      "abstract": "Real-time scientific workflows operate on continuous data streams and must produce timely, high-quality results despite executing on complex, failure-prone infrastructure. Hardware faults, network disruptions, and performance anomalies caused by resource contention or system heterogeneity can severely degrade performance and violate real-time constraints. We focus on strengthening the resilience of the producer\u2013consumer streaming pattern, a fundamental building block of scientific streaming workflows. We present two complementary techniques: (i) a dynamic, asynchronous, non-blocking checkpointing mechanism that preserves progress without interrupting computation, and (ii) a progress-aware load redistribution strategy that detects slow workers and proactively rebalances tasks. Together, these mechanisms maintain forward progress and balanced execution even in highly error-prone environments. Experimental results show that our approach reduces the impact of failures and performance anomalies by up to 6 \u00d7, while introducing less than 1% overhead in failure-free execution.",
+      "topics": [
+        "Computer Science"
+      ]
+    }
+  ]
+}

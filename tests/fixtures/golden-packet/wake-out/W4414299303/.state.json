@@ -1,0 +1,34 @@
+{
+  "seed_id": "W4414299303",
+  "tool_version": "0.1.0",
+  "stages": {
+    "seed": {
+      "completed_at": "2026-08-07T12:39:58+00:00",
+      "tool_version": "0.1.0",
+      "prompt_version": "seed-1"
+    },
+    "describe": {
+      "completed_at": "2026-08-07T12:40:12+00:00",
+      "tool_version": "0.1.0",
+      "prompt_version": "describe-1",
+      "model": "Claude Sonnet 4.6"
+    },
+    "citing": {
+      "completed_at": "2026-08-07T12:40:18+00:00",
+      "tool_version": "0.1.0",
+      "citing_version": "citing-1",
+      "count": 4
+    },
+    "classify": {
+      "completed_at": "2026-08-07T12:40:55+00:00",
+      "tool_version": "0.1.0",
+      "prompt_version": "classify-2",
+      "model": "Claude Sonnet 4.6",
+      "count": 4
+    },
+    "report": {
+      "completed_at": "2026-08-07T12:43:51+00:00",
+      "tool_version": "0.1.0"
+    }
+  }
+}

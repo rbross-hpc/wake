@@ -1,0 +1,26 @@
+{
+  "relationship": "builds-on",
+  "confidence": 0.72,
+  "justification": "StreamGuard builds resilience mechanisms (checkpointing and load redistribution) specifically for HPC data streaming workflows, directly depending on the persistent event-streaming infrastructure for HPC applications described in the seed paper as its underlying streaming foundation.",
+  "relationships": [
+    {
+      "label": "builds-on",
+      "confidence": 0.72,
+      "justification": "StreamGuard builds resilience mechanisms (checkpointing and load redistribution) specifically for HPC data streaming workflows, directly depending on the persistent event-streaming infrastructure for HPC applications described in the seed paper as its underlying streaming foundation."
+    }
+  ],
+  "has_abstract": true,
+  "verification_status": "provisional",
+  "author_overlap": true,
+  "overlapping_authors": [
+    "Bogdan Nicolae",
+    "Tekin Bi\u00e7er",
+    "Amal Gueroudji",
+    "Matthieu Dorier",
+    "Kyle Chard",
+    "Ian Foster"
+  ],
+  "prompt_version": "classify-2",
+  "model": "Claude Sonnet 4.6",
+  "classified_at": "2026-08-07T12:40:55+00:00"
+}

@@ -1091,14 +1091,20 @@ baseline) to 713 across all six phases, entirely additive.
    (only `wake.vocabulary` is permitted; no other wake modules). Test
    count stays 722 (equality test replaced by identity + allowlist tests).
 
+9. `test/golden-packet` — **BUILT**, see PLAN.md v0.4.8.  Real live
+   end-to-end run on the Dorier Mofka paper (W4414299303, CC-BY 4.0,
+   DOI: 10.3389/fhpcp.2025.1638203).  4 citing works (2 dossiers built;
+   2 PDFs unavailable), 2 draft themes, 3 narrative sections, 2 verified
+   overrides.  Vendored under tests/fixtures/golden-packet/ (37 files,
+   PDFs stripped).  25 new tests (722->747): schema validation of all
+   canonical artifacts, Phase-6 acceptance test (migrate_dossier on real
+   dossiers -> schema_version=2), rebuild cycle, structural sanity.
+
 **Deferred follow-on work, not forgotten, all real:**
-- A whole-packet golden-fixture test (interactive session on a real
-  OSTI packet, PDFs stripped/licensed) -- this will retroactively serve
-  as the acceptance test for the dossier migration above.
 - Replicating the strict-write / permissive-read split and migration
   chain to the other four artifact families (themes, narrative,
-  classification, overrides): same pattern, gated on the golden-packet
-  acceptance test being in hand.
+  classification, overrides): same pattern, now unblocked (golden packet
+  is in hand as the gating acceptance test).
 - Replacing the 15 catalogued `_normalize_*`/legacy-shape functions
   with the migration-chain pattern now established by dossiers.
 - Full `WakeContext` threading through all ~90 existing `base:`-taking

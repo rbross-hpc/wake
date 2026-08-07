@@ -1,0 +1,7 @@
+{"ts": "2026-08-07T12:40:12+00:00", "stage": "describe", "model": "Claude Sonnet 4.6", "in_tokens_est": 708, "out_tokens_est": 323, "cost_usd_est": 0.0, "unpriced": true}
+{"ts": "2026-08-07T12:40:42+00:00", "stage": "classify", "model": "Claude Sonnet 4.6", "in_tokens_est": 754, "out_tokens_est": 102, "cost_usd_est": 0.0, "unpriced": true}
+{"ts": "2026-08-07T12:40:47+00:00", "stage": "classify", "model": "Claude Sonnet 4.6", "in_tokens_est": 789, "out_tokens_est": 89, "cost_usd_est": 0.0, "unpriced": true}
+{"ts": "2026-08-07T12:40:51+00:00", "stage": "classify", "model": "Claude Sonnet 4.6", "in_tokens_est": 830, "out_tokens_est": 79, "cost_usd_est": 0.0, "unpriced": true}
+{"ts": "2026-08-07T12:40:55+00:00", "stage": "classify", "model": "Claude Sonnet 4.6", "in_tokens_est": 764, "out_tokens_est": 90, "cost_usd_est": 0.0, "unpriced": true}
+{"ts": "2026-08-07T12:41:49+00:00", "stage": "evidence", "model": "Claude Sonnet 4.6", "in_tokens_est": 10820, "out_tokens_est": 844, "cost_usd_est": 0.0, "unpriced": true}
+{"ts": "2026-08-07T12:42:25+00:00", "stage": "evidence", "model": "Claude Sonnet 4.6", "in_tokens_est": 10826, "out_tokens_est": 578, "cost_usd_est": 0.0, "unpriced": true}

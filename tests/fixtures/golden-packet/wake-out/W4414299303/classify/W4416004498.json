@@ -1,0 +1,22 @@
+{
+  "relationship": "background-mention",
+  "confidence": 0.7,
+  "justification": "The citing paper focuses on LLM agents for workflow provenance analysis in HPC environments and likely references the seed paper as related infrastructure or background context for event-streaming in HPC, but does not directly extend, build on, or benchmark against it.",
+  "relationships": [
+    {
+      "label": "background-mention",
+      "confidence": 0.7,
+      "justification": "The citing paper focuses on LLM agents for workflow provenance analysis in HPC environments and likely references the seed paper as related infrastructure or background context for event-streaming in HPC, but does not directly extend, build on, or benchmark against it."
+    }
+  ],
+  "has_abstract": true,
+  "verification_status": "provisional",
+  "author_overlap": true,
+  "overlapping_authors": [
+    "Renan Souza",
+    "Amal Gueroudji"
+  ],
+  "prompt_version": "classify-2",
+  "model": "Claude Sonnet 4.6",
+  "classified_at": "2026-08-07T12:40:47+00:00"
+}

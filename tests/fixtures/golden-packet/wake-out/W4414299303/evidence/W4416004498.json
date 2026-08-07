@@ -1,0 +1,73 @@
+{
+  "schema_version": 2,
+  "seed_openalex_id": "W4414299303",
+  "citing_openalex_id": "W4416004498",
+  "citing_title": "LLM Agents for Interactive Workflow Provenance: Reference Architecture and Evaluation Methodology",
+  "citing_authors": [
+    "Renan Souza",
+    "Timothy Poteet",
+    "Brian D. Etz",
+    "Daniel Rosendo",
+    "Amal Gueroudji",
+    "Woong Shin",
+    "Prasanna Balaprakash",
+    "Rafael Ferreira da Silva"
+  ],
+  "generated_at": "2026-08-07T12:42:25+00:00",
+  "prompt_version": "evidence-1",
+  "model": "Claude Sonnet 4.6",
+  "pdf_path": "../pdfs/W4416004498.pdf",
+  "pdf_source": "arxiv",
+  "extracted_text_path": "../pdfs/W4416004498.pdf.json",
+  "citing_cited_by_count": 1,
+  "verification_status": "verified",
+  "provisional": {
+    "relationship": "background-mention",
+    "confidence": 0.7,
+    "justification": "The citing paper focuses on LLM agents for workflow provenance analysis in HPC environments and likely references the seed paper as related infrastructure or background context for event-streaming in HPC, but does not directly extend, build on, or benchmark against it.",
+    "relationships": [
+      {
+        "label": "background-mention",
+        "confidence": 0.7,
+        "justification": "The citing paper focuses on LLM agents for workflow provenance analysis in HPC environments and likely references the seed paper as related infrastructure or background context for event-streaming in HPC, but does not directly extend, build on, or benchmark against it."
+      }
+    ]
+  },
+  "proposed": {
+    "relationship": "background-mention",
+    "confidence": 0.85,
+    "justification": "The seed paper (likely about Mofka, cited as [7]) is mentioned only briefly as one of several possible streaming broker options in the reference architecture description, alongside Redis and Kafka. The actual implementation uses Redis Pub/Sub, and the seed paper is not directly extended, built upon, or benchmarked against.",
+    "agrees_with_provisional": true,
+    "relationships": [
+      {
+        "label": "background-mention",
+        "confidence": 0.85,
+        "justification": "The seed paper (likely about Mofka, cited as [7]) is mentioned only briefly as one of several possible streaming broker options in the reference architecture description, alongside Redis and Kafka. The actual implementation uses Redis Pub/Sub, and the seed paper is not directly extended, built upon, or benchmarked against.",
+        "quotes": [
+          {
+            "page": 3,
+            "text": "For lightweight deployments, a single broker may suffice, while large-scale ECH workflows can benefit from federated hubs composed of multiple brokers tailored to specific performance and reliability needs. For example, Redis offers low-latency messaging with minimal setup, making it suitable for most use cases; Kafka enables high throughput streaming for data-intensive workflows; and Mofka provides RDMA-optimized transport ideal for tightly coupled HPC networks [7]. Regardless of the underlying broker, all provenance messages adhere to a common schema.",
+            "note": "The seed paper [7] is cited only as background context for Mofka as one possible broker option, with no direct dependency or extension in the actual implementation."
+          }
+        ],
+        "verified": true
+      }
+    ]
+  },
+  "quotes": [
+    {
+      "page": 3,
+      "text": "For lightweight deployments, a single broker may suffice, while large-scale ECH workflows can benefit from federated hubs composed of multiple brokers tailored to specific performance and reliability needs. For example, Redis offers low-latency messaging with minimal setup, making it suitable for most use cases; Kafka enables high throughput streaming for data-intensive workflows; and Mofka provides RDMA-optimized transport ideal for tightly coupled HPC networks [7]. Regardless of the underlying broker, all provenance messages adhere to a common schema.",
+      "note": "The seed paper [7] is cited only as background context for Mofka as one possible broker option, with no direct dependency or extension in the actual implementation."
+    }
+  ],
+  "author_overlap": true,
+  "overlapping_authors": [
+    "Renan Souza",
+    "Amal Gueroudji"
+  ],
+  "human_verification": {
+    "justification": "Mofka is mentioned once as one possible broker option alongside Redis and Kafka; implementation uses Redis Pub/Sub, no direct extension (full-text verified, p.3).",
+    "verified_at": "2026-08-07T12:42:35+00:00"
+  }
+}
