@@ -12,7 +12,7 @@ from typing import Any
 from . import config
 from .classify import relationship_strength
 from .io import atomic_write_json, atomic_write_text, now_iso
-from .models import Override
+from .models import OVERRIDE_VERSION, OverrideWrite, migrate_override
 from .seed import work_dir
 from .state import mark_stage_complete
 
@@ -70,6 +70,7 @@ def load_overrides(seed_id: str, base: Path | None = None) -> dict[str, dict[str
                 entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            entry = migrate_override(entry)
             cid = entry.get("citing_id")
             if cid:
                 overrides[cid] = entry
@@ -104,6 +105,7 @@ def add_override(
     the evidence wiki untouched.
     """
     entry = {
+        "schema_version": OVERRIDE_VERSION,
         "citing_id": citing_id,
         "relationship": relationship,
         "justification": justification,
@@ -117,7 +119,8 @@ def add_override(
         # (classify.relationship_strength) reranks this override too.
         "overridden_at": now_iso(),
     }
-    Override.validate_or_raise(entry, context=f"override for {citing_id!r}")
+    validated = OverrideWrite.validate_or_raise(entry, context=f"override for {citing_id!r}")
+    entry = validated.to_json_dict()
     _migrate_legacy_overrides_if_needed(seed_id, base)
     p = overrides_path(seed_id, base)
     p.parent.mkdir(parents=True, exist_ok=True)
