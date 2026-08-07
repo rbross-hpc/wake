@@ -124,6 +124,36 @@ def test_classified_json_works_validate():
         ClassificationResult.model_validate(w)
 
 
+def test_classify_sidecars_and_classified_json_are_unversioned_pre_phase_11(tmp_path):
+    """The golden packet's classify sidecars and classified.json were
+    generated before Phase 11 (classification versioning) existed -- no
+    schema_version anywhere.  Phase-11 acceptance test: _load_sidecar()
+    and load_classified() must migrate on read, mirroring the Phase-6/9/10
+    acceptance tests."""
+    from wake.classify import _load_sidecar, load_classified
+    from wake.models import CLASSIFICATION_VERSION
+
+    for p in sorted((_PACKET_ROOT / "classify").glob("*.json")):
+        raw = json.loads(p.read_text())
+        assert "schema_version" not in raw
+
+    raw_aggregate = json.loads(_CLASSIFIED_JSON.read_text())
+    for w in raw_aggregate["works"]:
+        assert "schema_version" not in w
+
+    _copy_packet(tmp_path)
+    for citing_id in ("W4414909013", "W4416004498", "W4416004574", "W7167027240"):
+        loaded = _load_sidecar(_SEED_ID, citing_id, base=tmp_path)
+        assert loaded is not None
+        assert loaded["schema_version"] == CLASSIFICATION_VERSION
+
+    loaded_works = load_classified(_SEED_ID, base=tmp_path)
+    assert loaded_works is not None
+    assert len(loaded_works) == 4
+    for w in loaded_works:
+        assert w["schema_version"] == CLASSIFICATION_VERSION
+
+
 def test_all_dossier_jsons_validate_as_evidence_dossier():
     dossier_paths = list(_EVIDENCE_DIR.glob("*.json"))
     assert len(dossier_paths) == len(_DOSSIER_IDS)

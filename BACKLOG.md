@@ -1122,10 +1122,29 @@ baseline) to 713 across all six phases, entirely additive.
     acceptance test confirming the real (pre-Phase-10, unversioned)
     Mofka outline + 3 sections migrate correctly on read.
 
+12. `refactor/classify-versioning` — **BUILT**, see PLAN.md v0.4.11.  The
+    most involved of the four: `classified.json` had no aggregate model
+    and no write validation at all -- the one genuinely unvalidated write
+    in the codebase.  Closed it with a new `ClassifiedFile` wrapper model
+    (`seed_openalex_id`/`classified_at`/`count`/`works`), deliberately
+    keeping `works: list[dict[str, Any]]` loose rather than
+    `list[ClassificationResult]` because error/unclassified entries (no
+    `relationship` key, from `classify_all()`'s error-handling branch)
+    are a legitimate, load-bearing shape (`report.py`'s bake step filters
+    on `w.get("relationship")`).  `CLASSIFICATION_VERSION=1`,
+    `CLASSIFIED_FILE_VERSION=1`, `ClassificationResultWrite`,
+    `ClassifiedFileWrite` (both `extra="forbid"`).  `migrate_classified()`
+    formalizes the old implicit bare-list-vs-wrapper check as an explicit
+    v0->v1 step and stamps `schema_version` on every real (non-error)
+    work entry.  13 new tests (769->782), including a golden-packet
+    acceptance test confirming the real (pre-Phase-11, unversioned)
+    Mofka classify sidecars + classified.json migrate correctly on read.
+
 **Deferred follow-on work, not forgotten, all real:**
 - Replicating the strict-write / permissive-read split and migration
-  chain to the remaining two artifact families (classification,
-  overrides): same pattern, in progress.
+  chain to the last remaining artifact family (overrides, JSONL
+  append-only -- a different migration mechanic since there's no single
+  document to rewrite): same pattern, in progress.
 - Replacing the 15 catalogued `_normalize_*`/legacy-shape functions
   with the migration-chain pattern now established by dossiers/themes/
   narrative.
