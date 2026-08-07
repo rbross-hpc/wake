@@ -105,12 +105,13 @@ def run_theme_create(args) -> None:
         sys.exit(1)
 
     def human(d):
-        print(f"Theme written (draft): {d['theme_path']}")
+        print(f"Theme JSON written (draft): {d['theme_json_path']}")
         if d["needs_evidence"]:
             print(f"  {len(d['needs_evidence'])} cited work(s) have no evidence dossier yet: "
                   f"{', '.join(d['needs_evidence'])}")
         print("  Present to the human; run `wake theme confirm` on their behalf once "
               "they approve (requires every cited work to be human-verified first).")
+        print(f"  Run `wake rebuild {args.seed}` to render this theme's Markdown.")
 
     emit("theme", result, as_json=args.json_out, human=human)
 
@@ -130,7 +131,8 @@ def run_theme_confirm(args) -> None:
         if not d["ok"]:
             print(d["message"])
             return
-        print(f"Theme confirmed: {d['theme_path']}")
+        print(f"Theme confirmed: {d['theme_json_path']}")
+        print(f"Run `wake rebuild {args.seed}` to render this in the wiki.")
 
     emit("theme", result, as_json=args.json_out, human=human)
     if not result["ok"]:
@@ -165,15 +167,21 @@ def run_theme_queue(args) -> None:
 
 def run_theme_show(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
-    from ...themes import theme_path
+    from ...themes import theme_json_path, theme_path
     base = _work_dir_base(args)
     seed_id = work["openalex_id"]
 
     p = theme_path(seed_id, args.slug, base)
     if not p.exists():
-        emit_error("theme", RuntimeError(
-            f"No theme {args.slug!r} found for {args.seed}. Run `wake theme create` first."
-        ), as_json=args.json_out)
+        if theme_json_path(seed_id, args.slug, base).exists():
+            emit_error("theme", RuntimeError(
+                f"Theme {args.slug!r} exists but hasn't been rendered yet. "
+                f"Run `wake rebuild {args.seed}` first."
+            ), as_json=args.json_out)
+        else:
+            emit_error("theme", RuntimeError(
+                f"No theme {args.slug!r} found for {args.seed}. Run `wake theme create` first."
+            ), as_json=args.json_out)
         sys.exit(1)
 
     text = p.read_text(encoding="utf-8")

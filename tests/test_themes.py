@@ -324,6 +324,13 @@ def test_list_theme_needs_evidence_aggregates_across_multiple_themes(tmp_path):
 
 # --- markdown rendering ---------------------------------------------------
 
+def _rerender_themes(tmp_path):
+    """create_theme()/confirm_theme() write JSON only now (rendering is
+    `wake rebuild`'s job, see build.py's module docstring) -- render
+    explicitly so tests can keep reading theme .md content."""
+    themes.rerender_all_themes(PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path)
+
+
 def test_theme_markdown_shows_draft_banner_and_status(tmp_path):
     works = _seed_two_classified(tmp_path)
     ids = [w["openalex_id"] for w in works]
@@ -331,6 +338,7 @@ def test_theme_markdown_shows_draft_banner_and_status(tmp_path):
         PARALLEL_NETCDF_WORK, "t1", title="Earth System Modeling", summary="Both use this for ESM.",
         citing_ids=ids, base=tmp_path,
     )
+    _rerender_themes(tmp_path)
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert "type: theme" in md
     assert "theme_status: draft" in md
@@ -352,6 +360,7 @@ def test_theme_markdown_shows_confirmed_banner(tmp_path):
         verification_source="human-judgment", base=tmp_path,
     )
     themes.confirm_theme(PARALLEL_NETCDF_WORK, "t1", base=tmp_path)
+    _rerender_themes(tmp_path)
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert "CONFIRMED" in md
     assert "theme_status: confirmed" in md
@@ -365,6 +374,7 @@ def test_theme_markdown_links_dossier_backed_work(tmp_path):
         PARALLEL_NETCDF_WORK, "t1", title="T", summary="S",
         citing_ids=[works[0]["openalex_id"]], base=tmp_path,
     )
+    _rerender_themes(tmp_path)
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert f"](../{works[0]['openalex_id']}.md)" in md
     assert "[PROPOSED" in md
@@ -381,6 +391,7 @@ def test_theme_markdown_verified_no_dossier_has_no_dead_link_or_hint(tmp_path):
     themes.create_theme(
         PARALLEL_NETCDF_WORK, "t1", title="T", summary="S", citing_ids=[wid], base=tmp_path,
     )
+    _rerender_themes(tmp_path)
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert f"](../{wid}.md)" not in md
     assert "no full-text dossier yet" not in md
@@ -393,6 +404,7 @@ def test_theme_markdown_always_links_back_to_themes_index(tmp_path):
         PARALLEL_NETCDF_WORK, "t1", title="T", summary="S",
         citing_ids=[works[0]["openalex_id"]], base=tmp_path,
     )
+    _rerender_themes(tmp_path)
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert "[themes index](index.md)" in md
 
@@ -405,6 +417,7 @@ def test_theme_markdown_no_referenced_by_when_no_section_grounds_in_it(tmp_path)
         PARALLEL_NETCDF_WORK, "t1", title="T", summary="S",
         citing_ids=[works[0]["openalex_id"]], base=tmp_path,
     )
+    _rerender_themes(tmp_path)
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert "Referenced By" not in md
 
@@ -419,6 +432,7 @@ def test_theme_markdown_referenced_by_grounded_section(tmp_path):
         PARALLEL_NETCDF_WORK, "s1", title="Section One", prose="Framing prose.",
         theme_slugs=["t1"], base=tmp_path,
     )
+    _rerender_themes(tmp_path)
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert "## Referenced By" in md
     assert "[Section One](../../narrative/sections/s1.md)" in md
@@ -438,6 +452,7 @@ def test_theme_markdown_not_referenced_by_unrelated_section(tmp_path):
         PARALLEL_NETCDF_WORK, "s1", title="Section One", prose="Framing prose.",
         theme_slugs=["t2"], base=tmp_path,
     )
+    _rerender_themes(tmp_path)
     md = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert "Referenced By" not in md
 
@@ -458,12 +473,12 @@ def test_rerender_all_themes_picks_up_new_section_grounding(tmp_path):
     themes.create_theme(
         PARALLEL_NETCDF_WORK, "t1", title="T", summary="S", citing_ids=[wid], base=tmp_path,
     )
+    _rerender_themes(tmp_path)
     md_before = themes.theme_path(PARALLEL_NETCDF_WORK["openalex_id"], "t1", base=tmp_path).read_text()
     assert "Referenced By" not in md_before
 
-    # Directly write a section JSON sidecar naming this theme, bypassing
-    # create_section()'s own hook (which already re-renders themes), to
-    # isolate rerender_all_themes() as the thing under test.
+    # Directly write a section JSON sidecar naming this theme, to isolate
+    # rerender_all_themes() as the thing under test.
     from wake.io import atomic_write_json
     section_payload = {
         "seed_openalex_id": PARALLEL_NETCDF_WORK["openalex_id"],
@@ -481,15 +496,21 @@ def test_rerender_all_themes_picks_up_new_section_grounding(tmp_path):
     assert "[Section One](../../narrative/sections/s1.md)" in md_after
 
 
-# --- create_theme/confirm_theme rerender the dossiers they affect ----------
+# --- rebuild_seed rerenders the dossiers a theme affects --------------------
 
-def test_create_theme_rerenders_affected_dossier(tmp_path):
+def test_rebuild_seed_rerenders_dossier_affected_by_theme(tmp_path):
+    """create_theme() writes JSON only (rendering is `wake rebuild`'s
+    job, see build.py's module docstring) -- a full rebuild picks up the
+    new theme membership on the cited dossier's own .md."""
+    from wake.build import rebuild_seed
+
     works = _seed_two_classified(tmp_path)
     wid = works[0]["openalex_id"]
     _build_dossier_for(tmp_path, works[0])
     themes.create_theme(
         PARALLEL_NETCDF_WORK, "t1", title="Theme One", summary="S", citing_ids=[wid], base=tmp_path,
     )
+    rebuild_seed(PARALLEL_NETCDF_WORK, base=tmp_path, verbose=False)
     dossier_md = evidence.dossier_path(PARALLEL_NETCDF_WORK["openalex_id"], wid, base=tmp_path).read_text()
     assert "theme [Theme One](themes/t1.md)" in dossier_md
 
@@ -501,13 +522,16 @@ def test_rebuild_themes_index_no_themes_returns_path_without_writing(tmp_path):
     assert not p.exists()
 
 
-def test_themes_index_created_as_side_effect_of_create_theme(tmp_path):
+def test_themes_index_reflects_create_theme(tmp_path):
+    """rebuild_themes_index() is a separate explicit rendering step now,
+    not a write-time side effect of create_theme() (see build.py's
+    module docstring)."""
     works = _seed_two_classified(tmp_path)
     wid = works[0]["openalex_id"]
     themes.create_theme(
         PARALLEL_NETCDF_WORK, "t1", title="My Theme", summary="S", citing_ids=[wid], base=tmp_path,
     )
-    p = evidence_wiki.themes_index_path(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
+    p = evidence_wiki.rebuild_themes_index(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
     assert p.exists()
     text = p.read_text()
     assert "## Draft (1)" in text
@@ -528,6 +552,7 @@ def test_themes_index_moves_theme_from_draft_to_confirmed(tmp_path):
     )
     themes.confirm_theme(PARALLEL_NETCDF_WORK, "t1", base=tmp_path)
 
+    evidence_wiki.rebuild_themes_index(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
     text = evidence_wiki.themes_index_path(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path).read_text()
     assert "## Confirmed (1)" in text
     assert "## Draft (0)" in text

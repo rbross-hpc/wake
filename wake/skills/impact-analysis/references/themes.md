@@ -40,7 +40,9 @@ exits 1) if any `--citing-ids` entry has never been classified.
 Always overwrites the same slug — no `--force` flag exists for this
 command, since there's no expensive LLM/network call to protect against
 re-doing. `created_at` is preserved across re-writes; `updated_at` always
-refreshes.
+refreshes. Writes only `theme_json_path` -- `theme_path` (the `.md`) is
+not rendered by this call; run `wake rebuild "<seed>"` (or `wake theme
+rerender-all`) to render it (see "Rendering the Wiki" in SKILL.md).
 
 `wake theme confirm "<seed>" <slug>` response shape on success:
 ```json
@@ -99,9 +101,10 @@ back-link. The "Referenced By" section is omitted entirely if no
 narrative section grounds in this theme yet. Like the evidence dossier's
 "Referenced by" line, this is a derived view, recomputed at render time
 from narrative section JSON sidecars — never itself a separate thing to
-maintain. `wake narrative section create`/`confirm` for a theme-backed
-section automatically re-render every theme it names, so this stays
-fresh without any extra step.
+maintain, but only recomputed when the theme is next rendered.
+`wake narrative section create`/`confirm` write JSON only and do not
+themselves re-render any theme `.md` -- run `wake rebuild "<seed>"` (or
+`wake theme rerender-all`) to bring this section up to date.
 
 ## Re-rendering every theme (`wake theme rerender-all`)
 

@@ -22,7 +22,6 @@ import pytest
 
 from wake import evidence, narrative, report, themes
 from wake.classify import save_classified
-from wake.evidence_wiki import rebuild_wiki_orientation
 from wake.report import add_override
 
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
@@ -439,7 +438,13 @@ def _build_full_wiki(tmp_path):
     ]
     report.bake_and_save(PARALLEL_NETCDF_WORK, classified, base=tmp_path, verbose=False)
 
-    rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
+    # Rendering is an explicit step (see build.py's module docstring) --
+    # every write above (dossiers, theme, outline, section, override)
+    # wrote JSON only. rebuild_seed() renders every derived .md/index at
+    # once, exactly as `wake rebuild` would after this sequence of CLI
+    # calls in real use.
+    from wake.build import rebuild_seed
+    rebuild_seed(PARALLEL_NETCDF_WORK, base=tmp_path, verbose=False)
 
     return {
         "seed_id": seed_id,

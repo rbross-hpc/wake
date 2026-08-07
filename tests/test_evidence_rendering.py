@@ -77,7 +77,13 @@ def _build_dossier(tmp_path, citing_work=None, pdf_name="citing.pdf", quotes=Non
     citing_work = citing_work or _classified_work()
     with patch("wake.evidence.fetch_pdf", return_value={"ok": True, "path": str(dest), "source": "osti"}), \
          patch("wake.evidence.chat_json", return_value=fake_response):
-        return evidence.build_dossier(PARALLEL_NETCDF_WORK, citing_work, base=tmp_path, verbose=False)
+        result = evidence.build_dossier(PARALLEL_NETCDF_WORK, citing_work, base=tmp_path, verbose=False)
+    # build_dossier() only writes JSON now (rendering is an explicit
+    # `wake rebuild` step, see build.py's module docstring) -- render the
+    # .md immediately so this helper's callers can keep reading it as
+    # before.
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, citing_work["openalex_id"], base=tmp_path)
+    return result
 
 
 # --- dossier JSON fields ---------------------------------------------------
@@ -223,6 +229,9 @@ def test_dossier_md_referenced_by_theme(tmp_path):
         PARALLEL_NETCDF_WORK, "t1", title="Theme One", summary="Summary.",
         citing_ids=[work["openalex_id"]], base=tmp_path,
     )
+    # Themes no longer re-render affected dossiers as a write-time side
+    # effect (see build.py's module docstring) -- render explicitly.
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, work["openalex_id"], base=tmp_path)
     text = evidence.dossier_path(
         PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,
     ).read_text()
@@ -244,6 +253,9 @@ def test_dossier_md_referenced_by_narrative_section(tmp_path):
         PARALLEL_NETCDF_WORK, "s1", title="Section One",
         prose=f"This work extends PnetCDF. [ref:{work['openalex_id']}]", base=tmp_path,
     )
+    # Sections no longer re-render referenced dossiers as a write-time
+    # side effect -- render explicitly.
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, work["openalex_id"], base=tmp_path)
     text = evidence.dossier_path(
         PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,
     ).read_text()
@@ -268,6 +280,7 @@ def test_dossier_md_referenced_by_both_theme_and_section(tmp_path):
         PARALLEL_NETCDF_WORK, "s1", title="Section One",
         prose=f"This work extends PnetCDF. [ref:{work['openalex_id']}]", base=tmp_path,
     )
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, work["openalex_id"], base=tmp_path)
     text = evidence.dossier_path(
         PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,
     ).read_text()
@@ -303,9 +316,9 @@ def test_rerender_dossier_md_picks_up_new_theme_membership(tmp_path):
         PARALLEL_NETCDF_WORK, "t1", title="Theme One", summary="Summary.",
         citing_ids=[work["openalex_id"]], base=tmp_path,
     )
-    # create_theme's own hook already re-renders affected dossiers (see
-    # test below for that end-to-end behavior); call rerender directly
-    # here to test the primitive in isolation.
+    # create_theme() writes JSON only now (rendering is `wake rebuild`'s
+    # job, see build.py's module docstring) -- render explicitly here to
+    # test the rerender primitive itself.
     evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, work["openalex_id"], base=tmp_path)
     text_after = evidence.dossier_path(
         PARALLEL_NETCDF_WORK["openalex_id"], work["openalex_id"], base=tmp_path,

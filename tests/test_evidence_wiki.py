@@ -71,8 +71,11 @@ def test_rebuild_index_no_dossiers_returns_path_without_writing(tmp_path):
 
 
 def test_index_created_as_side_effect_of_build_dossier(tmp_path):
+    """build_dossier() writes JSON only now (see build.py's module
+    docstring) -- rebuild_index() is a separate, explicit rendering
+    step, as it is via `wake rebuild` in real use."""
     _build(tmp_path)
-    p = evidence_wiki.index_path(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
+    p = evidence_wiki.rebuild_index(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
     assert p.exists()
     text = p.read_text()
     assert "type: index" in text
@@ -88,6 +91,7 @@ def test_index_groups_by_status_and_sorts_by_score(tmp_path):
     _build(tmp_path, citing_work=_classified_work(0), pdf_name="a.pdf")  # cited_by_count=250
     _build(tmp_path, citing_work=_classified_work(1), pdf_name="b.pdf")  # cited_by_count=42
 
+    evidence_wiki.rebuild_index(seed_id, base=tmp_path)
     text = evidence_wiki.index_path(seed_id, base=tmp_path).read_text()
     idx_high = text.index(SAMPLE_CITING_WORKS[0]["openalex_id"])
     idx_low = text.index(SAMPLE_CITING_WORKS[1]["openalex_id"])
@@ -105,6 +109,7 @@ def test_index_moves_entry_from_pending_to_verified(tmp_path):
         base=tmp_path,
     )
 
+    evidence_wiki.rebuild_index(seed_id, base=tmp_path)
     text = evidence_wiki.index_path(seed_id, base=tmp_path).read_text()
     assert "## Verified (1)" in text
     assert "## Pending Review (0)" in text
@@ -186,7 +191,11 @@ def test_mark_verified_missing_dossier_returns_false(tmp_path):
     assert evidence_wiki.mark_verified("W999", "W888", base=tmp_path) is False
 
 
-def test_mark_verified_patches_json_and_markdown(tmp_path):
+def test_mark_verified_patches_json_and_rendered_markdown(tmp_path):
+    """mark_verified() patches only the dossier's JSON now (rendering is
+    `wake rebuild`'s job, see build.py's module docstring) -- a
+    subsequent rerender_dossier_md() call must reproduce the verified
+    status purely from that JSON."""
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     citing_id = SAMPLE_CITING_WORKS[0]["openalex_id"]
     _build(tmp_path, citing_work=_classified_work(0))
@@ -198,6 +207,7 @@ def test_mark_verified_patches_json_and_markdown(tmp_path):
     assert loaded["verification_status"] == "verified"
     assert loaded["human_verification"]["justification"] == "looks right"
 
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, citing_id, base=tmp_path)
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
     assert "verification_status: verified" in md_text
     assert "## Status: verified" in md_text
@@ -257,6 +267,7 @@ def test_mark_verified_relationship_correction_updates_proposed_and_index(tmp_pa
     assert facets_by_label["uses-as-tool"]["verified"] is True
     assert facets_by_label["extends"]["verified"] is False
 
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, citing_id, base=tmp_path)
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
     proposed_line = next(line for line in md_text.splitlines() if line.startswith("proposed_relationships:"))
     assert "uses-as-tool" in proposed_line
@@ -340,6 +351,7 @@ def test_force_rerun_resets_verified_dossier_to_pending(tmp_path):
     _build(tmp_path, citing_work=citing_work, force=True)
     assert evidence.load_dossier(seed_id, citing_id, base=tmp_path)["verification_status"] == "pending-human-review"
 
+    evidence_wiki.rebuild_index(seed_id, base=tmp_path)
     text = evidence_wiki.index_path(seed_id, base=tmp_path).read_text()
     assert "## Verified (0)" in text
     assert "## Pending Review (1)" in text
@@ -368,9 +380,14 @@ def test_rebuild_wiki_orientation_omits_links_for_missing_targets(tmp_path):
     assert "Nothing has been generated yet" in text
 
 
-def test_wiki_orientation_created_as_side_effect_of_build_dossier(tmp_path):
+def test_wiki_orientation_reflects_build_dossier(tmp_path):
+    """rebuild_wiki_orientation() is now a separate explicit rendering
+    step, not a write-time side effect of build_dossier() (see build.py's
+    module docstring) -- it still reads whatever JSON is on disk, so
+    calling it after build_dossier() reflects that dossier correctly."""
     _build(tmp_path)
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
     readme_text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
     assert "[Evidence Wiki](evidence/index.md)" in readme_text
     assert "[Log](evidence/log.md)" in readme_text
@@ -379,10 +396,11 @@ def test_wiki_orientation_created_as_side_effect_of_build_dossier(tmp_path):
     assert "Full-text-verified: 0" in agents_text
 
 
-def test_wiki_orientation_created_as_side_effect_of_bake(tmp_path):
+def test_wiki_orientation_reflects_bake(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     save_classified(seed_id, [_classified_work()], base=tmp_path)
     report.bake_and_save(PARALLEL_NETCDF_WORK, [_classified_work()], base=tmp_path, verbose=False)
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
     readme_path = evidence_wiki.wiki_home_path(seed_id, base=tmp_path)
     agents_path = evidence_wiki.agents_md_path(seed_id, base=tmp_path)
     assert readme_path.exists()
@@ -391,7 +409,7 @@ def test_wiki_orientation_created_as_side_effect_of_bake(tmp_path):
     assert "Citing works classified: 1" in agents_path.read_text()
 
 
-def test_wiki_orientation_created_as_side_effect_of_theme_create(tmp_path):
+def test_wiki_orientation_reflects_theme_create(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     work = _classified_work()
     save_classified(seed_id, [work], base=tmp_path)
@@ -399,6 +417,7 @@ def test_wiki_orientation_created_as_side_effect_of_theme_create(tmp_path):
         PARALLEL_NETCDF_WORK, "t1", title="T", summary="S",
         citing_ids=[work["openalex_id"]], base=tmp_path,
     )
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
     text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
     assert "[Themes](evidence/themes/index.md)" in text
     assert "**0** confirmed (1 still draft)" in text
@@ -407,7 +426,7 @@ def test_wiki_orientation_created_as_side_effect_of_theme_create(tmp_path):
     assert "Confirmed themes: 0" in agents_text
 
 
-def test_wiki_orientation_created_as_side_effect_of_narrative_stitch(tmp_path):
+def test_wiki_orientation_reflects_narrative_stitch(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     narrative.create_outline(
         PARALLEL_NETCDF_WORK,
@@ -418,6 +437,7 @@ def test_wiki_orientation_created_as_side_effect_of_narrative_stitch(tmp_path):
         PARALLEL_NETCDF_WORK, "intro", title="Intro", prose="Framing prose.", base=tmp_path,
     )
     narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
     text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
     assert "[Narrative](narrative.md)" in text
 
@@ -425,7 +445,7 @@ def test_wiki_orientation_created_as_side_effect_of_narrative_stitch(tmp_path):
     assert "Narrative status: assembled" in agents_text
 
 
-def test_wiki_orientation_created_as_side_effect_of_add_override(tmp_path):
+def test_wiki_orientation_reflects_add_override(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     citing_work = _classified_work(0)
     _build(tmp_path, citing_work=citing_work)
@@ -434,6 +454,7 @@ def test_wiki_orientation_created_as_side_effect_of_add_override(tmp_path):
         verification_source="evidence-dossier", seed_title=PARALLEL_NETCDF_WORK["title"],
         base=tmp_path,
     )
+    evidence_wiki.rebuild_wiki_orientation(seed_id, PARALLEL_NETCDF_WORK, base=tmp_path)
     text = evidence_wiki.wiki_home_path(seed_id, base=tmp_path).read_text()
     assert "**1** verified findings signed off by a human reviewer" in text
 

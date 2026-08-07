@@ -141,6 +141,7 @@ def run_unverify(args) -> None:
             print(f"Un-verified {d['count']} citing work(s):")
             for r in d["reverted"]:
                 print(f"  {r['citing_id']}")
+            print(f"Run `wake rebuild {args.seed}` to render this in the wiki.")
 
         emit("unverify", result, as_json=args.json_out, human=human_batch)
         return
@@ -161,5 +162,6 @@ def run_unverify(args) -> None:
     def human(d):
         print(f"Un-verified: {d['citing_id']}" + (f" — {d['reason']}" if d["reason"] else ""))
         print("  No longer counted as verified in theme/narrative/bake.")
+        print(f"  Run `wake rebuild {args.seed}` to render this in the wiki.")
 
     emit("unverify", result, as_json=args.json_out, human=human)

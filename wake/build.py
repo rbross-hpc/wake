@@ -1,6 +1,6 @@
 # BSD 3-Clause License
 # Copyright (c) 2026, UChicago Argonne, LLC, Argonne National Laboratory.
-"""Centralized rebuild entry point for a seed's derived artifacts.
+"""The single explicit render step for a seed's derived Markdown.
 
 wake's canonical data is JSON: seed.json, citing.json, classified.json,
 evidence/<id>.json dossier sidecars, evidence/themes/<slug>.json,
@@ -20,28 +20,40 @@ Before this module existed, each of those derived-render functions
 evidence_wiki.rebuild_index/rebuild_themes_index/
 rebuild_wiki_orientation, themes.rerender_all_themes,
 narrative.rerender_all_sections/_refresh_outline_md/stitch,
-report.bake_and_save) was invoked piecemeal -- some only ever fired as
-an implicit side effect of an unrelated write command (rebuild_index
-and rebuild_themes_index have no standalone CLI verb at all), some had
-a bulk CLI verb but didn't call the others they logically depend on
-(`wake theme rerender-all` doesn't refresh themes/index.md; `wake
-narrative section rerender-all` doesn't refresh outline.md's live
+report.bake_and_save) was invoked piecemeal -- most of them fired as an
+implicit side effect of an unrelated write command (build_dossier,
+add_override, create_theme, create_section, ...) in addition to (or,
+for rebuild_index/rebuild_themes_index, instead of) any standalone CLI
+verb, and even the bulk CLI verbs didn't call the others they logically
+depend on (`wake theme rerender-all` doesn't refresh themes/index.md;
+`wake narrative section rerender-all` doesn't refresh outline.md's live
 status column) -- see PLAN.md "Phase 3" / BACKLOG.md Theme L's research
-notes for the full call-graph audit this module is built from. A human
-or agent who hand-edited or deleted a JSON sidecar and wanted every
-affected derived file resynced had no single command to run and no
-documented order to follow.
+notes for the full call-graph audit this module is built from.
 
-`rebuild_seed()` is that single entry point: it walks every derived
-artifact type that currently has *any* JSON backing on disk for this
-seed, in dependency order (dossiers before the indexes that summarize
-them; dossiers/themes before the wiki orientation counts that reference
-them; outline/sections before the stitched narrative), and reports
-exactly what it touched. It never makes an LLM or network call --
-`rebuild_seed()` only re-derives Markdown/index files from JSON that's
-already there. It also never invents JSON that doesn't exist: a seed
-with no evidence/ directory yet simply skips that step, same as every
-individual `rerender_*`/`rebuild_*` function already does.
+As of the Structural Hardening follow-on that made rendering explicit
+(v0.4.16), every one of those write-time side effects has been removed:
+JSON-mutating functions (build_dossier, add_override, unverify_work,
+create_theme, confirm_theme, create_outline, create_section,
+confirm_section) now write only JSON and return `"rebuild_needed":
+True`. `wake bake`/`wake narrative stitch` remain explicit render verbs
+for impact.md/narrative.md respectively, but no longer additionally
+refresh README.md/AGENTS.md orientation as a side effect. `rebuild_seed()`
+is now genuinely the *only* place any of dossiers/index/themes/outline/
+narrative/impact/wiki-orientation gets (re-)rendered -- not a recovery
+tool for gaps in piecemeal rendering, but the render step itself. A
+human or agent who wants the wiki's Markdown to reflect the JSON that's
+currently on disk always runs exactly one command: `wake rebuild`.
+
+`rebuild_seed()` walks every derived artifact type that currently has
+*any* JSON backing on disk for this seed, in dependency order (dossiers
+before the indexes that summarize them; dossiers/themes before the wiki
+orientation counts that reference them; outline/sections before the
+stitched narrative), and reports exactly what it touched. It never makes
+an LLM or network call -- `rebuild_seed()` only re-derives Markdown/index
+files from JSON that's already there. It also never invents JSON that
+doesn't exist: a seed with no evidence/ directory yet simply skips that
+step, same as every individual `rerender_*`/`rebuild_*` function already
+does.
 """
 from __future__ import annotations
 

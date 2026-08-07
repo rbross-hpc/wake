@@ -160,8 +160,14 @@ def test_build_dossier_end_to_end_with_real_fixture_pdf(tmp_path):
 
     assert result["ok"] is True
     assert result["proposed"]["relationship"] == "extends"
-    assert Path(result["dossier_path"]).exists()
+    assert result["rebuild_needed"] is True
     assert Path(result["dossier_json_path"]).exists()
+    assert not Path(result["dossier_path"]).exists()  # not rendered until `wake rebuild`
+
+    evidence.rerender_dossier_md(
+        PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK["openalex_id"], base=tmp_path,
+    )
+    assert Path(result["dossier_path"]).exists()
 
     md_text = Path(result["dossier_path"]).read_text()
     assert "type: citing-work-evidence" in md_text
@@ -217,6 +223,7 @@ def test_build_dossier_flags_author_overlap_in_markdown_and_json(tmp_path):
     assert result["author_overlap"] is True
     assert result["overlapping_authors"] == ["Jianwei Li"]
 
+    evidence.rerender_dossier_md(seed, citing["openalex_id"], base=tmp_path)
     md_text = Path(result["dossier_path"]).read_text()
     assert "author_overlap: true" in md_text
     assert "Author overlap with seed:" in md_text
@@ -318,6 +325,9 @@ def test_dossier_markdown_quotes_full_paragraph_verbatim(tmp_path):
     )):
         result = evidence.build_dossier(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, verbose=False)
 
+    evidence.rerender_dossier_md(
+        PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK["openalex_id"], base=tmp_path,
+    )
     md_text = Path(result["dossier_path"]).read_text()
     assert long_quote in md_text
     assert "p. 3" in md_text

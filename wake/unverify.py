@@ -18,13 +18,16 @@ Reversing a verification means:
     (report.remove_override) -- there's no "unverified" override shape to
     append, the only way a work stops being verified is to have no
     override on file at all
-  - if an evidence dossier exists for the work, patching it back from
-    `verified` to `pending-human-review` (evidence_wiki.mark_pending),
+  - if an evidence dossier exists for the work, patching its JSON back
+    from `verified` to `pending-human-review` (evidence_wiki.mark_pending),
     undoing any relationship correction the reverted verification made
   - writing a `verification_reverted` line to `evidence/log.md`, matching
     the ad hoc format used during this session's manual recovery
-  - rebuilding `evidence/index.md` so the work moves back from Verified
-    to Pending Review
+
+Does NOT re-render `evidence/index.md` or any dossier `.md` -- rendering
+is `wake rebuild`'s job now, not a write-time side effect (see build.py's
+module docstring). Run `wake rebuild` after unverifying to move the work
+back to Pending Review in the rendered wiki.
 
 After unverifying, the work is back to whatever it was before: a
 `background-mention`-tier provisional guess if no evidence dossier ever
@@ -52,7 +55,7 @@ def unverify_work(
     Raises ValueError if *citing_id* was never verified in the first
     place (nothing to undo).
     """
-    from .evidence_wiki import append_log_entry, mark_pending, rebuild_index
+    from .evidence_wiki import append_log_entry, mark_pending
     from .report import remove_override
 
     seed_id = seed_work["openalex_id"]
@@ -72,8 +75,6 @@ def unverify_work(
         seed_id, event="verification_reverted", citing_id=citing_id,
         detail=detail, seed_title=seed_work.get("title"), base=base,
     )
-    if had_dossier:
-        rebuild_index(seed_id, seed_title=seed_work.get("title"), base=base)
 
     return {
         "ok": True,
@@ -81,6 +82,7 @@ def unverify_work(
         "reason": reason,
         "had_dossier": had_dossier,
         "reverted_at": now_iso(),
+        "rebuild_needed": True,
     }
 
 

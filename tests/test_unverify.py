@@ -111,10 +111,17 @@ def test_mark_pending_reverts_status(tmp_path):
     loaded = evidence.load_dossier(seed_id, citing_id, base=tmp_path)
     assert loaded["verification_status"] == "pending-human-review"
     assert "human_verification" not in loaded
+    assert loaded["pending_reason"] == "was a mistake"
 
+    # mark_pending() patches only the JSON now (rendering is `wake
+    # rebuild`'s job, see build.py's module docstring) -- a subsequent
+    # rerender must reproduce the pending status and reason purely from
+    # that JSON.
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, citing_id, base=tmp_path)
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
     assert "verification_status: pending-human-review" in md_text
     assert "## Status: pending your review" in md_text
+    assert "A prior verification was reverted: was a mistake" in md_text
 
 
 def test_mark_pending_undoes_relationship_correction(tmp_path):
@@ -134,6 +141,7 @@ def test_mark_pending_undoes_relationship_correction(tmp_path):
     assert "model_relationship" not in loaded["proposed"]
     assert "model_justification" not in loaded["proposed"]
 
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, citing_id, base=tmp_path)
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
     proposed_line = next(line for line in md_text.splitlines() if line.startswith("proposed_relationships:"))
     assert "extends" in proposed_line

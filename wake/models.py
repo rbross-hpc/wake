@@ -297,6 +297,13 @@ class EvidenceDossier(WakeModel):
     author_overlap: bool = False
     overlapping_authors: list[str] = Field(default_factory=list)
     human_verification: dict[str, Any] | None = None
+    pending_reason: str | None = None
+    """Set by evidence_wiki.mark_pending() when `wake unverify` reverts a
+    verified dossier back to pending-human-review, so the reason survives
+    a from-JSON re-render (rerender_dossier_md()/rebuild_seed) instead of
+    living only in an in-memory string patched onto the rendered .md.
+    Cleared on the next mark_verified() -- a fresh verification supersedes
+    whatever reason a prior revert recorded."""
 
 
 class EvidenceDossierWrite(EvidenceDossier):

@@ -2050,3 +2050,108 @@ network'`): 790 passed, 14 deselected -- unchanged, as expected for a docs/docst
 `PLAN.md`/`BACKLOG.md` updated: this item is closed. Remaining Structural Hardening follow-ons
 (unchanged) are full `WakeContext` threading through the ~90 `base:`-taking domain functions, and
 a persisted dirty/revision manifest for `wake rebuild`.
+
+---
+
+## v0.4.16 — Make rendering an explicit `wake rebuild` step (`refactor/explicit-render`)
+
+Phase 1 of the rebuild-manifest work (BACKLOG's persisted dirty/revision manifest item):
+removed every write-time side-effect render from wake's JSON-mutating commands, so `wake
+rebuild` is now the *only* place any derived Markdown gets (re-)written. This was a
+prerequisite the user identified directly: a manifest that shows "what changed since the last
+render" is only meaningful once rendering is a distinct, explicit act -- with commands still
+auto-rendering inline, a manifest would mostly report "nothing changed" because every write
+already re-rendered its own effects.
+
+### What changed
+
+Removed inline render calls (dossier `.md`, `evidence/index.md`, `evidence/themes/index.md`,
+theme/section/outline `.md`, README.md/AGENTS.md orientation) from every write path that had
+one: `evidence.build_dossier`, `report.add_override`, `unverify.unverify_work`,
+`themes.create_theme`/`confirm_theme`, `narrative.create_outline`/`create_section`/
+`confirm_section`. Each now writes only its JSON sidecar (plus, where applicable, an
+append-only `log.md` line -- logging is not rendering and correctly stays inline) and returns
+`"rebuild_needed": True`. `report.bake_and_save`/`narrative.stitch` remain explicit render
+verbs for `impact.md`/`narrative.md` (that is their whole purpose) but no longer additionally
+refresh README.md/AGENTS.md as a side effect -- `wake rebuild` calls both plus
+`rebuild_wiki_orientation` as separate, explicit steps, exactly as it already did.
+`build.py::rebuild_seed()` itself is unchanged in mechanism; its module docstring is rewritten
+to describe itself as *the* render step rather than a recovery tool for piecemeal-rendering
+gaps, since those gaps no longer exist -- there is nothing left to be piecemeal about.
+
+Two now-dead code paths were removed outright rather than left as unreachable: `themes.py`'s
+`_rerender_dossiers_for()` and `narrative.py`'s `_rerender_dependents()`, both write-time
+render-trigger helpers with no remaining callers. The render *functions* they used to call
+(`rerender_dossier_md`, `rerender_all_themes`, `rebuild_index`, etc.) are untouched and remain
+reachable via `rebuild_seed()` and their own standalone `--rerender-all`/`rerender-all` verbs.
+
+### Correctness fixes surfaced by the removal
+
+Three real bugs, not just test churn, fell out of making rendering explicit -- each was a
+place that checked a dossier's `.md` existence (as a proxy for "has this work been evidenced")
+when it should have checked the JSON sidecar, since a dossier now legitimately has JSON with no
+`.md` yet between a write and the next `wake rebuild`:
+
+1. `narrative._check_packet_consistency()` refused to draft a section citing a
+   just-verified work, because it checked `dossier_path(...).exists()` (the `.md`) instead of
+   `dossier_json_path(...).exists()`.
+2. `narrative._render_refs_in_section_prose()` and `report.bake_markdown()`'s "Strongest
+   Evidence" title-linking both had the same `.md`-existence check controlling whether to emit
+   a link -- fixed to check the JSON sidecar; the emitted link still points at the eventual
+   `.md` filename, which resolves once rendered.
+3. `evidence_wiki.append_log_entry()`'s dossier-link decision (whether to render `[id](id.md)`
+   or plain text in `log.md`) had the same issue -- a dossier logged in the same call that
+   built it would never get a link. Fixed to check the JSON sidecar.
+
+A fourth, pre-existing gap (not a bug, but tightened as part of this pass): `mark_pending()`'s
+`reason` argument (`wake unverify --reason "..."`) was patched directly into the dossier's
+already-rendered `.md` via a string replace, never persisted to JSON -- meaning a from-JSON
+`rerender_dossier_md()` call would silently drop it. Added `EvidenceDossier.pending_reason`
+(a new optional field; the model is `extra="allow"` so no version bump needed),
+`mark_pending()`/`mark_verified()` set/clear it, and `_render_dossier_markdown()` renders it
+from JSON like every other field. This closes the one case flagged in the normalize-audit
+(v0.4.15) as a "render depends on non-persisted in-memory state" finding.
+
+### CLI-facing changes
+
+Every affected command's human output gained a one-line `Run \`wake rebuild <seed>\`...` hint;
+`--json` output gained `"rebuild_needed": true`. The four `... show` commands that print an
+already-rendered `.md` (`theme show`, `narrative outline show`, `narrative section show`,
+`show dossier`) now distinguish "never created" (point at the `create` command) from "created
+but not yet rendered" (point at `wake rebuild`) by checking JSON vs. `.md` existence, instead
+of a single generic "run X first" message that would have been actively misleading once JSON
+and `.md` can legitimately diverge.
+
+### Docs
+
+`build.py`'s module docstring rewritten (recovery-tool framing -> the render step). SKILL.md:
+fixed every "automatically updates/regenerates ... no separate step needed" claim (the
+`wake override`/`wake evidence`/README.md-AGENTS.md-regeneration passages), added a `rebuild`
+to the primitives list, a new "Rendering the Wiki" section explaining the JSON-now/render-later
+model, and a 14th agent principle. `references/evidence.md`, `references/themes.md`,
+`references/narrative.md`, `references/output-layout.md` (the agent-facing mirrors): same
+audit and fix, including the theme/dossier "Referenced By" cross-link sections and the
+`.md`+`.json` pair convention writeup. `docs/workflow.md` (new "Rendering the Wiki" section,
+Quick Start now includes a `wake rebuild` call), `docs/evidence.md`, `docs/themes.md`,
+`docs/narrative.md` (human-facing mirrors): same fixes.
+
+### Verification
+
+`rtk ruff check wake/ tests/` clean, `rtk mypy` clean. Full offline suite under CI-parity
+conditions (`env -u OPENAI_API_KEY -u OPENAI_BASE_URL -u OPENAI_API_BASE pytest tests/ -m 'not
+network'`): 790 passed, 14 deselected -- unchanged count; this phase restructured many existing
+tests (adding explicit `rerender_dossier_md`/`rerender_all_themes`/`rerender_all_sections`/
+`rebuild_index`/`rebuild_themes_index`/`rebuild_wiki_orientation`/`rebuild_seed` calls where a
+test needed to read a `.md` that a write no longer renders inline) but did not add or remove
+any test cases net. The `test_wiki_invariants.py::_build_full_wiki` fixture -- shared by
+`test_build.py` and `test_wiki_invariants.py` -- now ends with a `rebuild_seed()` call instead
+of a bare `rebuild_wiki_orientation()`, matching what a real agent session would do after the
+same sequence of CLI calls.
+
+### Next phase
+
+Phase 2 (deferred to a future session): the persisted dirty/revision manifest itself, now that
+rendering is a distinct act for it to report a diff against. Scope per the user's framing: the
+manifest records what changed *between* renders (a diff/report), not an incremental-skip
+optimization of `rebuild_seed()` -- `rebuild_seed()` continues to unconditionally re-render
+everything; the manifest is additive, not a behavior change to the render path itself.

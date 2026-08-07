@@ -156,16 +156,19 @@ def _verified_ids(seed_id: str, base: Path | None = None) -> set[str]:
 def _check_packet_consistency(seed_id: str, base: Path | None = None) -> None:
     """Guard against a corrupted/half-migrated packet before trusting any
     reference marker in it: every citing work this seed's own bookkeeping
-    considers verified must have an actual dossier markdown file on disk
-    (the physical artifact of that verification). If any are missing,
-    the packet itself is inconsistent and no narrative built on top of it
-    can be trusted -- raise naming every offender, not just the first.
+    considers verified must have an actual dossier JSON sidecar on disk
+    (the physical artifact of that verification -- the JSON, not the
+    .md, since rendering is now a separate explicit step; see build.py's
+    module docstring -- a freshly-verified work legitimately has JSON but
+    no .md yet, until the next `wake rebuild`). If any are missing, the
+    packet itself is inconsistent and no narrative built on top of it can
+    be trusted -- raise naming every offender, not just the first.
     """
-    from .evidence import dossier_path
+    from .evidence import dossier_json_path
 
     missing = [
         cid for cid in sorted(_verified_ids(seed_id, base))
-        if not dossier_path(seed_id, cid, base).exists()
+        if not dossier_json_path(seed_id, cid, base).exists()
     ]
     if missing:
         raise ValueError(
@@ -272,6 +275,9 @@ def create_outline(
     Raises ValueError on a malformed component list (bad kind, missing
     theme_slugs for a theme-kind component, a referenced theme that
     doesn't exist, or a duplicate slug).
+
+    Writes only the outline's JSON. Does NOT render outline.md -- run
+    `wake rebuild` after this (see build.py's module docstring).
     """
     from .themes import load_theme
 
@@ -330,34 +336,17 @@ def create_outline(
     d.mkdir(parents=True, exist_ok=True)
     atomic_write_json(outline_json_path(seed_id, base), payload)
 
-    sections = _load_all_sections(seed_id, base)
-    atomic_write_text(outline_md_path(seed_id, base), _render_outline_markdown(seed_work, payload, sections))
-
+    # outline.md is intentionally NOT rendered here -- rendering is `wake
+    # rebuild`'s job now, not a write-time side effect (see build.py's
+    # module docstring).
     return {
         "ok": True,
         "outline_path": str(outline_md_path(seed_id, base)),
         "outline_json_path": str(outline_json_path(seed_id, base)),
         "components": normalized,
+        "rebuild_needed": True,
     }
 
-
-def _rerender_dependents(
-    seed_work: dict[str, Any], prose: str, theme_slugs: list[str], base: Path | None = None,
-) -> None:
-    """After a section is written/re-confirmed, re-render every OKF
-    document whose "Referenced by"/"Referenced By" back-link section may
-    now be stale: each citing work's evidence dossier named in *prose*'s
-    `[ref:...]` markers, and every theme named in *theme_slugs*. Purely a
-    rendering-only pass -- no LLM/PDF/state change on either side."""
-    from .evidence import rerender_dossier_md
-    from .themes import rerender_all_themes
-
-    cited_ids = {i for ids in _parse_ref_markers(prose) for i in ids if i != _SEED_REF}
-    seed_id = seed_work["openalex_id"]
-    for cid in cited_ids:
-        rerender_dossier_md(seed_work, cid, base=base)
-    if theme_slugs:
-        rerender_all_themes(seed_id, seed_work, base=base)
 
 
 def create_section(
@@ -392,6 +381,11 @@ def create_section(
 
     Always overwrites (no --force: nothing expensive to protect against
     re-doing -- same rationale as `wake theme create`).
+
+    Writes only the section's JSON sidecar. Does NOT render the section's
+    .md, outline.md's status column, or any referenced dossier's/theme's
+    back-link -- run `wake rebuild` after this (see build.py's module
+    docstring).
     """
     from .themes import load_theme
 
@@ -437,11 +431,11 @@ def create_section(
     d = sections_dir(seed_id, base)
     d.mkdir(parents=True, exist_ok=True)
     atomic_write_json(section_json_path(seed_id, slug, base), payload)
-    atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, payload, base))
 
-    _refresh_outline_md(seed_work, base)
-    _rerender_dependents(seed_work, prose, theme_slugs, base)
-
+    # The section's .md, outline.md's status column, and every referenced
+    # dossier's/theme's back-link are intentionally NOT re-rendered here --
+    # rendering is `wake rebuild`'s job now, not a write-time side effect
+    # of this JSON write (see build.py's module docstring).
     return {
         "ok": True,
         "section_path": str(section_md_path(seed_id, slug, base)),
@@ -449,6 +443,7 @@ def create_section(
         "section_status": "draft",
         "kind": kind,
         "theme_slugs": theme_slugs,
+        "rebuild_needed": True,
     }
 
 
@@ -471,8 +466,12 @@ def confirm_section(
     For a "free"-kind section: no themes to check, confirms immediately
     (the human's approval of the framing prose itself is the only bar).
 
-    Returns {"ok": True, ...} on success, or {"ok": False, "reason":
-    "unconfirmed_themes", "unconfirmed": [...]} if blocked.
+    Writes only the section's JSON sidecar. Does NOT render Markdown --
+    run `wake rebuild` after this (see build.py's module docstring).
+
+    Returns {"ok": True, ..., "rebuild_needed": True} on success, or
+    {"ok": False, "reason": "unconfirmed_themes", "unconfirmed": [...]}
+    if blocked.
     """
     from .themes import load_theme
 
@@ -507,16 +506,15 @@ def confirm_section(
     validated = NarrativeSectionWrite.validate_or_raise(section, context=f"narrative section {slug!r}")
     section = validated.to_json_dict()
     atomic_write_json(section_json_path(seed_id, slug, base), section)
-    atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, section, base))
 
-    _refresh_outline_md(seed_work, base)
-    _rerender_dependents(seed_work, section["prose"], theme_slugs, base)
-
+    # See create_section()'s comment -- rendering is `wake rebuild`'s job,
+    # not a side effect of this JSON write.
     return {
         "ok": True,
         "section_path": str(section_md_path(seed_id, slug, base)),
         "section_json_path": str(section_json_path(seed_id, slug, base)),
         "section_status": "confirmed",
+        "rebuild_needed": True,
     }
 
 
@@ -688,6 +686,9 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
     .json/.md.
 
     Raises ValueError if no outline has been created yet.
+
+    Does NOT refresh README.md/AGENTS.md wiki orientation -- run `wake
+    rebuild` for that (see build.py's module docstring).
     """
     seed_id = seed_work["openalex_id"]
     outline = load_outline(seed_id, base)
@@ -764,9 +765,11 @@ def stitch(seed_work: dict[str, Any], *, base: Path | None = None) -> dict[str, 
     md_path = narrative_md_path(seed_id, base)
     atomic_write_text(md_path, "\n".join(lines))
 
-    from .evidence_wiki import rebuild_wiki_orientation
-    rebuild_wiki_orientation(seed_id, seed_work, base=base)
-
+    # README.md/AGENTS.md orientation is intentionally NOT refreshed here
+    # -- `stitch()` remains an explicit render verb for narrative.md
+    # itself, but the wiki orientation files are `wake rebuild`'s job now
+    # (see build.py's module docstring); `wake rebuild` calls stitch() and
+    # rebuild_wiki_orientation() as two separate, explicit steps.
     return {
         "ok": True,
         "narrative_path": str(md_path),
@@ -958,8 +961,8 @@ def _refresh_outline_md(seed_work: dict[str, Any], base: Path | None = None) -> 
 def _render_refs_in_section_prose(prose: str, seed_id: str, base: Path | None = None) -> str:
     """Rewrite every `[ref:ID,ID,...]` marker in one section's *own*
     rendered markdown into a link to that source's own OKF document --
-    `../../evidence/<citing-id>.md` for a citing work with a dossier on
-    disk, `../../impact.md` for `[ref:SEED]`. This is a *display-only*
+    `../../evidence/<citing-id>.md` for a citing work with a dossier,
+    `../../impact.md` for `[ref:SEED]`. This is a *display-only*
     convenience distinct from stitch()'s `[R<n>]` renumbering: it never
     touches the section's own `prose` field (the raw `[ref:...]` marker
     form is what `_parse_ref_markers`/`_validate_ref_ids` and the stitched
@@ -967,8 +970,15 @@ def _render_refs_in_section_prose(prose: str, seed_id: str, base: Path | None = 
     fires for a citing ID that actually has a dossier -- a marker naming
     a verified-but-dossier-less work (a plain human-judgment override)
     is left as the raw `[ref:ID]` text, since there is nothing to link to.
+
+    "Has a dossier" is checked via the JSON sidecar, not the .md itself
+    -- rendering is a separate explicit step (`wake rebuild`), so a
+    dossier built in the same batch as this section legitimately has
+    JSON but no .md yet (see build.py's module docstring); the emitted
+    link still points at the eventual .md filename, which will resolve
+    once rendered.
     """
-    from .evidence import dossier_path
+    from .evidence import dossier_json_path
 
     def _replace(m: re.Match) -> str:
         ids = [part.strip() for part in m.group(1).split(",") if part.strip()]
@@ -976,7 +986,7 @@ def _render_refs_in_section_prose(prose: str, seed_id: str, base: Path | None = 
         for i in ids:
             if i == _SEED_REF:
                 rendered.append(f"[{i}](../../impact.md)")
-            elif dossier_path(seed_id, i, base).exists():
+            elif dossier_json_path(seed_id, i, base).exists():
                 rendered.append(f"[{i}](../../evidence/{i}.md)")
             else:
                 rendered.append(f"[ref:{i}]")

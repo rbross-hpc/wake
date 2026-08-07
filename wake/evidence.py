@@ -713,6 +713,10 @@ def _render_dossier_markdown(
             "`wake override` on their behalf once the human accepts or adjusts "
             "the reading — see SKILL.md."
         )
+        pending_reason = finding.get("pending_reason")
+        if pending_reason:
+            lines.append("")
+            lines.append(f"(A prior verification was reverted: {pending_reason})")
     lines.append("<!-- status-section:end -->")
     lines.append("")
 
@@ -743,7 +747,11 @@ def build_dossier(
     verbose: bool = True,
 ) -> dict[str, Any]:
     """Full pipeline: fetch PDF -> extract full text -> LLM verification ->
-    write the OKF dossier (.md + .json sidecar).
+    write the dossier's JSON sidecar. Does NOT render the dossier's .md
+    (or evidence/index.md, README.md/AGENTS.md) -- run `wake rebuild`
+    after this to render Markdown from the JSON just written; see
+    build.py's module docstring for why rendering is a separate,
+    explicit step rather than a side effect of this call.
 
     Returns a summary dict for the caller (CLI -> agent) to act on:
       {
@@ -751,6 +759,7 @@ def build_dossier(
         "dossier_path": "...", "dossier_json_path": "...",
         "pdf_path": "..." | None, "pdf_source": "..." | None,
         "provisional": {...}, "proposed": {...}, "quotes": [...],
+        "rebuild_needed": True,
       }
     or, if no PDF could be acquired:
       {"ok": False, "reason": "no_pdf", "fetch_result": {...}}
@@ -843,17 +852,11 @@ def build_dossier(
     md_path = dossier_path(seed_id, citing_id, base)
     json_path = dossier_json_path(seed_id, citing_id, base)
 
-    # JSON is canonical; the .md is a deterministic render derived from it
-    # (see rerender_dossier_md(), which always reads the .json as source
-    # of truth and never the .md) -- so JSON is written first. If the
-    # process is interrupted between the two writes below, the result is
-    # a .json with no .md yet, which `wake evidence --rerender-all` or
-    # `wake rebuild` (see build.py) can regenerate purely from the JSON
-    # with no LLM call. The reverse order (a .md with no .json backing
-    # it) is not recoverable the same way, since every rebuild_*/
-    # rerender_* function in evidence_wiki.py/evidence.py treats the
-    # .json sidecars as the sole source of truth and globs *.json, never
-    # *.md.
+    # JSON is canonical; the .md is a deterministic render derived from
+    # it, produced only by an explicit `wake rebuild` (or `wake evidence
+    # --rerender-all`) -- never as a side effect of this write. This
+    # function writes only the JSON sidecar below; a .json with no .md
+    # yet is the normal, expected state until the next rebuild.
     #
     # Stored relative to this sidecar's own directory (evidence/), not
     # absolute -- so the whole wake-out/<seed>/ tree stays self-consistent
@@ -879,26 +882,20 @@ def build_dossier(
     validated = EvidenceDossierWrite.validate_or_raise(json_payload, context=f"evidence dossier {citing_id!r}")
     atomic_write_json(json_path, validated.to_json_dict())
 
-    md_text = _render_dossier_markdown(
-        seed_work, citing_work, finding,
-        pdf_path=Path(pdf_path_str), pdf_source=pdf_source,
-        extracted_text_path_str=extracted_text_path_str,
-        base=base,
-    )
-    atomic_write_text(md_path, md_text)
-
+    # The dossier's .md, evidence/index.md, and README.md/AGENTS.md are
+    # intentionally NOT rendered here -- rendering is an explicit step
+    # (`wake rebuild`), not a write-time side effect of this JSON write.
+    # See build.py's module docstring.
     if verbose:
-        print(f"[wake] Dossier written: {md_path}", file=sys.stderr)
+        print(f"[wake] Dossier JSON written: {json_path} -- run `wake rebuild` to render Markdown.", file=sys.stderr)
 
-    from .evidence_wiki import append_log_entry, rebuild_index, rebuild_wiki_orientation
+    from .evidence_wiki import append_log_entry
     event = "dossier_rebuilt" if force else "dossier_built"
     append_log_entry(
         seed_id, event=event, citing_id=citing_id,
         detail=f"proposed: {finding['proposed']['relationship']} ({len(finding['quotes'])} quotes)",
         seed_title=seed_work.get("title"), base=base,
     )
-    rebuild_index(seed_id, seed_title=seed_work.get("title"), base=base)
-    rebuild_wiki_orientation(seed_id, seed_work, base=base)
 
     return {
         "ok": True,
@@ -907,6 +904,7 @@ def build_dossier(
         "pdf_path": pdf_path_str,
         "pdf_source": pdf_source,
         "extracted_text_path": extracted_text_path_str,
+        "rebuild_needed": True,
         **finding,
     }
 
@@ -979,6 +977,7 @@ def rerender_dossier_md(
         "author_overlap": payload.get("author_overlap", False),
         "overlapping_authors": payload.get("overlapping_authors", []),
         "human_verification": payload.get("human_verification", {}),
+        "pending_reason": payload.get("pending_reason"),
     }
 
     wd = evidence_dir(seed_id, base)

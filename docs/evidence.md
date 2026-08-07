@@ -15,8 +15,10 @@ independently judges the relationship — quoting full paragraphs verbatim,
 with page numbers, for every claim it makes. It never fabricates a
 passage: if the seed paper isn't actually discussed in the text, it says
 so and returns an empty quote list rather than inventing evidence. The
-result is a `"proposed"` finding, written to an OKF-style dossier
-(`wake-out/<seed>/evidence/<citing-id>.md`) — but it is **never
+result is a `"proposed"` finding, written to the dossier's JSON sidecar
+(`wake-out/<seed>/evidence/<citing-id>.json`) — the OKF-style `.md`
+rendering of it is produced separately by `wake rebuild` (see "The
+evidence wiki" below), not by this call. The finding is **never
 auto-applied**. Only a human-approved `wake override` call promotes a
 finding to `"verified"`:
 
@@ -51,8 +53,7 @@ verbatim around any passage it relies on. Requires the `pdf` extra
 
 ## The evidence wiki (`index.md` / `log.md`)
 
-Every dossier is also a node in a small OKF-style wiki, maintained
-automatically — no separate command to run. `wake-out/<seed>/evidence/index.md`
+Every dossier is also a node in a small OKF-style wiki. `wake-out/<seed>/evidence/index.md`
 is a standing catalog of every investigated citing work, grouped
 **Verified** / **Pending Review** and ranked within each group by the same
 relationship-strength × reach score the brief uses for "Strongest
@@ -61,15 +62,19 @@ dossier built or rebuilt, every failed investigation (no PDF found,
 extraction produced no text), and every human verification, newest at
 the bottom.
 
-Both regenerate as a side effect of `wake evidence` (fresh build or
-`--force` rebuild — never on a cache hit) and `wake override
---verification-source evidence-dossier` (which also flips the matching
-dossier from `pending-human-review` to `verified` in place). A plain
+`log.md` is append-only and updated immediately by `wake evidence`/`wake
+override`/`wake unverify` — but `index.md` and every dossier's own `.md`
+are rendered only by `wake rebuild <seed>`, a separate explicit step, not
+a side effect of those commands. `wake evidence`/`wake override
+--verification-source evidence-dossier`/`wake unverify` all write their
+JSON immediately (the dossier's `pending-human-review`/`verified` status
+flip included) and return the data you need directly — run `wake rebuild
+<seed>` afterward to bring the rendered `.md` files up to date. A plain
 `--verification-source human-judgment` override has no dossier behind it
-and leaves the wiki untouched. Re-running `wake evidence --force` on an
-already-verified dossier resets it back to `pending-human-review` — a
-fresh full-text read is a new finding, not a continuation of the old
-sign-off.
+and leaves the evidence wiki untouched. Re-running `wake evidence
+--force` on an already-verified dossier resets it back to
+`pending-human-review` in the JSON — a fresh full-text read is a new
+finding, not a continuation of the old sign-off.
 
 ## Inspecting what the model actually read
 

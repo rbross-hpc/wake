@@ -134,10 +134,19 @@ migration — see
 [`docs/design/normalize-audit.md`](docs/design/normalize-audit.md) for
 the full determination.
 
-**Next phase:** full `WakeContext` threading through the ~90 existing
-`base:`-taking domain functions, or a persisted dirty/revision manifest
-for `wake rebuild` tracking staleness *between* calls — see
-`BACKLOG.md`'s "Open / Not Yet Built" section for current sequencing.
+v0.4.16 is Phase 1 of the persisted dirty/revision manifest item below:
+rendering is now a single explicit step (`wake rebuild`), not a
+write-time side effect of `wake evidence`/`override`/`unverify`/`theme
+create`/`confirm`/`narrative outline create`/`section create`/`confirm`
+— a prerequisite for a manifest that reports what changed *between*
+renders, per the user's framing (a diff/report, not an incremental-skip
+optimization).
+
+**Next phase:** Phase 2 — the persisted dirty/revision manifest itself,
+now that rendering is a distinct act for it to report a diff against.
+Or, independently, full `WakeContext` threading through the ~90 existing
+`base:`-taking domain functions — see `BACKLOG.md`'s "Open / Not Yet
+Built" section for current sequencing.
 
 **Deferred, real, not forgotten:**
 - Product features: Theme B (DOE-relevance signals), Theme G (timeline
