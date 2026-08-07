@@ -5,7 +5,9 @@ dist/
 build/
 .env
 wake-out/
+!tests/fixtures/golden-packet/wake-out/
 *.tmp
 .DS_Store
 AGENTS.md
+!tests/fixtures/golden-packet/wake-out/W4414299303/AGENTS.md
 opencode.json

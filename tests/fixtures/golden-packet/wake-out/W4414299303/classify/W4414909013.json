@@ -1,0 +1,25 @@
+{
+  "relationship": "background-mention",
+  "confidence": 0.7,
+  "justification": "The citing paper focuses on agentic workflow reliability and provenance in AI-driven scientific discovery, and may reference the seed's event-streaming infrastructure as related background context for HPC scientific workflows, but there is no direct technical dependency, extension, or benchmarking relationship evident.",
+  "relationships": [
+    {
+      "label": "background-mention",
+      "confidence": 0.7,
+      "justification": "The citing paper focuses on agentic workflow reliability and provenance in AI-driven scientific discovery, and may reference the seed's event-streaming infrastructure as related background context for HPC scientific workflows, but there is no direct technical dependency, extension, or benchmarking relationship evident."
+    }
+  ],
+  "has_abstract": true,
+  "verification_status": "provisional",
+  "author_overlap": true,
+  "overlapping_authors": [
+    "Amal Gueroudji",
+    "Robert Ross",
+    "Matthieu Dorier",
+    "Philip Carns",
+    "Kyle Chard"
+  ],
+  "prompt_version": "classify-2",
+  "model": "Claude Sonnet 4.6",
+  "classified_at": "2026-08-07T12:40:42+00:00"
+}

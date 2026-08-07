@@ -1,0 +1,190 @@
+{
+  "seed_openalex_id": "W4414299303",
+  "seed_title": "Toward a persistent event-streaming system for high-performance computing applications",
+  "total_citing_works": 4,
+  "classified_count": 4,
+  "verified_count": 2,
+  "self_extension_count": 4,
+  "coverage": 1.0,
+  "highly_cited_citing": 0,
+  "no_abstract_count": 0,
+  "backfilled_abstract_count": 0,
+  "by_year": [
+    {
+      "year": 2025,
+      "count": 3
+    },
+    {
+      "year": 2026,
+      "count": 1
+    }
+  ],
+  "by_relationship": {
+    "background-mention": 2,
+    "builds-on": 2
+  },
+  "by_venue_type": {
+    "conference": 4
+  },
+  "top_fields": [
+    {
+      "field": "Decision Sciences",
+      "count": 3
+    },
+    {
+      "field": "Computer Science",
+      "count": 3
+    },
+    {
+      "field": "Materials Science",
+      "count": 1
+    },
+    {
+      "field": "Medicine",
+      "count": 1
+    }
+  ],
+  "top_evidence": [
+    {
+      "openalex_id": "W4416004574",
+      "title": "RESILIO : A Scalable and Composable Architecture for Tomographic Reconstruction Workflows",
+      "authors": [
+        "Amal Gueroudji",
+        "Matthieu Dorier",
+        "Philip Carns"
+      ],
+      "year": 2025,
+      "venue": null,
+      "doi": "10.1145/3731599.3767575",
+      "cited_by_count": 1,
+      "relationship": "builds-on",
+      "confidence": 0.95,
+      "justification": "The citing paper explicitly builds ResiliO atop Mofka (the persistent event-streaming system described in the seed paper), using it as a core component to enable persistent streaming and resilience in tomographic reconstruction workflows.",
+      "relationships": [
+        {
+          "label": "builds-on",
+          "confidence": 0.95,
+          "justification": "The citing paper explicitly builds ResiliO atop Mofka (the persistent event-streaming system described in the seed paper), using it as a core component to enable persistent streaming and resilience in tomographic reconstruction workflows."
+        }
+      ],
+      "human_reviewed": false,
+      "verification_status": "provisional",
+      "verification_source": null,
+      "author_overlap": true,
+      "overlapping_authors": [
+        "Amal Gueroudji",
+        "Matthieu Dorier",
+        "Philip Carns",
+        "Parth Patel",
+        "Tekin Bi\u00e7er",
+        "Robert Ross",
+        "Kyle Chard",
+        "Ian Foster"
+      ],
+      "score": 4.159
+    },
+    {
+      "openalex_id": "W4414909013",
+      "title": "ControlA: Agentic Workflow Control Mechanisms for Reliable Science",
+      "authors": [
+        "Amal Gueroudji",
+        "Tanwi Mallick",
+        "Renan P. Souza"
+      ],
+      "year": 2025,
+      "venue": null,
+      "doi": "10.1109/escience65000.2025.00086",
+      "cited_by_count": 1,
+      "relationship": "background-mention",
+      "confidence": 0.7,
+      "justification": "The citing paper focuses on agentic workflow reliability and provenance in AI-driven scientific discovery, and may reference the seed's event-streaming infrastructure as related background context for HPC scientific workflows, but there is no direct technical dependency, extension, or benchmarking relationship evident.",
+      "relationships": [
+        {
+          "label": "background-mention",
+          "confidence": 0.7,
+          "justification": "The citing paper focuses on agentic workflow reliability and provenance in AI-driven scientific discovery, and may reference the seed's event-streaming infrastructure as related background context for HPC scientific workflows, but there is no direct technical dependency, extension, or benchmarking relationship evident."
+        }
+      ],
+      "human_reviewed": false,
+      "verification_status": "provisional",
+      "verification_source": null,
+      "author_overlap": true,
+      "overlapping_authors": [
+        "Amal Gueroudji",
+        "Robert Ross",
+        "Matthieu Dorier",
+        "Philip Carns",
+        "Kyle Chard"
+      ],
+      "score": 0.693
+    },
+    {
+      "openalex_id": "W4416004498",
+      "title": "LLM Agents for Interactive Workflow Provenance: Reference Architecture and Evaluation Methodology",
+      "authors": [
+        "Renan Souza",
+        "Timothy Poteet",
+        "Brian D. Etz"
+      ],
+      "year": 2025,
+      "venue": null,
+      "doi": "10.1145/3731599.3767582",
+      "cited_by_count": 1,
+      "relationship": "background-mention",
+      "confidence": 1.0,
+      "justification": "Mofka is mentioned once as one possible broker option alongside Redis and Kafka; implementation uses Redis Pub/Sub, no direct extension (full-text verified, p.3).",
+      "relationships": [
+        {
+          "label": "background-mention",
+          "confidence": 0.7,
+          "justification": "The citing paper focuses on LLM agents for workflow provenance analysis in HPC environments and likely references the seed paper as related infrastructure or background context for event-streaming in HPC, but does not directly extend, build on, or benchmark against it."
+        }
+      ],
+      "human_reviewed": true,
+      "verification_status": "verified",
+      "verification_source": "evidence-dossier",
+      "author_overlap": true,
+      "overlapping_authors": [
+        "Renan Souza",
+        "Amal Gueroudji"
+      ],
+      "score": 0.693
+    },
+    {
+      "openalex_id": "W7167027240",
+      "title": "StreamGuard: Low-Overhead Resilience for Real-time HPC Data Streams",
+      "authors": [
+        "Hai Thanh Nguyen",
+        "Bogdan Nicolae",
+        "Tekin Bi\u00e7er"
+      ],
+      "year": 2026,
+      "venue": null,
+      "doi": "10.1145/3797905.3807872",
+      "cited_by_count": 0,
+      "relationship": "builds-on",
+      "confidence": 1.0,
+      "justification": "StreamGuard directly builds on Mofka as its core resilience communication layer, wrapping it to provide reliable producer-consumer streaming with QoS guarantees (full-text verified, p.7).",
+      "relationships": [
+        {
+          "label": "builds-on",
+          "confidence": 0.72,
+          "justification": "StreamGuard builds resilience mechanisms (checkpointing and load redistribution) specifically for HPC data streaming workflows, directly depending on the persistent event-streaming infrastructure for HPC applications described in the seed paper as its underlying streaming foundation."
+        }
+      ],
+      "human_reviewed": true,
+      "verification_status": "verified",
+      "verification_source": "evidence-dossier",
+      "author_overlap": true,
+      "overlapping_authors": [
+        "Bogdan Nicolae",
+        "Tekin Bi\u00e7er",
+        "Amal Gueroudji",
+        "Matthieu Dorier",
+        "Kyle Chard",
+        "Ian Foster"
+      ],
+      "score": 0.0
+    }
+  ]
+}

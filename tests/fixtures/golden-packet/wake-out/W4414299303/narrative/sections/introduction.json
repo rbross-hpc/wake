@@ -1,0 +1,12 @@
+{
+  "seed_openalex_id": "W4414299303",
+  "slug": "introduction",
+  "title": "Introduction",
+  "kind": "free",
+  "theme_slugs": [],
+  "prose": "Mofka introduces a persistent event-streaming layer purpose-built for HPC environments, addressing the long-standing tension between the persistence of parallel file systems and the speed of direct inter-component communication [ref:SEED]. By providing Kafka-style topic-based publish/subscribe with RDMA-optimized transport, Mofka enables HPC workflows to adopt event-driven patterns previously impractical at supercomputer scale [ref:SEED]. This narrative surveys how Mofka has been adopted and cited in the literature, organized by two emergent themes: its role as infrastructure for workflow provenance systems, and its use as a building block for resilient streaming workflows.",
+  "section_status": "confirmed",
+  "created_at": "2026-08-07T12:43:29+00:00",
+  "updated_at": "2026-08-07T12:43:47+00:00",
+  "confirmed_at": "2026-08-07T12:43:47+00:00"
+}

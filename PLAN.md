@@ -1616,3 +1616,70 @@ by the identity test + the allowlist test).
 ### Verification
 
 ruff, mypy, 722/722 offline tests passing.
+
+## v0.4.8 — Golden-packet fixture: Dorier Mofka (W4414299303) (`test/golden-packet`)
+
+**Assessment driver:** The second-look assessment (20260806-wake-assessment-2.md) identified a
+whole-packet golden-fixture test as "now more important than adding additional unit tests" and
+as the gating prerequisite for safely extending the dossier-versioning pattern (Phase 6) to the
+other four artifact families.  This phase delivers that fixture.
+
+### Seed paper
+
+Matthieu Dorier et al., "Toward a persistent event-streaming system for high-performance
+computing applications," *Frontiers in High Performance Computing*, 2025.
+DOI: 10.3389/fhpcp.2025.1638203 · OpenAlex: W4414299303 · OSTI: 3002321 · License: CC-BY 4.0.
+
+### How the packet was generated
+
+A live end-to-end run against OpenAlex + Claude Sonnet 4.6 via the Argo gateway:
+
+```
+wake resolve "10.3389/fhpcp.2025.1638203"   # seed PDF auto-fetched from OSTI
+wake describe W4414299303                    # LLM contribution paragraph
+wake citing W4414299303                      # 4 citing works
+wake classify W4414299303                    # real LLM classifications
+wake bake W4414299303
+wake evidence W4414299303 W4416004498        # background-mention (arXiv PDF)
+wake evidence W4414299303 W7167027240        # builds-on (arXiv PDF)
+# W4414909013, W4416004574: no PDF available -> no dossier (realistic, noted)
+wake override ...  (x2, accept proposed findings)
+wake theme create ... provenance-capture
+wake theme create ... resilient-workflows
+wake narrative outline/section create ... (3 sections)
+wake narrative section confirm ... introduction
+wake narrative stitch W4414299303
+wake rebuild W4414299303
+```
+
+Real LLM findings: W4416004574 (RESILIO) and W7167027240 (StreamGuard) classified `builds-on`;
+W4414909013 (ControlA) and W4416004498 (LLM Agents for Provenance) classified
+`background-mention`.  Both themes are draft (two cited works lack verified dossiers -- PDFs
+not publicly available at generation time).
+
+### What is vendored
+
+`tests/fixtures/golden-packet/wake-out/W4414299303/` -- all canonical JSON/JSONL, all derived
+Markdown renders, both PDF extraction caches (pdfs/*.pdf.json, seed.pdf.json), and
+evidence/log.md.  Binary PDFs stripped (seed.pdf, pdfs/*.pdf).  37 files total.
+
+### Tests (`tests/test_golden_packet.py`)
+
+25 new tests (722->747 offline passing):
+
+- **Schema validation (non-slow):** all canonical artifacts validate against current Pydantic
+  models (Work, ClassificationResult, EvidenceDossier, Theme, NarrativeOutline/Section,
+  Override).
+- **Phase-6 acceptance test (non-slow):** real dossiers on disk have schema_version=2 and
+  relative pdf_path; load_dossier() returns schema_version=2 on the real packet; migrate_dossier()
+  applied to a stripped real dossier returns schema_version=2 preserving all fields;
+  load_dossier() on an artificially-stripped copy upgrades at read time.
+- **Rebuild cycle (slow -- shutil.copytree + rebuild_seed()):** succeeds; dossier/override/
+  theme/section counts preserved; verification status preserved; double-rebuild produces same
+  set of .md files.
+- **Structural sanity (non-slow):** evidence/log.md present and non-empty; PDF extraction caches
+  exist; seed has description; narrative.md references Mofka.
+
+### Verification
+
+ruff, mypy, 747/747 offline tests passing.

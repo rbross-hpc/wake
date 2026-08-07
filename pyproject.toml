@@ -36,6 +36,7 @@ wake = ["config.yaml", "skills/impact-analysis/**/*"]
 [tool.pytest.ini_options]
 markers = [
     "network: marks tests that make real network calls (deselect with -m 'not network')",
+    "slow: marks golden-packet tests that copy+rebuild a full packet (run with -m slow or as part of the full suite)",
 ]
 
 [tool.ruff]

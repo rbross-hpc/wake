@@ -1,0 +1,26 @@
+{
+  "seed_openalex_id": "W4414299303",
+  "slug": "resilient-workflows",
+  "title": "Mofka as a Building Block for Resilient HPC Workflows",
+  "summary": "Mofka's persistence and RDMA-optimized transport make it an attractive substrate for workflow resilience layers. Systems such as StreamGuard and RESILIO build directly on Mofka's topic-based publish/subscribe model to provide fault tolerance, recovery, and composable pipeline architectures for streaming HPC applications at supercomputer scale.",
+  "theme_status": "draft",
+  "created_at": "2026-08-07T12:43:00+00:00",
+  "updated_at": "2026-08-07T12:43:00+00:00",
+  "citing_works": [
+    {
+      "citing_id": "W7167027240",
+      "status": "verified",
+      "has_dossier": true,
+      "title": "StreamGuard: Low-Overhead Resilience for Real-time HPC Data Streams"
+    },
+    {
+      "citing_id": "W4416004574",
+      "status": "provisional",
+      "has_dossier": false,
+      "title": "RESILIO : A Scalable and Composable Architecture for Tomographic Reconstruction Workflows"
+    }
+  ],
+  "needs_evidence": [
+    "W4416004574"
+  ]
+}

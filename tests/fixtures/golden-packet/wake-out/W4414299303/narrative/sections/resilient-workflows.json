@@ -1,0 +1,13 @@
+{
+  "seed_openalex_id": "W4414299303",
+  "slug": "resilient-workflows",
+  "title": "Resilient HPC Workflows",
+  "kind": "theme",
+  "theme_slugs": [
+    "resilient-workflows"
+  ],
+  "prose": "The most direct evidence of Mofka's impact is the set of systems that build on it as a core architectural component. StreamGuard wraps Mofka as its resilience communication layer, using Mofka topics to implement reliable producer-consumer streaming with exactly-once delivery semantics and QoS guarantees for real-time HPC data streams [ref:W7167027240]. This tight coupling demonstrates that Mofka's API and persistence guarantees are sufficient to ground a production resilience system, not merely to inform one.",
+  "section_status": "draft",
+  "created_at": "2026-08-07T12:43:43+00:00",
+  "updated_at": "2026-08-07T12:43:43+00:00"
+}

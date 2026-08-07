@@ -1,0 +1,13 @@
+{
+  "seed_openalex_id": "W4414299303",
+  "slug": "provenance",
+  "title": "Mofka in Workflow Provenance",
+  "kind": "theme",
+  "theme_slugs": [
+    "provenance-capture"
+  ],
+  "prose": "HPC workflows increasingly require provenance tracking to enable reproducibility, debugging, and audit. Mofka's persistent event-streaming model provides a natural substrate: workflow events can be published to Mofka topics and consumed asynchronously by provenance collectors without blocking the primary computation [ref:SEED]. An LLM-based interactive provenance system cites Mofka as a candidate HPC-optimized broker for provenance message transport, noting its RDMA-optimized transport makes it well-suited to tightly coupled HPC networks [ref:W4416004498].",
+  "section_status": "draft",
+  "created_at": "2026-08-07T12:43:36+00:00",
+  "updated_at": "2026-08-07T12:43:36+00:00"
+}

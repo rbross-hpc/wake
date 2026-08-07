@@ -1,0 +1,28 @@
+{
+  "relationship": "builds-on",
+  "confidence": 0.95,
+  "justification": "The citing paper explicitly builds ResiliO atop Mofka (the persistent event-streaming system described in the seed paper), using it as a core component to enable persistent streaming and resilience in tomographic reconstruction workflows.",
+  "relationships": [
+    {
+      "label": "builds-on",
+      "confidence": 0.95,
+      "justification": "The citing paper explicitly builds ResiliO atop Mofka (the persistent event-streaming system described in the seed paper), using it as a core component to enable persistent streaming and resilience in tomographic reconstruction workflows."
+    }
+  ],
+  "has_abstract": true,
+  "verification_status": "provisional",
+  "author_overlap": true,
+  "overlapping_authors": [
+    "Amal Gueroudji",
+    "Matthieu Dorier",
+    "Philip Carns",
+    "Parth Patel",
+    "Tekin Bi\u00e7er",
+    "Robert Ross",
+    "Kyle Chard",
+    "Ian Foster"
+  ],
+  "prompt_version": "classify-2",
+  "model": "Claude Sonnet 4.6",
+  "classified_at": "2026-08-07T12:40:51+00:00"
+}
