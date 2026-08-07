@@ -54,12 +54,119 @@ files from JSON that's already there. It also never invents JSON that
 doesn't exist: a seed with no evidence/ directory yet simply skips that
 step, same as every individual `rerender_*`/`rebuild_*` function already
 does.
+
+As of the Phase 2 follow-on to the above (v0.4.17), every rebuild also
+reports what changed on the *input* side since the previous rebuild: a
+persisted `rebuild-manifest.json` sidecar (models.RebuildManifest) holds
+a sha256 per JSON render-input source (seed.json, citing.json,
+classified.json, overrides.jsonl, every dossier/theme/section JSON,
+outline.json -- never the rendered Markdown/index files themselves).
+Each call to `rebuild_seed()` compares the current hashes to that
+sidecar, reports which sources were added/changed/removed since the
+last rebuild under the returned `"changes"` key, and rewrites the
+sidecar with the fresh hashes. This is report-only: it never gates or
+skips a render step above; the manifest exists to answer "what changed
+between renders" (a question that's only meaningful now that rendering
+is a single distinct act), not to make `rebuild_seed()` incremental. See
+`_collect_source_hashes()`/`_diff_and_write_manifest()` below.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 from typing import Any
+
+from .io import atomic_write_json, now_iso, read_json, sha256_bytes
+from .models import RebuildManifestWrite, migrate_manifest
+
+
+def _manifest_path(seed_id: str, base: Path | None = None) -> Path:
+    from .seed import work_dir
+
+    return work_dir(seed_id, base) / "rebuild-manifest.json"
+
+
+def _collect_source_hashes(seed_id: str, base: Path | None = None) -> dict[str, str]:
+    """Hash every JSON file that currently feeds a render for this seed,
+    keyed by a stable path-like key relative to the seed's work dir.
+
+    This is the *input* side of "what changed between renders" -- render
+    outputs (.md/index files) are never hashed here, and this map is
+    never consulted to decide whether to render something; see this
+    module's docstring.
+    """
+    from .evidence import evidence_dir
+    from .narrative import narrative_dir, outline_json_path, sections_dir
+    from .seed import work_dir
+    from .themes import themes_dir
+
+    wd = work_dir(seed_id, base)
+    sources: dict[str, str] = {}
+
+    def _hash_file(path: Path, key: str) -> None:
+        if path.exists():
+            sources[key] = sha256_bytes(path.read_bytes())
+
+    _hash_file(wd / "seed.json", "seed.json")
+    _hash_file(wd / "citing.json", "citing.json")
+    _hash_file(wd / "classified.json", "classified.json")
+    _hash_file(wd / "overrides.jsonl", "overrides.jsonl")
+
+    ed = evidence_dir(seed_id, base)
+    if ed.exists():
+        for p in sorted(ed.glob("*.json")):
+            _hash_file(p, f"evidence/{p.name}")
+
+    td = themes_dir(seed_id, base)
+    if td.exists():
+        for p in sorted(td.glob("*.json")):
+            _hash_file(p, f"evidence/themes/{p.name}")
+
+    nd = narrative_dir(seed_id, base)
+    if nd.exists():
+        _hash_file(outline_json_path(seed_id, base), "narrative/outline.json")
+
+    sd = sections_dir(seed_id, base)
+    if sd.exists():
+        for p in sorted(sd.glob("*.json")):
+            _hash_file(p, f"narrative/sections/{p.name}")
+
+    return sources
+
+
+def _load_manifest(seed_id: str, base: Path | None = None) -> dict[str, Any] | None:
+    p = _manifest_path(seed_id, base)
+    if not p.exists():
+        return None
+    return migrate_manifest(read_json(p))
+
+
+def _diff_and_write_manifest(seed_id: str, base: Path | None = None) -> dict[str, Any]:
+    """Compare this seed's current JSON source hashes to the manifest
+    left by the previous rebuild (if any), write the refreshed manifest,
+    and return a report of what changed. Report-only: callers never skip
+    a render step based on this."""
+    prior = _load_manifest(seed_id, base)
+    prior_sources: dict[str, str] = prior["sources"] if prior else {}
+    current_sources = _collect_source_hashes(seed_id, base)
+
+    added = sorted(k for k in current_sources if k not in prior_sources)
+    removed = sorted(k for k in prior_sources if k not in current_sources)
+    changed = sorted(
+        k for k in current_sources
+        if k in prior_sources and current_sources[k] != prior_sources[k]
+    )
+
+    manifest = RebuildManifestWrite(rendered_at=now_iso(), sources=current_sources)
+    atomic_write_json(_manifest_path(seed_id, base), manifest.to_json_dict())
+
+    return {
+        "first_render": prior is None,
+        "previous_render": prior["rendered_at"] if prior else None,
+        "added": added,
+        "changed": changed,
+        "removed": removed,
+    }
 
 
 def rebuild_seed(
@@ -89,7 +196,19 @@ def rebuild_seed(
             {"step": "impact", "rebuilt": true|false},
             {"step": "wiki_orientation", "rebuilt": true},
           ],
+          "changes": {
+            "first_render": true|false,
+            "previous_render": "<iso>"|null,
+            "added": [...source keys...],
+            "changed": [...source keys...],
+            "removed": [...source keys...],
+          },
         }
+
+    "changes" reports which JSON render-input sources (not rendered
+    output) differ from the previous `rebuild_seed()` call for this seed
+    -- see this module's docstring. It never affects which steps above
+    run; every step always runs, unconditionally.
 
     Does not call unverify/mark_verified/mark_pending -- those represent
     a human decision (a verification state change), not a re-render of
@@ -206,4 +325,10 @@ def rebuild_seed(
     rebuild_wiki_orientation(seed_id, seed_work, base=base)
     steps.append({"step": "wiki_orientation", "rebuilt": True})
 
-    return {"ok": True, "seed_openalex_id": seed_id, "steps": steps}
+    # 6. Manifest: report which JSON sources changed since the previous
+    # rebuild, and persist the current hashes for next time. Every step
+    # above already ran unconditionally -- this is purely a report, never
+    # a gate (see this module's docstring and models.RebuildManifest).
+    changes = _diff_and_write_manifest(seed_id, base)
+
+    return {"ok": True, "seed_openalex_id": seed_id, "steps": steps, "changes": changes}

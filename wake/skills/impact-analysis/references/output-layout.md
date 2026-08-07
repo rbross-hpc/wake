@@ -58,6 +58,13 @@ wake-out/<OpenAlex-ID>/
                              Evidence" entry's title links to its evidence dossier
                              (when one exists), and its DOI/OpenAlex ID are both
                              rendered as links
+  rebuild-manifest.json   — sha256 per JSON render-input source, written by the
+                             last `wake rebuild` call. Report-only: it exists so
+                             a rebuild can tell you which JSON sources changed,
+                             were added, or were removed since the previous
+                             rebuild (see SKILL.md's "Rendering the Wiki") -- it
+                             never affects which Markdown gets (re-)rendered,
+                             which always happens unconditionally.
   .state.json             — stage cache keys
   classify/               — per-work classification sidecars (resumable)
   .cost.jsonl             — per-LLM-call estimated token/cost log

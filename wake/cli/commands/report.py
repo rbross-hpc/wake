@@ -38,7 +38,9 @@ def _build_rebuild_parser(sub) -> None:
              "confirm write JSON only and expect a `wake rebuild` afterward; run it after "
              "any such command, not just for recovery (e.g. after hand-editing a JSON "
              "sidecar). No LLM/network call. Skips any artifact type that has no JSON "
-             "backing yet for this seed.",
+             "backing yet for this seed. Also reports which JSON sources were added/"
+             "changed/removed since the previous `wake rebuild` call, via a persisted "
+             "rebuild-manifest.json -- report-only, never gates a render.",
     )
     p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
@@ -109,8 +111,36 @@ def run_rebuild(args) -> None:
             else:
                 label = "rebuilt" if rebuilt else "skipped (nothing to rebuild)"
             print(f"  {name}: {label}")
+        _print_changes(d["changes"])
 
     emit("rebuild", result, as_json=args.json_out, human=_human)
+
+
+def _print_changes(changes: dict) -> None:
+    """Human-facing summary of build.rebuild_seed()'s "changes" block --
+    which JSON render-input sources differ from the previous rebuild.
+    Report-only (see build.py's module docstring): this never implies
+    any step above was skipped."""
+    added, changed, removed = changes["added"], changes["changed"], changes["removed"]
+    if changes["first_render"]:
+        total = len(added)
+        print(f"First render — {total} source{'s' if total != 1 else ''} tracked.")
+        return
+    if not added and not changed and not removed:
+        print(f"No source changes since {changes['previous_render']}.")
+        return
+    print(f"Changes since {changes['previous_render']}:")
+
+    def _list(label: str, keys: list[str]) -> None:
+        if not keys:
+            return
+        print(f"  {label} ({len(keys)}):")
+        for k in keys:
+            print(f"    {k}")
+
+    _list("Added", added)
+    _list("Changed", changed)
+    _list("Removed", removed)
 
 
 def run_override(args) -> None:

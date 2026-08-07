@@ -136,6 +136,13 @@ JSON-only writes, before pointing a human at a link into the wiki, or
 at the end of a session). See [`wake/build.py`](../wake/build.py)'s
 module docstring for the full rationale.
 
+Each `wake rebuild` also reports a `changes` block — which JSON sources
+(dossiers, themes, sections, overrides, etc.) were added, changed, or
+removed since the *previous* `wake rebuild` for this seed, tracked in a
+persisted `rebuild-manifest.json`. This is purely a report: it never
+skips a render step, and every artifact type is re-rendered
+unconditionally on every call regardless of what changed.
+
 ## Seed ID Formats
 
 | Format | Example |
