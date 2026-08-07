@@ -23,6 +23,21 @@ from wake.llm.openai_client import (
 from .conftest import PARALLEL_NETCDF_WORK
 
 
+@pytest.fixture(autouse=True)
+def _fake_openai_credentials(monkeypatch):
+    """chat_json/chat_text call _client(), which constructs a real
+    openai.OpenAI() -- this validates credentials at construction time
+    even though every test below mocks the actual network call
+    (_stream_completion or Completions.create), never reaching a real
+    request. Without OPENAI_API_KEY set, OpenAI() itself raises
+    openai.OpenAIError before the mock is ever exercised -- this passed
+    only by accident in any environment with a real key already set
+    (e.g. a developer's shell), and failed for real in CI, which
+    correctly has no credentials configured. Set a fake key so
+    construction succeeds; no real request is ever made."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-fake-key-for-tests")
+
+
 def _fake_openai_error(cls, status: int, message: str = "fake error"):
     """Build a real instance of an openai.APIStatusError subclass --
     these require a genuine httpx.Response in their constructor, not
