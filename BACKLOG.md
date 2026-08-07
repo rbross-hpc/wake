@@ -1100,13 +1100,23 @@ baseline) to 713 across all six phases, entirely additive.
    canonical artifacts, Phase-6 acceptance test (migrate_dossier on real
    dossiers -> schema_version=2), rebuild cycle, structural sanity.
 
+10. `refactor/theme-versioning` — **BUILT**, see PLAN.md v0.4.9.  First
+    of four phases replicating dossier versioning (v0.4.6) to the
+    remaining families, using the golden packet (v0.4.8) as the
+    acceptance test.  `THEME_VERSION=1`, `ThemeWrite` (`extra="forbid"`),
+    `migrate_theme()`.  `load_theme()` migrates on every read;
+    `create_theme()`/`confirm_theme()` persist the validated form;
+    `rerender_all_themes()` opportunistically persists migrated legacy
+    themes.  7 new tests (747->755), including the golden-packet
+    acceptance test confirming the real (pre-Phase-9, unversioned)
+    Mofka themes migrate correctly on read.
+
 **Deferred follow-on work, not forgotten, all real:**
 - Replicating the strict-write / permissive-read split and migration
-  chain to the other four artifact families (themes, narrative,
-  classification, overrides): same pattern, now unblocked (golden packet
-  is in hand as the gating acceptance test).
+  chain to the remaining three artifact families (narrative,
+  classification, overrides): same pattern as themes, in progress.
 - Replacing the 15 catalogued `_normalize_*`/legacy-shape functions
-  with the migration-chain pattern now established by dossiers.
+  with the migration-chain pattern now established by dossiers/themes.
 - Full `WakeContext` threading through all ~90 existing `base:`-taking
   domain functions (Phase 3 landed the context object and one
   canonical CLI construction point; `ctx.base` is a verified drop-in

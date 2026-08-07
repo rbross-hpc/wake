@@ -46,7 +46,7 @@ from typing import Any
 
 from .evidence import dossier_json_path, evidence_dir
 from .io import atomic_write_json, atomic_write_text, now_iso, read_json
-from .models import Theme
+from .models import THEME_VERSION, ThemeWrite, migrate_theme
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -75,7 +75,7 @@ def load_theme(seed_id: str, slug: str, base: Path | None = None) -> dict[str, A
     p = theme_json_path(seed_id, slug, base)
     if not p.exists():
         return None
-    return read_json(p)
+    return migrate_theme(read_json(p))
 
 
 def _rerender_dossiers_for(seed_work: dict[str, Any], citing_ids: list[str], base: Path | None = None) -> None:
@@ -213,6 +213,7 @@ def create_theme(
     created_at = existing.get("created_at") if existing else now_iso()
 
     payload = {
+        "schema_version": THEME_VERSION,
         "seed_openalex_id": seed_id,
         "slug": slug,
         "title": title,
@@ -224,7 +225,8 @@ def create_theme(
         "needs_evidence": needs_evidence,
     }
 
-    Theme.validate_or_raise(payload, context=f"theme {slug!r}")
+    validated = ThemeWrite.validate_or_raise(payload, context=f"theme {slug!r}")
+    payload = validated.to_json_dict()
 
     wd = themes_dir(seed_id, base)
     wd.mkdir(parents=True, exist_ok=True)
@@ -303,7 +305,8 @@ def confirm_theme(
     theme["needs_evidence"] = []
     theme["updated_at"] = now_iso()
 
-    Theme.validate_or_raise(theme, context=f"theme {slug!r}")
+    validated = ThemeWrite.validate_or_raise(theme, context=f"theme {slug!r}")
+    theme = validated.to_json_dict()
 
     json_path = theme_json_path(seed_id, slug, base)
     md_path = theme_path(seed_id, slug, base)
@@ -342,6 +345,16 @@ def rerender_all_themes(seed_id: str, seed_work: dict[str, Any], base: Path | No
         if theme is None:
             continue
         atomic_write_text(theme_path(seed_id, slug, base), _render_theme_markdown(seed_work, theme, base))
+
+        # Opportunistic persistence of migration: load_theme() already ran
+        # migrate_theme() on the raw JSON, so `theme` is current-version.
+        # If the on-disk file pre-dates the migration, persist the
+        # migrated form now so the next reader sees a fully current file.
+        json_path = theme_json_path(seed_id, slug, base)
+        on_disk_version = json.loads(json_path.read_text()).get("schema_version", 0)
+        if on_disk_version < THEME_VERSION:
+            validated = ThemeWrite.validate_or_raise(theme, context=f"theme {slug!r}")
+            atomic_write_json(json_path, validated.to_json_dict())
     return slugs
 
 

@@ -141,6 +141,28 @@ def test_all_theme_jsons_validate_as_theme():
         assert parsed.seed_openalex_id == _SEED_ID
 
 
+def test_theme_jsons_are_unversioned_pre_phase_9_and_migrate_on_read(tmp_path):
+    """The golden packet's themes were generated before Phase 9 (theme
+    versioning) existed -- they have no schema_version on disk.  This is
+    the Phase-9 acceptance test: load_theme() must migrate them to
+    THEME_VERSION on read, exactly mirroring the Phase-6 dossier check."""
+    from wake.models import THEME_VERSION
+    from wake.themes import load_theme
+
+    for slug in _THEME_SLUGS:
+        raw = json.loads((_THEMES_DIR / f"{slug}.json").read_text())
+        assert "schema_version" not in raw, (
+            f"{slug}: fixture expected to be pre-Phase-9 (unversioned); "
+            "update this test if the fixture is regenerated post-Phase-9"
+        )
+
+    _copy_packet(tmp_path)
+    for slug in _THEME_SLUGS:
+        result = load_theme(_SEED_ID, slug, base=tmp_path)
+        assert result is not None
+        assert result["schema_version"] == THEME_VERSION
+
+
 def test_all_section_jsons_validate_as_narrative_section():
     for slug in _SECTION_SLUGS:
         raw = json.loads((_NARRATIVE_DIR / "sections" / f"{slug}.json").read_text())

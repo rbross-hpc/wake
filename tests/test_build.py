@@ -291,3 +291,30 @@ def test_rebuild_seed_over_pre_migration_dossier(tmp_path):
 
     on_disk = _json.loads(json_path.read_text())
     assert on_disk.get("schema_version") == EVIDENCE_DOSSIER_VERSION
+
+
+def test_rebuild_seed_over_pre_migration_theme(tmp_path):
+    """rebuild_seed must succeed when evidence/themes/ contains a legacy
+    theme (no schema_version) produced by an older Wake version.  The
+    rebuild re-renders the .md via rerender_all_themes, which persists the
+    migrated (schema_version=1) form."""
+    import json as _json
+
+    from wake.models import THEME_VERSION
+    from wake.themes import theme_json_path
+
+    fixture = _build_full_wiki(tmp_path)
+    seed_id = fixture["seed_id"]
+
+    json_path = theme_json_path(seed_id, "t1", tmp_path)
+    current = _json.loads(json_path.read_text())
+    current.pop("schema_version", None)
+    json_path.write_text(_json.dumps(current))
+
+    assert "schema_version" not in _json.loads(json_path.read_text())
+
+    result = rebuild_seed(PARALLEL_NETCDF_WORK, base=tmp_path, verbose=False)
+    assert result["ok"] is True
+
+    on_disk = _json.loads(json_path.read_text())
+    assert on_disk.get("schema_version") == THEME_VERSION

@@ -1683,3 +1683,63 @@ evidence/log.md.  Binary PDFs stripped (seed.pdf, pdfs/*.pdf).  37 files total.
 ### Verification
 
 ruff, mypy, 747/747 offline tests passing.
+
+## v0.4.9 — Theme versioning (`refactor/theme-versioning`)
+
+**First of four phases replicating the dossier-versioning pattern (v0.4.6) to the remaining
+artifact families**, now unblocked by the golden-packet fixture (v0.4.8).  Theme is the
+simplest case: a single-document JSON sidecar with one canonical loader and no existing
+legacy-shape normalization to formalize.
+
+### What changed
+
+**`wake/models.py`**
+
+- `THEME_VERSION = 1`.
+- `ThemeWrite(Theme)` -- strict write subclass, `extra="forbid"`.  `Theme` (read model) stays
+  `extra="allow"` for the several glob-scan bypass readers (evidence_wiki.py's
+  `_load_all_themes`, evidence.py's `_themes_citing`, themes.py's `list_theme_needs_evidence`,
+  report.py's theme counts) that load every theme sidecar for derived counts/backlinks and must
+  stay permissive.
+- `migrate_theme(raw) -> dict` -- v0->v1: stamp `schema_version` (no shape change; themes have
+  no legacy-shape normalization to formalize, unlike dossiers' path fixup).
+
+**`wake/themes.py`**
+
+- `load_theme()` now calls `migrate_theme()` on every read -- the single canonical loader,
+  no bypass to worry about for this family.
+- `create_theme()` write site: payload includes `schema_version=THEME_VERSION`; write uses
+  `ThemeWrite.validate_or_raise(...).to_json_dict()`.
+- `confirm_theme()` write site (the re-persist-of-loaded-dict path): same treatment.
+- `rerender_all_themes()`: added the same opportunistic-migration-persistence pattern as
+  dossiers' `rerender_dossier_md` -- if the on-disk theme pre-dates the migration, persist the
+  migrated form during rerender.
+
+### Tests
+
+7 new tests (747->755 offline passing):
+
+- `test_migrate_theme_v0_stamps_schema_version`, `test_migrate_theme_already_current_is_noop`,
+  `test_migrate_theme_idempotent` -- migration chain correctness.
+- `test_old_unversioned_theme_round_trips_through_load_theme` -- a pre-v0 JSON file is upgraded
+  by `load_theme`.
+- `test_theme_write_rejects_unknown_field` / `test_theme_read_model_accepts_unknown_field` --
+  strict-write / permissive-read split.
+- `test_rebuild_seed_over_pre_migration_theme` (test_build.py) -- `rebuild_seed` upgrades a
+  legacy theme in place via `rerender_all_themes`.
+
+**Golden-packet acceptance test** (`test_golden_packet.py`):
+`test_theme_jsons_are_unversioned_pre_phase_9_and_migrate_on_read` -- confirms the real Mofka
+packet's two themes (generated before this phase existed) have no `schema_version` on disk,
+and that `load_theme()` upgrades them to `THEME_VERSION` on read.  This is the retroactive proof
+that the migration is correct on genuinely produced artifacts, mirroring the Phase-6 dossier
+acceptance test.
+
+### Updated existing test
+
+`test_theme_validates_real_create_theme_json_sidecar` (test_models.py) now additionally asserts
+`sidecar.get("schema_version") == THEME_VERSION`.
+
+### Verification
+
+ruff, mypy, 755/755 offline tests passing.
