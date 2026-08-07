@@ -1990,3 +1990,63 @@ failed the same 7 tests before the fix, passed all 23 after. Full offline suite 
 way (`env -u OPENAI_API_KEY ... pytest tests/ -m 'not network'`): 790 passed, 14 deselected --
 matching the pre-existing count exactly, confirming this is a test-only fix with zero production
 code changes. `ruff`/`mypy` clean.
+
+---
+
+## v0.4.15 — Audit remaining `_normalize_*`/legacy-shape functions (`docs/normalize-audit`)
+
+Discharges the Structural Hardening follow-on tracked since the migration story closed
+(v0.4.12's summary, above) as "formalize the remaining `_normalize_*`/legacy-shape functions
+using the migration-chain pattern" -- the next item both `PLAN.md`'s "Current Plan" and
+`BACKLOG.md`'s "Open / Not Yet Built" nominated. Docs-and-docstrings-only, no behavior change.
+
+The premise going in was that this would mirror the five-family migration work: find each
+remaining `_normalize_*`/`_legacy_*` function and convert it to a `migrate_*()` step. That
+premise didn't survive contact with the actual functions. `rg -n 'def _normalize_|def
+_legacy|def migrate_|_VERSION\s*='` against `wake/` found ~15 candidates, sorted into three
+categories, written up in full in the new `docs/design/normalize-audit.md`:
+
+- **Category 1 (8 functions)** -- `_normalize_doi` (six near-identical copies across
+  `wake/sources/*.py`), `_normalize_openalex_id`, `_normalize_for_match`. Pure input
+  normalization on external API/user strings, unrelated to schema versioning. Out of scope;
+  no action. (The six-way `_normalize_doi` duplication is a real DRY wart, but a refactor
+  concern, not a migration one -- noted in the audit doc, not fixed here.)
+
+- **Category 2 (3 rename families, already formalized)** -- the `.classify/`->`classify/`,
+  `.overrides.jsonl`->`overrides.jsonl`, and `.manual_abstracts.jsonl`->`manual_abstracts.jsonl`
+  dotfile renames. These are filesystem-location changes, not shape changes, so they were
+  correctly built outside `models.py`'s pattern: a `_migrate_legacy_*_if_needed()` invoked from
+  each family's write path (rename in place, no-op if already migrated or nothing to migrate),
+  plus a read-only fallback in the load path. Verified the write-migrates/read-falls-back
+  invariant holds for all three by tracing call sites. No action.
+
+- **Category 3 (2 functions, the real judgment call)** -- `classify._normalize_relationships`
+  and `evidence._normalize_proposed_relationships`, both of which synthesize a multi-facet
+  `relationships` list from a pre-multi-facet sidecar/dossier's legacy scalar fields. These
+  looked most like the five-family pattern but aren't: they run at build/render time on a
+  sub-block (not a whole persisted file at the load boundary), sometimes on data that was never
+  persisted at all (a classify result fresh from the LLM); folding the classify-side one into
+  `migrate_classification_result` would force a `relationships` key onto `ClassifiedFile.works[]`
+  entries that the model deliberately allows to have no such key (error/unclassified entries);
+  and the two functions aren't symmetric -- only the dossier-side one carries quotes, so they
+  can't collapse into a single step either. Determination: legitimately not schema migrations,
+  correctly implemented as plain read-compat view-derivers. Action taken: clarified both
+  docstrings to state this explicitly and point to the audit doc, so a future reader doesn't
+  re-raise the same question without the context to answer it.
+
+Net result: **no schema migrations were missing.** The original assessment's count ("~15
+implicit `_normalize_*`/legacy-shape checks," this file's migration-story-complete summary
+above) is confirmed accurate, and every one is now on record as either out of scope, already
+formalized via the right mechanism for its kind, or intentionally not a migration.
+
+### Verification
+
+`rtk ruff check wake/ tests/` clean, `rtk mypy` clean. Full offline suite under CI-parity
+conditions (`env -u OPENAI_API_KEY -u OPENAI_BASE_URL -u OPENAI_API_BASE pytest tests/ -m 'not
+network'`): 790 passed, 14 deselected -- unchanged, as expected for a docs/docstring-only change.
+
+### Next phase
+
+`PLAN.md`/`BACKLOG.md` updated: this item is closed. Remaining Structural Hardening follow-ons
+(unchanged) are full `WakeContext` threading through the ~90 `base:`-taking domain functions, and
+a persisted dirty/revision manifest for `wake rebuild`.

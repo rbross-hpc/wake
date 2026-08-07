@@ -495,7 +495,13 @@ def _normalize_proposed_relationships(proposed: dict[str, Any], top_level_quotes
     have quotes. Falls back to *top_level_quotes* (the dossier's
     top-level "quotes" field) for that legacy case; a genuine multi-facet
     "relationships" list already carries its own per-facet quotes and is
-    returned as-is."""
+    returned as-is.
+
+    Like classify._normalize_relationships, this is a render-time
+    read-compat view-deriver, not a `migrate_dossier()` schema-migration
+    step -- see `docs/design/normalize-audit.md` for why these two
+    functions can't collapse into one migration step (the quote-carrying
+    asymmetry) or fold into the existing dossier migration chain."""
     facets = proposed.get("relationships")
     if isinstance(facets, list) and facets:
         return facets
