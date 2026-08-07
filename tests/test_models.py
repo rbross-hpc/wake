@@ -23,6 +23,8 @@ from pydantic import ValidationError
 from wake import evidence, narrative, themes
 from wake.classify import classify_one, save_classified
 from wake.models import (
+    CLASSIFICATION_VERSION,
+    CLASSIFIED_FILE_VERSION,
     EVIDENCE_DOSSIER_VERSION,
     NARRATIVE_OUTLINE_VERSION,
     NARRATIVE_SECTION_VERSION,
@@ -30,6 +32,9 @@ from wake.models import (
     THEME_VERSION,
     ArtifactReference,
     ClassificationResult,
+    ClassificationResultWrite,
+    ClassifiedFile,
+    ClassifiedFileWrite,
     EvidenceDossier,
     EvidenceDossierWrite,
     NarrativeOutline,
@@ -40,6 +45,8 @@ from wake.models import (
     Theme,
     ThemeWrite,
     Work,
+    migrate_classification_result,
+    migrate_classified,
     migrate_dossier,
     migrate_outline,
     migrate_section,
@@ -174,6 +181,163 @@ def test_classification_result_rejects_unknown_label():
             "relationship": "not-a-real-label", "confidence": 0.9, "justification": "x",
             "relationships": [{"label": "not-a-real-label", "confidence": 0.9, "justification": "x"}],
         })
+
+
+# --- migrate_classification_result / migrate_classified / ClassifiedFile ---
+# (Phase 11)
+
+def test_sidecar_persists_schema_version_on_disk(tmp_path):
+    from wake.classify import _load_sidecar, _write_sidecar
+
+    _write_sidecar(
+        "W1", "W2",
+        {"relationship": "extends", "confidence": 0.9, "justification": "x",
+         "relationships": [{"label": "extends", "confidence": 0.9, "justification": "x"}]},
+        base=tmp_path,
+    )
+    loaded = _load_sidecar("W1", "W2", base=tmp_path)
+    assert loaded is not None
+    assert loaded["schema_version"] == CLASSIFICATION_VERSION
+
+
+def test_classification_result_write_rejects_unknown_field():
+    good = {
+        "relationship": "extends", "confidence": 0.9, "justification": "x",
+        "relationships": [{"label": "extends", "confidence": 0.9, "justification": "x"}],
+        "schema_version": CLASSIFICATION_VERSION,
+    }
+    with pytest.raises(ValueError, match="schema"):
+        ClassificationResultWrite.validate_or_raise({**good, "typo_field": "oops"}, context="test")
+
+
+def test_migrate_classification_result_stamps_schema_version():
+    migrated = migrate_classification_result({"relationship": "extends", "confidence": 0.9})
+    assert migrated["schema_version"] == CLASSIFICATION_VERSION
+
+
+def test_migrate_classified_bare_list_wraps_and_stamps():
+    """Formalizes the pre-wrapper bare-list classified.json shape."""
+    bare = [
+        {"openalex_id": "W1", "relationship": "extends", "confidence": 0.9},
+        {"openalex_id": "W2", "relationship": "background-mention", "confidence": 0.5},
+    ]
+    migrated = migrate_classified(bare)
+    assert migrated["schema_version"] == CLASSIFIED_FILE_VERSION
+    assert migrated["count"] == 2
+    assert len(migrated["works"]) == 2
+    assert migrated["works"][0]["schema_version"] == CLASSIFICATION_VERSION
+
+
+def test_migrate_classified_wrapper_stamps_schema_version_and_each_work():
+    raw = {
+        "seed_openalex_id": "W1",
+        "classified_at": "2025-01-01T00:00:00",
+        "count": 1,
+        "works": [{"openalex_id": "W2", "relationship": "extends", "confidence": 0.9}],
+    }
+    migrated = migrate_classified(raw)
+    assert migrated["schema_version"] == CLASSIFIED_FILE_VERSION
+    assert migrated["works"][0]["schema_version"] == CLASSIFICATION_VERSION
+
+
+def test_migrate_classified_preserves_error_entries_without_relationship():
+    """An error/unclassified entry (no "relationship" key) must survive
+    migration unchanged -- it is not a ClassificationResult and must not
+    be forced through classification-result migration/validation."""
+    raw = {
+        "seed_openalex_id": "W1",
+        "classified_at": "2025-01-01T00:00:00",
+        "count": 1,
+        "works": [{"openalex_id": "W2", "title": "Some title", "error": "boom", "error_at": "2025-01-01T00:00:00"}],
+    }
+    migrated = migrate_classified(raw)
+    assert "schema_version" not in migrated["works"][0]
+    assert migrated["works"][0]["error"] == "boom"
+
+
+def test_migrate_classified_idempotent():
+    raw = {
+        "seed_openalex_id": "W1",
+        "classified_at": "2025-01-01T00:00:00",
+        "count": 1,
+        "works": [{"openalex_id": "W2", "relationship": "extends", "confidence": 0.9}],
+    }
+    once = migrate_classified(raw)
+    twice = migrate_classified(once)
+    assert once == twice
+
+
+def test_classified_file_accepts_error_entries():
+    """ClassifiedFile's works field is deliberately loose (list[dict]) so
+    error/unclassified entries with no "relationship" key validate fine
+    alongside real classifications."""
+    payload = {
+        "seed_openalex_id": "W1",
+        "classified_at": "2025-01-01T00:00:00",
+        "count": 2,
+        "works": [
+            {"openalex_id": "W2", "relationship": "extends", "confidence": 0.9},
+            {"openalex_id": "W3", "error": "LLM call failed", "error_at": "2025-01-01T00:00:00"},
+        ],
+    }
+    parsed = ClassifiedFile.model_validate(payload)
+    assert len(parsed.works) == 2
+
+
+def test_classified_file_write_rejects_unknown_wrapper_field():
+    good = {
+        "seed_openalex_id": "W1", "classified_at": "2025-01-01T00:00:00",
+        "count": 0, "works": [], "schema_version": CLASSIFIED_FILE_VERSION,
+    }
+    with pytest.raises(ValueError, match="schema"):
+        ClassifiedFileWrite.validate_or_raise({**good, "typo_field": "oops"}, context="test")
+
+
+def test_save_classified_persists_schema_version_and_stamped_works(tmp_path):
+    from wake.classify import load_classified, save_classified
+
+    seed_id = "W1"
+    save_classified(
+        seed_id,
+        [{"openalex_id": "W2", "relationship": "extends", "confidence": 0.9}],
+        base=tmp_path,
+    )
+    raw = json.loads((tmp_path / "wake-out" / seed_id / "classified.json").read_text())
+    assert raw["schema_version"] == CLASSIFIED_FILE_VERSION
+    assert raw["works"][0]["schema_version"] == CLASSIFICATION_VERSION
+
+    loaded = load_classified(seed_id, base=tmp_path)
+    assert loaded is not None
+    assert loaded[0]["schema_version"] == CLASSIFICATION_VERSION
+
+
+def test_save_classified_persists_error_entries_unstamped(tmp_path):
+    from wake.classify import load_classified, save_classified
+
+    seed_id = "W1"
+    save_classified(
+        seed_id,
+        [{"openalex_id": "W2", "error": "LLM call failed", "error_at": "2025-01-01T00:00:00"}],
+        base=tmp_path,
+    )
+    loaded = load_classified(seed_id, base=tmp_path)
+    assert loaded is not None
+    assert "schema_version" not in loaded[0]
+    assert loaded[0]["error"] == "LLM call failed"
+
+
+def test_old_bare_list_classified_json_round_trips_through_load_classified(tmp_path):
+    import json as _json
+    seed_id = "W1"
+    wd = tmp_path / "wake-out" / seed_id
+    wd.mkdir(parents=True)
+    bare_list = [{"openalex_id": "W2", "relationship": "extends", "confidence": 0.9}]
+    (wd / "classified.json").write_text(_json.dumps(bare_list))
+
+    from wake.classify import load_classified
+    loaded = load_classified(seed_id, base=tmp_path)
+    assert loaded is not None
+    assert loaded[0]["schema_version"] == CLASSIFICATION_VERSION
 
 
 # --- EvidenceDossier -------------------------------------------------------

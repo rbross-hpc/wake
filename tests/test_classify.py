@@ -23,6 +23,7 @@ from wake.classify import (
     relationship_strength,
     select_for_classification,
 )
+from wake.models import CLASSIFICATION_VERSION
 
 from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
@@ -145,7 +146,10 @@ def test_sidecar_write_and_load(tmp_path):
     }
     _write_sidecar(seed_id, citing_id, payload, base=tmp_path)
     loaded = _load_sidecar(seed_id, citing_id, base=tmp_path)
-    assert loaded == payload
+    assert loaded is not None
+    for key, value in payload.items():
+        assert loaded[key] == value
+    assert loaded["schema_version"] == CLASSIFICATION_VERSION
 
 
 def test_sidecar_missing_returns_none(tmp_path):
@@ -170,7 +174,10 @@ def test_load_sidecar_falls_back_to_legacy_dotfile_dir(tmp_path):
 
     assert not _sidecar_dir(seed_id, base=tmp_path).exists()
     loaded = _load_sidecar(seed_id, citing_id, base=tmp_path)
-    assert loaded == payload
+    assert loaded is not None
+    for key, value in payload.items():
+        assert loaded[key] == value
+    assert loaded["schema_version"] == CLASSIFICATION_VERSION
 
 
 def test_write_sidecar_migrates_legacy_dotfile_dir_in_place(tmp_path):

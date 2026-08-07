@@ -61,7 +61,14 @@ from .citing import sort_works
 from .gaps import apply_manual_abstracts, load_manual_abstracts
 from .io import atomic_write_json, now_iso, read_json
 from .llm.openai_client import chat_json
-from .models import ClassificationResult
+from .models import (
+    CLASSIFICATION_VERSION,
+    CLASSIFIED_FILE_VERSION,
+    ClassificationResultWrite,
+    ClassifiedFileWrite,
+    migrate_classification_result,
+    migrate_classified,
+)
 from .seed import work_dir
 from .state import mark_stage_complete
 from .vocabulary import CANONICAL_RELATIONSHIPS
@@ -419,13 +426,17 @@ def _load_sidecar(seed_id: str, citing_id: str, base: Path | None = None) -> dic
         if not p.exists():
             return None
     try:
-        return read_json(p)
+        return migrate_classification_result(read_json(p))
     except (json.JSONDecodeError, OSError):
         return None
 
 
 def _write_sidecar(seed_id: str, citing_id: str, result: dict, base: Path | None = None) -> None:
-    ClassificationResult.validate_or_raise(result, context=f"classification sidecar {citing_id!r}")
+    result = {**result, "schema_version": CLASSIFICATION_VERSION}
+    validated = ClassificationResultWrite.validate_or_raise(
+        result, context=f"classification sidecar {citing_id!r}"
+    )
+    result = validated.to_json_dict()
     _migrate_legacy_sidecar_dir_if_needed(seed_id, base)
     p = _sidecar_path(seed_id, citing_id, base)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -661,12 +672,19 @@ def save_classified(
     """Write classified.json and mark the stage complete."""
     wd = work_dir(seed_id, base)
     path = wd / "classified.json"
+    stamped_works = [
+        {**w, "schema_version": CLASSIFICATION_VERSION} if "relationship" in w else w
+        for w in classified
+    ]
     payload = {
+        "schema_version": CLASSIFIED_FILE_VERSION,
         "seed_openalex_id": seed_id,
         "classified_at": now_iso(),
         "count": len(classified),
-        "works": classified,
+        "works": stamped_works,
     }
+    validated = ClassifiedFileWrite.validate_or_raise(payload, context=f"classified.json for {seed_id!r}")
+    payload = validated.to_json_dict()
     atomic_write_json(path, payload)
     mark_stage_complete(
         wd, _STAGE,
@@ -682,5 +700,5 @@ def load_classified(seed_id: str, base: Path | None = None) -> list[dict] | None
     p = work_dir(seed_id, base) / "classified.json"
     if not p.exists():
         return None
-    data = read_json(p)
-    return data.get("works") if isinstance(data, dict) else data
+    migrated = migrate_classified(read_json(p))
+    return migrated["works"]

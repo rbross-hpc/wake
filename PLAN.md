@@ -1808,3 +1808,85 @@ assert the persisted `schema_version`.
 ### Verification
 
 ruff, mypy, 769/769 offline tests passing.
+
+## v0.4.11 — Classification versioning + new ClassifiedFile wrapper model (`refactor/classify-versioning`)
+
+**Third of four phases**, and the most involved: `classified.json` had no aggregate model and
+*no write validation at all* -- the one genuinely unvalidated write in the codebase (confirmed
+by the Phase-11 research pass). Closing it required a new wrapper model, not just a Write
+subclass of an existing one.
+
+**Key design constraint discovered during research:** `classified.json`'s `works` list
+legitimately contains entries with no `relationship` key at all -- a citing work whose
+classification LLM call errored is stored as `{**work, "error": ..., "error_at": ...}`
+(`classify.py`'s `classify_all()` error-handling branch), and `report.py`'s bake step
+deliberately treats these as unclassified (`[w for w in citing_works if w.get("relationship")]`)
+rather than rejecting them. This meant `ClassifiedFile.works` could **not** be typed as
+`list[ClassificationResult]` (which requires `relationship`) -- it had to stay
+`list[dict[str, Any]]`, with per-entry `schema_version` stamping applied only to entries that
+are real classifications.
+
+### What changed
+
+**`wake/models.py`**
+
+- `CLASSIFICATION_VERSION = 1`; `ClassificationResultWrite(ClassificationResult)` --
+  `extra="forbid"`, used for the per-work `classify/<id>.json` sidecar write (always a real
+  classification; `classify_one()`'s return always sets `relationship`).
+- `CLASSIFIED_FILE_VERSION = 1`; new **`ClassifiedFile`** model
+  (`seed_openalex_id`, `classified_at`, `count`, `works: list[dict[str, Any]]`) -- the first
+  validation of any kind on `classified.json`'s wrapper shape. `works` is deliberately loose
+  (not `list[ClassificationResult]`) per the design constraint above.
+- `ClassifiedFileWrite(ClassifiedFile)` -- `extra="forbid"` at the wrapper level only (does not
+  additionally constrain each `works[]` entry).
+- `migrate_classification_result(raw)` -- v0->v1: stamp `schema_version` on one sidecar dict.
+- `migrate_classified(raw)` -- formalizes the existing implicit bare-list->wrapper handling
+  (`classify.py`'s old `data.get("works") if isinstance(data, dict) else data`) as an explicit
+  v0->v1 migration step, plus stamps `schema_version` on every `works[]` entry that has a
+  `relationship` key (skipping error/unclassified entries, which are left untouched).
+
+**`wake/classify.py`**
+
+- `_load_sidecar()` calls `migrate_classification_result()` on every read.
+- `_write_sidecar()` write site: stamps `schema_version`, uses
+  `ClassificationResultWrite.validate_or_raise(...).to_json_dict()`.
+- `load_classified()` calls `migrate_classified()` on every read (replaces the old inline
+  bare-list-vs-wrapper check).
+- `save_classified()` write site: stamps `schema_version` on the wrapper and on each real
+  (non-error) work entry, validates via `ClassifiedFileWrite`, persists `.to_json_dict()`.
+
+### Tests
+
+13 new tests (769->782 offline passing):
+
+- Migration-chain correctness: sidecar stamping, bare-list wrapping, wrapper stamping,
+  idempotency, and the critical **error-entry preservation** test
+  (`test_migrate_classified_preserves_error_entries_without_relationship`) confirming an
+  error/unclassified entry survives migration completely unchanged.
+- `test_classified_file_accepts_error_entries` -- `ClassifiedFile` validates a `works` list
+  mixing a real classification and an error entry.
+- Strict-write rejects unknown field, for both `ClassificationResultWrite` and
+  `ClassifiedFileWrite`.
+- `test_save_classified_persists_schema_version_and_stamped_works` /
+  `test_save_classified_persists_error_entries_unstamped` -- confirms real entries get
+  `schema_version` on disk and error entries do not.
+- `test_old_bare_list_classified_json_round_trips_through_load_classified` -- the pre-wrapper
+  shape upgrades correctly.
+
+**Golden-packet acceptance test:**
+`test_classify_sidecars_and_classified_json_are_unversioned_pre_phase_11` -- confirms the real
+Mofka packet's 4 classify sidecars and `classified.json` (generated before this phase existed)
+have no `schema_version` anywhere, and that `_load_sidecar()`/`load_classified()` upgrade them
+correctly on read.
+
+### Updated existing tests
+
+`test_sidecar_write_and_load` and `test_load_sidecar_falls_back_to_legacy_dotfile_dir`
+(test_classify.py) previously asserted exact dict equality after a round-trip; updated to assert
+the original fields are preserved plus `schema_version` is now present (both `to_json_dict()`'s
+default-filling on write, and `migrate_classification_result()`'s stamping on read of an
+un-migrated legacy file, change the exact dict shape by design).
+
+### Verification
+
+ruff, mypy, 782/782 offline tests passing.

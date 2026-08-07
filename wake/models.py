@@ -158,6 +158,116 @@ class ClassificationResult(WakeModel):
         return v
 
 
+CLASSIFICATION_VERSION = 1
+
+
+class ClassificationResultWrite(ClassificationResult):
+    """Strict write variant of ClassificationResult -- see ThemeWrite/
+    EvidenceDossierWrite for the read-permissive/write-strict rationale.
+    Used only for the per-work classify/<id>.json sidecar
+    (_write_sidecar), which always carries a real classification
+    (classify_one()'s return always has "relationship" set); the
+    aggregate classified.json's works[] entries are validated more
+    loosely by ClassifiedFile below, since that list also legitimately
+    contains error/unclassified entries with no "relationship" key at
+    all (see classify_all()'s error-handling branch, report.py:327's
+    `if w.get("relationship")` filter)."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+CLASSIFIED_FILE_VERSION = 1
+
+
+class ClassifiedFile(WakeModel):
+    """classify.py::save_classified()'s classified.json wrapper shape.
+
+    Deliberately permissive on `works` (list[dict[str, Any]], not
+    list[ClassificationResult]): a citing work whose classification call
+    errored is stored as `{**work, "error": ..., "error_at": ...}` with no
+    "relationship" key at all (classify.py's classify_all(), the
+    error-handling branch) -- downstream consumers (report.py's bake,
+    `[w for w in citing_works if w.get("relationship")]`) deliberately
+    treat these as unclassified rather than rejecting them, so this
+    wrapper model must accept the same shape.  Each entry that *is* a
+    real classification is still schema_version-stamped by
+    migrate_classified() below, but not forced through
+    ClassificationResult's required-field validation here.
+    """
+
+    schema_version: int = CLASSIFIED_FILE_VERSION
+    seed_openalex_id: str
+    classified_at: str
+    count: int
+    works: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ClassifiedFileWrite(ClassifiedFile):
+    """Strict write variant of ClassifiedFile -- rejects unknown
+    *wrapper-level* fields (seed_openalex_id/classified_at/count/works);
+    does not additionally constrain each works[] entry (see ClassifiedFile
+    docstring for why)."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+def migrate_classification_result(raw: dict[str, Any]) -> dict[str, Any]:
+    """Migrate one raw classify/<id>.json sidecar dict forward to
+    CLASSIFICATION_VERSION.  Idempotent.  v0 (no key) -> v1: stamp
+    schema_version -- no shape change."""
+    result = dict(raw)
+    if result.get("schema_version", 0) < 1:
+        result["schema_version"] = CLASSIFICATION_VERSION
+    return result
+
+
+def migrate_classified(raw: Any) -> dict[str, Any]:
+    """Migrate a raw classified.json payload forward to
+    CLASSIFIED_FILE_VERSION.
+
+    Idempotent.  Two migration steps, both formalizing normalization that
+    classify.py's load_classified() already did implicitly:
+
+    v0 (bare list, the pre-wrapper format) -> v1: wrap as
+    ``{"works": raw, "count": len(raw), "schema_version": 1, ...}``.  No
+    `seed_openalex_id`/`classified_at` are recoverable from a bare list,
+    so those keys are set to "" if not otherwise derivable -- callers
+    should treat a migrated-from-v0 wrapper's `seed_openalex_id`/
+    `classified_at` as unreliable (this shape hasn't been produced by any
+    wake version this migration chain covers targeting real usage; it
+    predates schema_version existing at all).
+
+    v1 (wrapper, no schema_version) -> v1 (stamped): add schema_version:
+    1 -- no shape change otherwise.
+
+    Each entry in the resulting `works` list that carries a "relationship"
+    key (i.e. is a real classification, not an error/unclassified entry)
+    also gets schema_version-stamped via migrate_classification_result().
+    """
+    if isinstance(raw, list):
+        migrated_works = [
+            migrate_classification_result(w) if isinstance(w, dict) and "relationship" in w else w
+            for w in raw
+        ]
+        return {
+            "schema_version": CLASSIFIED_FILE_VERSION,
+            "seed_openalex_id": "",
+            "classified_at": "",
+            "count": len(migrated_works),
+            "works": migrated_works,
+        }
+
+    result = dict(raw)
+    works = result.get("works") or []
+    result["works"] = [
+        migrate_classification_result(w) if isinstance(w, dict) and "relationship" in w else w
+        for w in works
+    ]
+    if result.get("schema_version", 0) < 1:
+        result["schema_version"] = CLASSIFIED_FILE_VERSION
+    return result
+
+
 class EvidenceQuote(WakeModel):
     page: int | None = None
     text: str
