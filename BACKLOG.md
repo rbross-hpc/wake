@@ -17,12 +17,17 @@ sections in one of those two files, or below if still open — see the
 The current actionable list, roughly in order of what's most likely
 next. See each linked section below for full detail.
 
-**Structural Hardening follow-ons** (Theme L closed; these three remain):
-1. Formalize the remaining `_normalize_*`/legacy-shape functions using
-   the established migration-chain pattern. *(Next phase.)*
-2. Full `WakeContext` threading through the ~90 `base:`-taking domain
-   functions.
-3. A persisted dirty/revision manifest for `wake rebuild`.
+**Structural Hardening follow-ons** (Theme L closed; one of three
+original items closed by audit, two remain):
+1. Full `WakeContext` threading through the ~90 `base:`-taking domain
+   functions. *(Next phase.)*
+2. A persisted dirty/revision manifest for `wake rebuild`.
+
+(Formalizing the remaining `_normalize_*`/legacy-shape functions was
+closed by audit rather than by migration code — see
+[`docs/design/normalize-audit.md`](docs/design/normalize-audit.md):
+every candidate was already correctly handled or was never a schema
+migration in the first place.)
 
 **Product features, decided but not built:**
 - Theme B — DOE-relevance signals (`signals_doe.py`, off-by-default).
@@ -194,14 +199,19 @@ Revisit only if/when MinerU or another genuinely slow step gets adopted.
 ## Theme L follow-on — Structural Hardening deferred work
 
 Theme L (Structural Hardening) itself closed — see the "Built" index
-below. Its three deferred follow-ons remain open:
+below. It had three deferred follow-ons; one is now also closed:
 
-- **Formalize the remaining `_normalize_*`/legacy-shape functions** using
-  the migration-chain pattern now established across all five persisted
-  artifact families. Some (the bare-list `classified.json` shape,
-  absolute/relative dossier paths) are already formalized as explicit
-  migration steps; the rest are candidates for the same treatment.
-  *(Next phase, as of this writing — see `PLAN.md`.)*
+- ~~Formalize the remaining `_normalize_*`/legacy-shape functions~~ —
+  **closed by audit** (v0.4.15): every remaining candidate was either
+  out of scope (pure input normalizers), already formalized via the
+  right mechanism for its kind (filesystem-location renames), or
+  determined to be legitimately not a schema migration (two render-time
+  view-derivers). See
+  [`docs/design/normalize-audit.md`](docs/design/normalize-audit.md)
+  for the full function-by-function determination.
+
+Two remain open:
+
 - **Full `WakeContext` threading** through all ~90 existing
   `base:`-taking domain functions. Phase 3 landed the context object and
   one canonical CLI construction point; `ctx.base` is a verified drop-in

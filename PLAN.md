@@ -128,18 +128,18 @@ its six original phases plus a four-phase migration-story follow-on
 (with migration) across all five persisted artifact families (dossiers,
 themes, narrative outline+sections, classification, overrides).
 
-**Next phase:** formalize the remaining `_normalize_*`/legacy-shape
-functions using the migration-chain pattern established across those
-five families — some (the bare-list `classified.json` shape,
-absolute/relative dossier paths) are already formalized as explicit
-migration steps; the rest are candidates for the same treatment.
+v0.4.15 closed the remaining item from that follow-on: an audit of every
+`_normalize_*`/legacy-shape function found none actually missing a
+migration — see
+[`docs/design/normalize-audit.md`](docs/design/normalize-audit.md) for
+the full determination.
 
-**Deferred, real, not forgotten** (see `BACKLOG.md`'s "Open / Not Yet
-Built" section for the full list and current sequencing):
-- Full `WakeContext` threading through the ~90 existing `base:`-taking
-  domain functions.
-- A persisted dirty/revision manifest for `wake rebuild`, tracking
-  staleness *between* calls.
+**Next phase:** full `WakeContext` threading through the ~90 existing
+`base:`-taking domain functions, or a persisted dirty/revision manifest
+for `wake rebuild` tracking staleness *between* calls — see
+`BACKLOG.md`'s "Open / Not Yet Built" section for current sequencing.
+
+**Deferred, real, not forgotten:**
 - Product features: Theme B (DOE-relevance signals), Theme G (timeline
   generation), Theme H (non-publication evidence search), Theme K Pass 2
   (wiring seed-PDF consumers).

@@ -349,7 +349,15 @@ def _normalize_relationships(payload: dict[str, Any]) -> list[dict[str, Any]]:
     present, else synthesize a one-element list from its legacy
     "relationship"/"confidence"/"justification" scalars. Used by every
     reader (classify, evidence, report, evidence_wiki) that needs to
-    treat an old, pre-multi-facet sidecar the same as a new one."""
+    treat an old, pre-multi-facet sidecar the same as a new one.
+
+    This is a render/build-time view-deriver, not a `migrate_*()`
+    schema-migration step -- it runs on a sub-block that may not even
+    be persisted yet (a freshly-produced classify result), and folding
+    it into `migrate_classification_result` would force a `relationships`
+    key onto entries that structurally don't have one (see
+    `ClassifiedFile`'s docstring). See
+    `docs/design/normalize-audit.md` for the full determination."""
     facets = payload.get("relationships")
     if isinstance(facets, list) and facets:
         return facets
