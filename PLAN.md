@@ -1743,3 +1743,68 @@ acceptance test.
 ### Verification
 
 ruff, mypy, 755/755 offline tests passing.
+
+## v0.4.10 — Narrative outline + section versioning (`refactor/narrative-versioning`)
+
+**Second of four phases** replicating the dossier-versioning pattern.  Narrative has one wrinkle
+theme didn't: sections have two read paths -- `load_section()` (single) and `_load_all_sections()`
+(bulk, used by `stitch`/`export_refs`/`_refresh_outline_md`), and the bulk path bypassed
+`load_section()` entirely (parses JSON directly via its own glob).  Both needed the migration
+hook.
+
+### What changed
+
+**`wake/models.py`**
+
+- `NARRATIVE_OUTLINE_VERSION = 1`, `NARRATIVE_SECTION_VERSION = 1`.
+- `NarrativeOutlineWrite(NarrativeOutline)` -- strict, `extra="forbid"`.  Outline has no bypass
+  readers (singleton file, always via `load_outline`).
+- `NarrativeSectionWrite(NarrativeSection)` -- strict, `extra="forbid"`.  `NarrativeSection`
+  (read model) stays permissive for the cross-module backlink glob scans (`evidence.py`'s
+  `_sections_citing`, `themes.py`'s `_narrative_sections_grounded_in`).
+- `migrate_outline()`, `migrate_section()` -- both v0->v1: stamp `schema_version` (no shape
+  change).
+
+**`wake/narrative.py`**
+
+- `load_outline()` calls `migrate_outline()` on every read.
+- `load_section()` **and** `_load_all_sections()` both call `migrate_section()` -- the bulk
+  glob-scan path migrates each entry as it's parsed, so `stitch()`/`export_refs()` (which go
+  through `_load_all_sections`, not `load_section`) see current-version data too.
+- `create_outline()` write site: `schema_version=NARRATIVE_OUTLINE_VERSION`,
+  `NarrativeOutlineWrite.validate_or_raise(...).to_json_dict()`.
+- `create_section()` and `confirm_section()` write sites: same treatment with
+  `NarrativeSectionWrite`.
+- `rerender_all_sections()`: added the opportunistic-migration-persistence pattern (same as
+  themes/dossiers) -- upgrades a legacy section's JSON in place during rerender.
+- Outline has no equivalent bulk-rerender-write path (only `_refresh_outline_md`, which
+  re-renders `.md` only, never rewrites `outline.json`) -- documented via
+  `test_rebuild_seed_over_pre_migration_outline`, which confirms `rebuild_seed` still succeeds
+  even though the outline JSON itself stays legacy-shaped until `create_outline` runs again.
+
+### Tests
+
+14 new tests (755->769 offline passing):
+
+- Migration-chain correctness for both outline and section (stamp, idempotent).
+- Old-unversioned round-trip through `load_outline`/`load_section`.
+- `test_old_unversioned_section_migrates_via_load_all_sections` -- confirms the bulk bypass
+  path also migrates (the wrinkle unique to this phase).
+- Strict-write rejects unknown field / permissive-read accepts unknown field, for both models.
+- `test_rebuild_seed_over_pre_migration_outline`, `test_rebuild_seed_over_pre_migration_section`
+  (test_build.py).
+
+**Golden-packet acceptance test:**
+`test_section_and_outline_jsons_are_unversioned_pre_phase_10_and_migrate_on_read` -- confirms
+the real Mofka packet's outline and three sections (generated before this phase existed) have no
+`schema_version` on disk, and that `load_outline()`/`load_section()` upgrade them correctly.
+
+### Updated existing tests
+
+`test_narrative_outline_validates_real_create_outline_json` and
+`test_narrative_section_validates_real_create_section_json` (test_models.py) now additionally
+assert the persisted `schema_version`.
+
+### Verification
+
+ruff, mypy, 769/769 offline tests passing.

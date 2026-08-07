@@ -44,7 +44,14 @@ from pathlib import Path
 from typing import Any
 
 from .io import atomic_write_json, atomic_write_text, now_iso, read_json
-from .models import NarrativeOutline, NarrativeSection
+from .models import (
+    NARRATIVE_OUTLINE_VERSION,
+    NARRATIVE_SECTION_VERSION,
+    NarrativeOutlineWrite,
+    NarrativeSectionWrite,
+    migrate_outline,
+    migrate_section,
+)
 from .seed import work_dir
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -102,14 +109,14 @@ def load_outline(seed_id: str, base: Path | None = None) -> dict[str, Any] | Non
     p = outline_json_path(seed_id, base)
     if not p.exists():
         return None
-    return read_json(p)
+    return migrate_outline(read_json(p))
 
 
 def load_section(seed_id: str, slug: str, base: Path | None = None) -> dict[str, Any] | None:
     p = section_json_path(seed_id, slug, base)
     if not p.exists():
         return None
-    return read_json(p)
+    return migrate_section(read_json(p))
 
 
 def _load_all_sections(seed_id: str, base: Path | None = None) -> dict[str, dict[str, Any]]:
@@ -122,6 +129,7 @@ def _load_all_sections(seed_id: str, base: Path | None = None) -> dict[str, dict
             entry = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
+        entry = migrate_section(entry)
         slug = entry.get("slug", p.stem)
         sections[slug] = entry
     return sections
@@ -308,13 +316,15 @@ def create_outline(
     created_at = existing.get("created_at") if existing else now_iso()
 
     payload = {
+        "schema_version": NARRATIVE_OUTLINE_VERSION,
         "seed_openalex_id": seed_id,
         "components": normalized,
         "created_at": created_at,
         "updated_at": now_iso(),
     }
 
-    NarrativeOutline.validate_or_raise(payload, context="narrative outline")
+    validated = NarrativeOutlineWrite.validate_or_raise(payload, context="narrative outline")
+    payload = validated.to_json_dict()
 
     d = narrative_dir(seed_id, base)
     d.mkdir(parents=True, exist_ok=True)
@@ -409,6 +419,7 @@ def create_section(
     created_at = existing.get("created_at") if existing else now_iso()
 
     payload = {
+        "schema_version": NARRATIVE_SECTION_VERSION,
         "seed_openalex_id": seed_id,
         "slug": slug,
         "title": title,
@@ -420,7 +431,8 @@ def create_section(
         "updated_at": now_iso(),
     }
 
-    NarrativeSection.validate_or_raise(payload, context=f"narrative section {slug!r}")
+    validated = NarrativeSectionWrite.validate_or_raise(payload, context=f"narrative section {slug!r}")
+    payload = validated.to_json_dict()
 
     d = sections_dir(seed_id, base)
     d.mkdir(parents=True, exist_ok=True)
@@ -492,7 +504,8 @@ def confirm_section(
     section["confirmed_at"] = now_iso()
     section["updated_at"] = now_iso()
 
-    NarrativeSection.validate_or_raise(section, context=f"narrative section {slug!r}")
+    validated = NarrativeSectionWrite.validate_or_raise(section, context=f"narrative section {slug!r}")
+    section = validated.to_json_dict()
     atomic_write_json(section_json_path(seed_id, slug, base), section)
     atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, section, base))
 
@@ -524,6 +537,16 @@ def rerender_all_sections(seed_id: str, seed_work: dict[str, Any], base: Path | 
         if section is None:
             continue
         atomic_write_text(section_md_path(seed_id, slug, base), _render_section_markdown(seed_work, section, base))
+
+        # Opportunistic persistence of migration: load_section() already
+        # ran migrate_section() on the raw JSON, so `section` is
+        # current-version.  If the on-disk file pre-dates the migration,
+        # persist the migrated form now (same pattern as themes/dossiers).
+        json_path = section_json_path(seed_id, slug, base)
+        on_disk_version = json.loads(json_path.read_text()).get("schema_version", 0)
+        if on_disk_version < NARRATIVE_SECTION_VERSION:
+            validated = NarrativeSectionWrite.validate_or_raise(section, context=f"narrative section {slug!r}")
+            atomic_write_json(json_path, validated.to_json_dict())
     return slugs
 
 

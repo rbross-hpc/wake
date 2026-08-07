@@ -176,6 +176,31 @@ def test_outline_json_validates_as_narrative_outline():
     assert len(parsed.components) == 3
 
 
+def test_section_and_outline_jsons_are_unversioned_pre_phase_10_and_migrate_on_read(tmp_path):
+    """The golden packet's outline and sections were generated before
+    Phase 10 (narrative versioning) existed -- no schema_version on disk.
+    Phase-10 acceptance test: load_outline()/load_section() must migrate
+    them on read, mirroring the Phase-6/Phase-9 acceptance tests."""
+    from wake.models import NARRATIVE_OUTLINE_VERSION, NARRATIVE_SECTION_VERSION
+    from wake.narrative import load_outline, load_section
+
+    outline_raw = json.loads((_NARRATIVE_DIR / "outline.json").read_text())
+    assert "schema_version" not in outline_raw
+    for slug in _SECTION_SLUGS:
+        section_raw = json.loads((_NARRATIVE_DIR / "sections" / f"{slug}.json").read_text())
+        assert "schema_version" not in section_raw
+
+    _copy_packet(tmp_path)
+    outline_result = load_outline(_SEED_ID, base=tmp_path)
+    assert outline_result is not None
+    assert outline_result["schema_version"] == NARRATIVE_OUTLINE_VERSION
+
+    for slug in _SECTION_SLUGS:
+        section_result = load_section(_SEED_ID, slug, base=tmp_path)
+        assert section_result is not None
+        assert section_result["schema_version"] == NARRATIVE_SECTION_VERSION
+
+
 def test_overrides_jsonl_validates_as_override():
     overrides = load_overrides(_SEED_ID, base=_PACKET_ROOT.parent.parent)
     assert len(overrides) == len(_VERIFIED_IDS)

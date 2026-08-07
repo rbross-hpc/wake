@@ -318,3 +318,55 @@ def test_rebuild_seed_over_pre_migration_theme(tmp_path):
 
     on_disk = _json.loads(json_path.read_text())
     assert on_disk.get("schema_version") == THEME_VERSION
+
+
+def test_rebuild_seed_over_pre_migration_outline(tmp_path):
+    """rebuild_seed must succeed with a legacy (no schema_version)
+    outline.json.  Unlike sections/themes/dossiers, outline has no bulk
+    rerender-write path -- rebuild_seed's outline step only re-renders the
+    .md (_refresh_outline_md), so the on-disk JSON stays legacy-shaped
+    until create_outline is called again.  This test documents that
+    behavior: rebuild succeeds and load_outline migrates in memory, but
+    the persisted file is untouched by rebuild alone."""
+    import json as _json
+
+    from wake.narrative import outline_json_path
+
+    fixture = _build_full_wiki(tmp_path)
+    seed_id = fixture["seed_id"]
+
+    json_path = outline_json_path(seed_id, tmp_path)
+    current = _json.loads(json_path.read_text())
+    current.pop("schema_version", None)
+    json_path.write_text(_json.dumps(current))
+
+    assert "schema_version" not in _json.loads(json_path.read_text())
+
+    result = rebuild_seed(PARALLEL_NETCDF_WORK, base=tmp_path, verbose=False)
+    assert result["ok"] is True
+
+
+def test_rebuild_seed_over_pre_migration_section(tmp_path):
+    """rebuild_seed must succeed when narrative/sections/ contains a
+    legacy section (no schema_version).  rerender_all_sections persists
+    the migrated (schema_version=1) form, same pattern as themes."""
+    import json as _json
+
+    from wake.models import NARRATIVE_SECTION_VERSION
+    from wake.narrative import section_json_path
+
+    fixture = _build_full_wiki(tmp_path)
+    seed_id = fixture["seed_id"]
+
+    json_path = section_json_path(seed_id, "s1", tmp_path)
+    current = _json.loads(json_path.read_text())
+    current.pop("schema_version", None)
+    json_path.write_text(_json.dumps(current))
+
+    assert "schema_version" not in _json.loads(json_path.read_text())
+
+    result = rebuild_seed(PARALLEL_NETCDF_WORK, base=tmp_path, verbose=False)
+    assert result["ok"] is True
+
+    on_disk = _json.loads(json_path.read_text())
+    assert on_disk.get("schema_version") == NARRATIVE_SECTION_VERSION
