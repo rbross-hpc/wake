@@ -336,6 +336,28 @@ class NarrativeOutline(WakeModel):
     updated_at: str
 
 
+NARRATIVE_OUTLINE_VERSION = 1
+
+
+class NarrativeOutlineWrite(NarrativeOutline):
+    """Strict write variant of NarrativeOutline -- see ThemeWrite/
+    EvidenceDossierWrite for the read-permissive/write-strict rationale.
+    Outline has no bypass readers (it's a singleton file, always read via
+    load_outline)."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+def migrate_outline(raw: dict[str, Any]) -> dict[str, Any]:
+    """Migrate a raw narrative outline dict forward to
+    NARRATIVE_OUTLINE_VERSION.  Idempotent.  v0 (no key) -> v1: stamp
+    schema_version -- no shape change."""
+    result = dict(raw)
+    if result.get("schema_version", 0) < 1:
+        result["schema_version"] = NARRATIVE_OUTLINE_VERSION
+    return result
+
+
 class NarrativeSection(WakeModel):
     """narrative.py::create_section()'s JSON sidecar shape
     (narrative/sections/<slug>.json)."""
@@ -356,6 +378,29 @@ class NarrativeSection(WakeModel):
     @classmethod
     def _slug_shape(cls, v: str) -> str:
         return _validate_slug(v)
+
+
+NARRATIVE_SECTION_VERSION = 1
+
+
+class NarrativeSectionWrite(NarrativeSection):
+    """Strict write variant of NarrativeSection.  Read paths (load_section,
+    and the bulk _load_all_sections() plus the cross-module backlink glob
+    scans in evidence.py/themes.py) use the permissive NarrativeSection
+    (extra="allow"); write paths (create_section, confirm_section) use
+    this subclass, which sets extra="forbid"."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+def migrate_section(raw: dict[str, Any]) -> dict[str, Any]:
+    """Migrate a raw narrative section dict forward to
+    NARRATIVE_SECTION_VERSION.  Idempotent.  v0 (no key) -> v1: stamp
+    schema_version -- no shape change."""
+    result = dict(raw)
+    if result.get("schema_version", 0) < 1:
+        result["schema_version"] = NARRATIVE_SECTION_VERSION
+    return result
 
 
 class Override(WakeModel):

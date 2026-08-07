@@ -1111,12 +1111,24 @@ baseline) to 713 across all six phases, entirely additive.
     acceptance test confirming the real (pre-Phase-9, unversioned)
     Mofka themes migrate correctly on read.
 
+11. `refactor/narrative-versioning` — **BUILT**, see PLAN.md v0.4.10.
+    `NARRATIVE_OUTLINE_VERSION=1`, `NARRATIVE_SECTION_VERSION=1`,
+    `NarrativeOutlineWrite`/`NarrativeSectionWrite` (`extra="forbid"`),
+    `migrate_outline()`/`migrate_section()`.  Both `load_section()` and
+    the bulk `_load_all_sections()` (used by `stitch`/`export_refs`,
+    previously bypassed `load_section`) now migrate on read.
+    `rerender_all_sections()` opportunistically persists migrated legacy
+    sections.  14 new tests (755->769), including a golden-packet
+    acceptance test confirming the real (pre-Phase-10, unversioned)
+    Mofka outline + 3 sections migrate correctly on read.
+
 **Deferred follow-on work, not forgotten, all real:**
 - Replicating the strict-write / permissive-read split and migration
-  chain to the remaining three artifact families (narrative,
-  classification, overrides): same pattern as themes, in progress.
+  chain to the remaining two artifact families (classification,
+  overrides): same pattern, in progress.
 - Replacing the 15 catalogued `_normalize_*`/legacy-shape functions
-  with the migration-chain pattern now established by dossiers/themes.
+  with the migration-chain pattern now established by dossiers/themes/
+  narrative.
 - Full `WakeContext` threading through all ~90 existing `base:`-taking
   domain functions (Phase 3 landed the context object and one
   canonical CLI construction point; `ctx.base` is a verified drop-in

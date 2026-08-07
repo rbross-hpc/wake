@@ -24,6 +24,8 @@ from wake import evidence, narrative, themes
 from wake.classify import classify_one, save_classified
 from wake.models import (
     EVIDENCE_DOSSIER_VERSION,
+    NARRATIVE_OUTLINE_VERSION,
+    NARRATIVE_SECTION_VERSION,
     SCHEMA_VERSION,
     THEME_VERSION,
     ArtifactReference,
@@ -31,12 +33,16 @@ from wake.models import (
     EvidenceDossier,
     EvidenceDossierWrite,
     NarrativeOutline,
+    NarrativeOutlineWrite,
     NarrativeSection,
+    NarrativeSectionWrite,
     Override,
     Theme,
     ThemeWrite,
     Work,
     migrate_dossier,
+    migrate_outline,
+    migrate_section,
     migrate_theme,
 )
 from wake.report import add_override, load_overrides
@@ -436,6 +442,7 @@ def test_narrative_outline_validates_real_create_outline_json(tmp_path):
     assert len(parsed.components) == 2
     assert parsed.components[1].kind == "theme"
     assert parsed.components[1].theme_slugs == ["t1"]
+    assert sidecar.get("schema_version") == NARRATIVE_OUTLINE_VERSION
 
 
 def test_narrative_section_validates_real_create_section_json(tmp_path):
@@ -456,6 +463,108 @@ def test_narrative_section_validates_real_create_section_json(tmp_path):
     assert parsed.kind == "free"
     assert parsed.section_status == "draft"
     assert "PnetCDF" in parsed.prose
+    assert sidecar.get("schema_version") == NARRATIVE_SECTION_VERSION
+
+
+# --- migrate_outline / migrate_section (Phase 10) ---------------------------
+
+_MINIMAL_OUTLINE_V0: dict = {
+    "seed_openalex_id": "W1",
+    "components": [{"slug": "intro", "title": "Introduction", "kind": "free", "theme_slugs": []}],
+    "created_at": "2025-01-01T00:00:00",
+    "updated_at": "2025-01-01T00:00:00",
+}
+
+_MINIMAL_SECTION_V0: dict = {
+    "seed_openalex_id": "W1",
+    "slug": "intro",
+    "title": "Introduction",
+    "kind": "free",
+    "theme_slugs": [],
+    "prose": "Some prose.",
+    "created_at": "2025-01-01T00:00:00",
+    "updated_at": "2025-01-01T00:00:00",
+}
+
+
+def test_migrate_outline_v0_stamps_schema_version():
+    migrated = migrate_outline(dict(_MINIMAL_OUTLINE_V0))
+    assert migrated["schema_version"] == NARRATIVE_OUTLINE_VERSION
+
+
+def test_migrate_outline_idempotent():
+    once = migrate_outline(dict(_MINIMAL_OUTLINE_V0))
+    twice = migrate_outline(once)
+    assert once == twice
+
+
+def test_migrate_section_v0_stamps_schema_version():
+    migrated = migrate_section(dict(_MINIMAL_SECTION_V0))
+    assert migrated["schema_version"] == NARRATIVE_SECTION_VERSION
+
+
+def test_migrate_section_idempotent():
+    once = migrate_section(dict(_MINIMAL_SECTION_V0))
+    twice = migrate_section(once)
+    assert once == twice
+
+
+def test_old_unversioned_outline_round_trips_through_load_outline(tmp_path):
+    import json as _json
+    seed_id = "W1"
+    narrative_dir = tmp_path / "wake-out" / seed_id / "narrative"
+    narrative_dir.mkdir(parents=True)
+    (narrative_dir / "outline.json").write_text(_json.dumps(_MINIMAL_OUTLINE_V0))
+    result = narrative.load_outline(seed_id, base=tmp_path)
+    assert result is not None
+    assert result["schema_version"] == NARRATIVE_OUTLINE_VERSION
+
+
+def test_old_unversioned_section_round_trips_through_load_section(tmp_path):
+    import json as _json
+    seed_id = "W1"
+    sections_dir = tmp_path / "wake-out" / seed_id / "narrative" / "sections"
+    sections_dir.mkdir(parents=True)
+    (sections_dir / "intro.json").write_text(_json.dumps(_MINIMAL_SECTION_V0))
+    result = narrative.load_section(seed_id, "intro", base=tmp_path)
+    assert result is not None
+    assert result["schema_version"] == NARRATIVE_SECTION_VERSION
+
+
+def test_old_unversioned_section_migrates_via_load_all_sections(tmp_path):
+    """_load_all_sections (the bulk hot path used by stitch/export_refs)
+    must also migrate on read, not only the single-section load_section()."""
+    import json as _json
+    seed_id = "W1"
+    sections_dir = tmp_path / "wake-out" / seed_id / "narrative" / "sections"
+    sections_dir.mkdir(parents=True)
+    (sections_dir / "intro.json").write_text(_json.dumps(_MINIMAL_SECTION_V0))
+    result = narrative._load_all_sections(seed_id, base=tmp_path)
+    assert result["intro"]["schema_version"] == NARRATIVE_SECTION_VERSION
+
+
+def test_narrative_outline_write_rejects_unknown_field():
+    good = {**_MINIMAL_OUTLINE_V0, "schema_version": NARRATIVE_OUTLINE_VERSION}
+    with pytest.raises(ValueError, match="schema"):
+        NarrativeOutlineWrite.validate_or_raise({**good, "typo_field": "oops"}, context="test")
+
+
+def test_narrative_section_write_rejects_unknown_field():
+    good = {**_MINIMAL_SECTION_V0, "schema_version": NARRATIVE_SECTION_VERSION}
+    with pytest.raises(ValueError, match="schema"):
+        NarrativeSectionWrite.validate_or_raise({**good, "typo_field": "oops"}, context="test")
+
+
+def test_narrative_outline_read_model_accepts_unknown_field():
+    raw = {**_MINIMAL_OUTLINE_V0, "future_field": "ok"}
+    parsed = NarrativeOutline.model_validate(raw)
+    assert parsed.seed_openalex_id == "W1"
+
+
+def test_narrative_section_read_model_accepts_unknown_field():
+    raw = {**_MINIMAL_SECTION_V0, "future_field": "ok"}
+    parsed = NarrativeSection.model_validate(raw)
+    assert parsed.seed_openalex_id == "W1"
 
 
 # --- Override ---------------------------------------------------------------
