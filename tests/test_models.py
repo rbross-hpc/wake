@@ -25,6 +25,7 @@ from wake.classify import classify_one, save_classified
 from wake.models import (
     EVIDENCE_DOSSIER_VERSION,
     SCHEMA_VERSION,
+    THEME_VERSION,
     ArtifactReference,
     ClassificationResult,
     EvidenceDossier,
@@ -33,8 +34,10 @@ from wake.models import (
     NarrativeSection,
     Override,
     Theme,
+    ThemeWrite,
     Work,
     migrate_dossier,
+    migrate_theme,
 )
 from wake.report import add_override, load_overrides
 from wake.vocabulary import CANONICAL_RELATIONSHIPS
@@ -343,6 +346,7 @@ def test_theme_validates_real_create_theme_json_sidecar(tmp_path):
     assert parsed.theme_status == "draft"
     assert len(parsed.citing_works) == 2
     assert set(parsed.needs_evidence) == {w["openalex_id"] for w in works}
+    assert sidecar.get("schema_version") == THEME_VERSION
 
 
 def test_theme_rejects_invalid_slug():
@@ -351,6 +355,60 @@ def test_theme_rejects_invalid_slug():
             "seed_openalex_id": "W1", "slug": "Not A Slug!", "title": "T", "summary": "S",
             "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00",
         })
+
+
+# --- migrate_theme / ThemeWrite (Phase 9) -----------------------------------
+
+_MINIMAL_THEME_V0: dict = {
+    "seed_openalex_id": "W1",
+    "slug": "earth-system",
+    "title": "Earth System Use",
+    "summary": "Summary.",
+    "created_at": "2025-01-01T00:00:00",
+    "updated_at": "2025-01-01T00:00:00",
+}
+
+
+def test_migrate_theme_v0_stamps_schema_version():
+    migrated = migrate_theme(dict(_MINIMAL_THEME_V0))
+    assert migrated["schema_version"] == THEME_VERSION
+    assert migrated["slug"] == "earth-system"
+
+
+def test_migrate_theme_already_current_is_noop():
+    raw = {**_MINIMAL_THEME_V0, "schema_version": THEME_VERSION}
+    migrated = migrate_theme(raw)
+    assert migrated == raw
+
+
+def test_migrate_theme_idempotent():
+    once = migrate_theme(dict(_MINIMAL_THEME_V0))
+    twice = migrate_theme(once)
+    assert once == twice
+
+
+def test_old_unversioned_theme_round_trips_through_load_theme(tmp_path):
+    import json as _json
+    seed_id = "W1"
+    slug = "earth-system"
+    themes_dir = tmp_path / "wake-out" / seed_id / "evidence" / "themes"
+    themes_dir.mkdir(parents=True)
+    (themes_dir / f"{slug}.json").write_text(_json.dumps(_MINIMAL_THEME_V0))
+    result = themes.load_theme(seed_id, slug, base=tmp_path)
+    assert result is not None
+    assert result["schema_version"] == THEME_VERSION
+
+
+def test_theme_write_rejects_unknown_field():
+    good = {**_MINIMAL_THEME_V0, "schema_version": THEME_VERSION}
+    with pytest.raises(ValueError, match="schema"):
+        ThemeWrite.validate_or_raise({**good, "typo_field": "oops"}, context="test")
+
+
+def test_theme_read_model_accepts_unknown_field():
+    raw = {**_MINIMAL_THEME_V0, "future_field": "ok"}
+    parsed = Theme.model_validate(raw)
+    assert parsed.slug == "earth-system"
 
 
 # --- NarrativeOutline / NarrativeSection -----------------------------------

@@ -285,6 +285,34 @@ class Theme(WakeModel):
         return _validate_slug(v)
 
 
+THEME_VERSION = 1
+
+
+class ThemeWrite(Theme):
+    """Strict write variant of Theme -- see EvidenceDossierWrite for the
+    read-permissive/write-strict rationale.  Read paths (load_theme, and
+    the glob-scan bypass readers in evidence_wiki.py/evidence.py/themes.py/
+    report.py that load every theme sidecar for derived counts/backlinks)
+    use the permissive Theme (extra="allow"); write paths (create_theme,
+    confirm_theme) use this subclass, which sets extra="forbid"."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+def migrate_theme(raw: dict[str, Any]) -> dict[str, Any]:
+    """Migrate a raw theme dict forward to THEME_VERSION.
+
+    Idempotent.  v0 (no key) -> v1: add schema_version: 1 -- no shape
+    change; there is no legacy-shape normalization for themes (unlike
+    dossiers' absolute/relative path fixup), so this migration only makes
+    the implicit default explicit.
+    """
+    result = dict(raw)
+    if result.get("schema_version", 0) < 1:
+        result["schema_version"] = THEME_VERSION
+    return result
+
+
 class NarrativeComponent(WakeModel):
     slug: str
     title: str
