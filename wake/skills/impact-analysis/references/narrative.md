@@ -33,7 +33,9 @@ an already-existing theme (loadable via `wake theme create`) — it does
 `--force` — nothing expensive to protect against re-doing); `created_at`
 preserved across rewrites. Raises an error on a malformed component list
 (bad kind, missing/extra theme_slugs, duplicate slug, or a theme
-reference that doesn't exist).
+reference that doesn't exist). Writes only `outline_json_path` --
+`outline_path` (the `.md`) is not rendered by this call; run `wake
+rebuild "<seed>"` to render it (see "Rendering the Wiki" in SKILL.md).
 
 `wake narrative section create "<seed>" <slug> --title "..." --prose
 "..." [--theme-slugs SLUG,SLUG,...]` response shape:
@@ -54,7 +56,10 @@ reference that doesn't exist).
 `"theme"`, else `"free"`). Always writes `"draft"` — drafting/redrafting
 is an agent judgment, never itself a sign-off. A section can reference
 *multiple* themes (e.g. a synthesis section spanning two of them). Always
-overwrites the same slug; `created_at` preserved across rewrites.
+overwrites the same slug; `created_at` preserved across rewrites. Writes
+only `section_json_path` -- `section_path` (the `.md`) is not rendered
+by this call; run `wake rebuild "<seed>"` (or `wake narrative section
+rerender-all`) to render it.
 
 ## Inline source references
 
@@ -106,11 +111,13 @@ display-only convenience for browsing one section in isolation before
 the whole narrative is stitched; it has no effect on validation or on
 stitch's own `[R<n>]` numbering.
 
-If a section's links look stale (e.g. a dossier appeared after the
-section was drafted and hasn't been re-saved since), `wake narrative
-section rerender-all "<seed>"` re-emits every section's `.md` from its
-`.json` with fresh links — no change to any section's own prose or
-status.
+A section's own `.md` is only rendered by `wake rebuild "<seed>"` or
+`wake narrative section rerender-all "<seed>"` (which re-emits every
+section's `.md` from its `.json` with fresh links, no change to any
+section's own prose or status) -- `create`/`confirm` never render it
+themselves. Run one of those whenever a dossier appeared after the
+section was drafted, or any time you want the per-section preview to be
+current.
 
 `wake narrative section confirm "<seed>" <slug>` response shape on success:
 ```json
@@ -276,8 +283,11 @@ with no computation (same convention as `wake show brief`/`metrics`/
 | `wake narrative show "<seed>"` | the stitched top-level `narrative.md` |
 
 All three respond `{"ok": true, "data": {"markdown": "..."}}` on success
-and error (exit 1) with a message naming the exact command to run first
-if the file doesn't exist yet.
+and error (exit 1) if the file doesn't exist yet -- naming the exact
+`create` command to run first if the underlying JSON doesn't exist
+either, or `wake rebuild "<seed>"` if the JSON exists but hasn't been
+rendered yet (i.e. the corresponding `create`/`confirm` ran but no
+rebuild has since).
 
 ## Re-rendering every section (`wake narrative section rerender-all`)
 

@@ -11,10 +11,14 @@ wake-out/<OpenAlex-ID>/
                              evidence/index.md / evidence/themes/index.md /
                              evidence/log.md (each omitted until its target exists),
                              reading conventions, and the four human-editable .jsonl
-                             files; regenerated automatically as a side effect of
-                             bake/evidence/theme/narrative-stitch/override, no
-                             separate command -- same trigger as AGENTS.md below,
-                             both built by evidence_wiki.rebuild_wiki_orientation()
+                             files; rendered only by `wake rebuild` (or as a side
+                             effect of `wake bake`/`wake narrative stitch`, which
+                             remain explicit render verbs for impact.md/narrative.md
+                             respectively) -- evidence/override/theme/narrative
+                             outline-and-section create/confirm write JSON only and
+                             do NOT render this file; see build.py's module
+                             docstring. Same trigger as AGENTS.md below, both built
+                             by evidence_wiki.rebuild_wiki_orientation()
   AGENTS.md                — agent-oriented orientation: for an agent handed just
                              this folder, with no access to wake's own source and
                              possibly wake not even installed. Terse schema
@@ -25,8 +29,9 @@ wake-out/<OpenAlex-ID>/
                              of concrete query recipes) rather than README.md's
                              explanatory prose. Carries no YAML frontmatter (unlike
                              every other rendered .md here) -- it's a plain
-                             reference doc, not an OKF concept doc. Same
-                             regeneration trigger as README.md
+                             reference doc, not an OKF concept doc. Same rendering
+                             trigger as README.md (`wake rebuild`, not a write-time
+                             side effect)
   seed.json               — resolved seed + LLM description + seed_pdf sub-object
                              (path/source on success; tried/fallback_links on
                              failure -- see evidence_wiki.seed_pdf_status(), the
@@ -67,11 +72,17 @@ wake-out/<OpenAlex-ID>/
     <citing-id>.md          — OKF concept document (human/agent-readable); shows a
                                "Referenced by:" line naming every theme/narrative
                                section currently citing this work, when any do
-                               (derived at render time, refreshed automatically by
-                               theme/section writes and `wake evidence rerender-all`)
-    <citing-id>.json        — same finding, structured (for programmatic reuse)
+                               (derived at render time from theme/section JSON --
+                               only refreshed when this dossier is next rendered,
+                               via `wake rebuild` or `wake evidence --rerender-all`;
+                               theme/section create/confirm write JSON only)
+    <citing-id>.json        — same finding, structured (for programmatic reuse;
+                               written immediately by `wake evidence`/`wake
+                               override`/`wake unverify`, ahead of any render)
     index.md                — OKF catalog: Verified / Pending Review, ranked
-                               by score; regenerated automatically, no command
+                               by score; rendered only by `wake rebuild` -- not a
+                               side effect of `wake evidence`/`wake override`/
+                               `wake unverify`
     log.md                  — OKF chronological log of every investigation
                                (built, rebuilt, failed, verified, pdf_fetched,
                                pdf_fetch_failed); append-only. All append-only
@@ -81,19 +92,28 @@ wake-out/<OpenAlex-ID>/
       <slug>.md               — OKF concept doc; draft or confirmed; shows a
                                  "## Referenced By" section naming narrative
                                  sections grounded in it (when any exist) and a
-                                 permanent back-link to themes/index.md
+                                 permanent back-link to themes/index.md; rendered
+                                 only by `wake rebuild` or `wake theme
+                                 rerender-all` -- `theme create`/`confirm` write
+                                 only <slug>.json
       <slug>.json              — same theme, structured (citing_works, needs_evidence)
-      index.md                 — OKF catalog: Confirmed / Draft
+      index.md                 — OKF catalog: Confirmed / Draft; rendered only by
+                                 `wake rebuild`
   narrative/               — narrative drafting (wake narrative)
-    outline.md               — planned section order/status (wake narrative outline create)
+    outline.md               — planned section order/status; rendered only by
+                                `wake rebuild` -- `wake narrative outline create`
+                                writes only outline.json
     outline.json              — same, structured (components)
     sections/
-      <slug>.md                — one section's prose; draft or confirmed. Every
-                                 [ref:ID] marker in the rendered prose (only here,
-                                 not in the .json or the stitched narrative.md) is
-                                 a link to that work's evidence dossier (or
-                                 impact.md for SEED) when the dossier exists;
-                                 otherwise left as the raw marker
+      <slug>.md                — one section's prose; draft or confirmed; rendered
+                                 only by `wake rebuild` or `wake narrative section
+                                 rerender-all` -- `section create`/`confirm` write
+                                 only <slug>.json. Every [ref:ID] marker in the
+                                 rendered prose (only here, not in the .json or
+                                 the stitched narrative.md) is a link to that
+                                 work's evidence dossier (or impact.md for SEED)
+                                 when the dossier exists; otherwise left as the
+                                 raw marker
       <slug>.json               — same section, structured (kind, theme_slugs, prose)
   narrative.md             — assembled narrative (wake narrative stitch): OKF-style
                               YAML frontmatter (seed + confirmed/draft/missing
@@ -109,14 +129,18 @@ Use `--work-dir DIR` (or `WAKE_WORK_DIR` env var) to control where
 
 Every wiki concept doc (dossier, theme, narrative section, `impact.md`,
 `narrative.md`) is a **`.md` + `.json` pair**: the `.json` is the source
-of truth (structured, safe to regenerate the `.md` from — see each
-subsystem's `rerender-all` verb), the `.md` is the derived human view,
-opening with an OKF-style YAML frontmatter block (`type`, `status`/
-counts, `timestamp`) so a human or tool can skim structured metadata
-without parsing prose. `README.md`, `AGENTS.md`, and the `index.md`/
-`log.md`/`themes/index.md` catalogs are the only `.md` files with no
-`.json` sidecar of their own — they're 100% derived from other files
-that already have one, so a sidecar would just duplicate data.
+of truth, always written immediately by the command that creates or
+updates the artifact; the `.md` is the derived human view, rendered only
+by `wake rebuild` (or that subsystem's own `rerender-all` verb, or --
+for `impact.md`/`narrative.md` specifically -- `wake bake`/`wake
+narrative stitch`, which remain explicit render verbs) -- never a
+write-time side effect of the JSON write itself. It opens with an
+OKF-style YAML frontmatter block (`type`, `status`/counts, `timestamp`)
+so a human or tool can skim structured metadata without parsing prose.
+`README.md`, `AGENTS.md`, and the `index.md`/`log.md`/`themes/index.md`
+catalogs are the only `.md` files with no `.json` sidecar of their own
+— they're 100% derived from other files that already have one, so a
+sidecar would just duplicate data.
 `AGENTS.md` additionally carries no YAML frontmatter at all (unlike
 every other file in this list) — it's a plain reference doc in the
 same spirit as a project's own `AGENTS.md`, not an OKF concept doc.

@@ -78,20 +78,6 @@ def load_theme(seed_id: str, slug: str, base: Path | None = None) -> dict[str, A
     return migrate_theme(read_json(p))
 
 
-def _rerender_dossiers_for(seed_work: dict[str, Any], citing_ids: list[str], base: Path | None = None) -> None:
-    """Re-render every named citing work's evidence dossier .md (if one
-    exists) so its "Referenced by" back-link picks up this theme -- a
-    rendering-only pass, no LLM/PDF/state change. Called after
-    `create_theme()` writes/overwrites a theme, since that's the only
-    time a dossier's theme membership can change. A citing work with no
-    dossier yet (background-mention, or not yet evidenced) has nothing to
-    re-render and is silently skipped."""
-    from .evidence import rerender_dossier_md
-
-    for cid in citing_ids:
-        rerender_dossier_md(seed_work, cid, base=base)
-
-
 def _resolve_work_status(
     seed_id: str,
     citing_id: str,
@@ -144,8 +130,14 @@ def create_theme(
     bar `wake evidence` already enforces) -- run `wake classify --ids
     <id>` first.
 
+    Writes only the theme's JSON sidecar. Does NOT render the theme's
+    .md, evidence/themes/index.md, README.md/AGENTS.md, or cited
+    dossiers' back-links -- run `wake rebuild` after this to render
+    Markdown from the JSON just written (see build.py's module
+    docstring).
+
     Returns a summary dict: {ok, theme_path, theme_json_path, theme_status,
-    citing_works: [...], needs_evidence: [...]}.
+    citing_works: [...], needs_evidence: [...], rebuild_needed: True}.
     """
     from .classify import load_classified
     from .dedup import load_duplicates
@@ -234,13 +226,11 @@ def create_theme(
     md_path = theme_path(seed_id, slug, base)
 
     atomic_write_json(json_path, payload)
-    atomic_write_text(md_path, _render_theme_markdown(seed_work, payload, base))
 
-    from .evidence_wiki import rebuild_themes_index, rebuild_wiki_orientation
-    rebuild_themes_index(seed_id, seed_title=seed_work.get("title"), base=base)
-    rebuild_wiki_orientation(seed_id, seed_work, base=base)
-    _rerender_dossiers_for(seed_work, citing_ids, base)
-
+    # The theme's .md, evidence/themes/index.md, README.md/AGENTS.md, and
+    # cited dossiers' back-links are intentionally NOT re-rendered here --
+    # rendering is `wake rebuild`'s job now, not a write-time side effect
+    # of this JSON write (see build.py's module docstring).
     return {
         "ok": True,
         "theme_path": str(md_path),
@@ -248,6 +238,7 @@ def create_theme(
         "theme_status": "draft",
         "citing_works": citing_works,
         "needs_evidence": needs_evidence,
+        "rebuild_needed": True,
     }
 
 
@@ -264,8 +255,12 @@ def confirm_theme(
     fresh at confirm time (not from the theme's own possibly-stale JSON)
     so a work verified after the theme was created still counts.
 
-    Returns {"ok": True, ...} on success, or {"ok": False, "reason":
-    "unverified_works", "unverified": [...]}} if blocked.
+    Writes only the theme's JSON sidecar. Does NOT render Markdown -- run
+    `wake rebuild` after this (see build.py's module docstring).
+
+    Returns {"ok": True, ..., "rebuild_needed": True} on success, or
+    {"ok": False, "reason": "unverified_works", "unverified": [...]}} if
+    blocked.
     """
     from .classify import load_classified
     from .report import load_overrides
@@ -311,18 +306,15 @@ def confirm_theme(
     json_path = theme_json_path(seed_id, slug, base)
     md_path = theme_path(seed_id, slug, base)
     atomic_write_json(json_path, theme)
-    atomic_write_text(md_path, _render_theme_markdown(seed_work, theme, base))
 
-    from .evidence_wiki import rebuild_themes_index, rebuild_wiki_orientation
-    rebuild_themes_index(seed_id, seed_title=seed_work.get("title"), base=base)
-    rebuild_wiki_orientation(seed_id, seed_work, base=base)
-    _rerender_dossiers_for(seed_work, citing_ids, base)
-
+    # See create_theme()'s comment -- rendering is `wake rebuild`'s job,
+    # not a side effect of this JSON write.
     return {
         "ok": True,
         "theme_path": str(md_path),
         "theme_json_path": str(json_path),
         "theme_status": "confirmed",
+        "rebuild_needed": True,
     }
 
 

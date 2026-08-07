@@ -250,26 +250,33 @@ def run_narrative_outline_create(args) -> None:
         sys.exit(1)
 
     def human(d):
-        print(f"Outline written: {d['outline_path']}")
+        print(f"Outline JSON written: {d['outline_json_path']}")
         for c in d["components"]:
             print(f"  - {c['title']} ({c['slug']}, {c['kind']})")
         print("  Draft each section with `wake narrative section create`, then "
               "`wake narrative stitch` to assemble narrative.md.")
+        print(f"  Run `wake rebuild {args.seed}` to render outline.md.")
 
     emit("narrative", result, as_json=args.json_out, human=human)
 
 
 def run_narrative_outline_show(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
-    from ...narrative import outline_md_path
+    from ...narrative import outline_json_path, outline_md_path
     base = _work_dir_base(args)
     seed_id = work["openalex_id"]
 
     p = outline_md_path(seed_id, base)
     if not p.exists():
-        emit_error("narrative", RuntimeError(
-            f"No narrative outline found for {args.seed}. Run `wake narrative outline create` first."
-        ), as_json=args.json_out)
+        if outline_json_path(seed_id, base).exists():
+            emit_error("narrative", RuntimeError(
+                f"Narrative outline exists but hasn't been rendered yet. "
+                f"Run `wake rebuild {args.seed}` first."
+            ), as_json=args.json_out)
+        else:
+            emit_error("narrative", RuntimeError(
+                f"No narrative outline found for {args.seed}. Run `wake narrative outline create` first."
+            ), as_json=args.json_out)
         sys.exit(1)
 
     text = p.read_text(encoding="utf-8")
@@ -304,12 +311,13 @@ def run_narrative_section_create(args) -> None:
         sys.exit(1)
 
     def human(d):
-        print(f"Section written (draft): {d['section_path']}")
+        print(f"Section JSON written (draft): {d['section_json_path']}")
         if d["theme_slugs"]:
             print(f"  Grounded in theme(s): {', '.join(d['theme_slugs'])}")
         print("  Present to the human; run `wake narrative section confirm` on their behalf "
               "once they approve" + (" (requires every referenced theme to be currently confirmed)."
               if d["theme_slugs"] else "."))
+        print(f"  Run `wake rebuild {args.seed}` to render this section's Markdown.")
 
     emit("narrative", result, as_json=args.json_out, human=human)
 
@@ -329,7 +337,8 @@ def run_narrative_section_confirm(args) -> None:
         if not d["ok"]:
             print(d["message"])
             return
-        print(f"Section confirmed: {d['section_path']}")
+        print(f"Section confirmed: {d['section_json_path']}")
+        print(f"Run `wake rebuild {args.seed}` to render this in the wiki.")
 
     emit("narrative", result, as_json=args.json_out, human=human)
     if not result["ok"]:
@@ -338,15 +347,21 @@ def run_narrative_section_confirm(args) -> None:
 
 def run_narrative_section_show(args) -> None:
     work = _resolve_seed_to_work(args.seed, args)
-    from ...narrative import section_md_path
+    from ...narrative import section_json_path, section_md_path
     base = _work_dir_base(args)
     seed_id = work["openalex_id"]
 
     p = section_md_path(seed_id, args.slug, base)
     if not p.exists():
-        emit_error("narrative", RuntimeError(
-            f"No section {args.slug!r} found for {args.seed}. Run `wake narrative section create` first."
-        ), as_json=args.json_out)
+        if section_json_path(seed_id, args.slug, base).exists():
+            emit_error("narrative", RuntimeError(
+                f"Section {args.slug!r} exists but hasn't been rendered yet. "
+                f"Run `wake rebuild {args.seed}` first."
+            ), as_json=args.json_out)
+        else:
+            emit_error("narrative", RuntimeError(
+                f"No section {args.slug!r} found for {args.seed}. Run `wake narrative section create` first."
+            ), as_json=args.json_out)
         sys.exit(1)
 
     text = p.read_text(encoding="utf-8")

@@ -10,8 +10,8 @@ description: Use when analyzing the citation impact of a research paper with the
 `wake` is an analysis instrument you (the agent) wield on the human's behalf.
 It is **not** an autopilot — there is no single "do everything" command. You
 compose thin primitives (`resolve`, `citing`, `sample`, `classify`, `gaps`,
-`fetch-pdf`, `fill-abstract`, `evidence`, `bake`, `status`, `cost`,
-`override`) into an **explore-first workflow**, pausing at natural decision
+`fetch-pdf`, `fill-abstract`, `evidence`, `bake`, `rebuild`, `status`,
+`cost`, `override`) into an **explore-first workflow**, pausing at natural decision
 points so the human can confirm the seed paper, review a sample of
 classifications, and approve spend before you scale up.
 
@@ -339,6 +339,38 @@ wake --json bake "<seed>"
 Works on partial data — if not everything is classified, the brief notes
 coverage (e.g. "based on 50 of 408 citing works"). Read `impact.md` and
 summarize it for the human; don't just dump the raw file unless asked.
+`wake bake`/`wake rebuild` (see "Rendering the Wiki" below) are the only
+two commands that render `impact.md`; everything else in this workflow
+writes JSON only.
+
+## Rendering the Wiki
+
+Every command in this workflow beyond `wake bake` and `wake narrative
+stitch` — `wake evidence`, `wake override`, `wake unverify`, `wake theme
+create`/`confirm`, `wake narrative outline create`, `wake narrative
+section create`/`confirm` — writes only the artifact's JSON sidecar. It
+never touches that artifact's rendered `.md`, `evidence/index.md`,
+`evidence/themes/index.md`, or `README.md`/`AGENTS.md`. You don't need
+the rendered `.md` to keep working — every one of those commands already
+returns the structured data you need (a `proposed` finding, a theme's
+`citing_works`, etc.) directly in its response, and the next command in
+the chain reads the same JSON, not the `.md`.
+
+Rendering is one single, separate, explicit step:
+```bash
+wake --json rebuild "<seed>"
+```
+This re-derives every dossier/theme/section `.md`, both indexes,
+`narrative.md`, `impact.md`, and `README.md`/`AGENTS.md` from whatever
+JSON is currently on disk, in the right dependency order. No LLM or
+network call — pure re-render, safe to run any time. Run it:
+- Whenever you're about to hand the human a link into the wiki (a
+  dossier, a theme, `README.md`) and want it to reflect what you've
+  built up so far.
+- After a batch of JSON-only writes (e.g. several `wake evidence` calls
+  in a row), rather than after each one individually.
+- At the natural end of a session, so the packet you leave behind is
+  fully rendered, not just fully recorded.
 
 ### 12. (Optional) Deep-dive verification of a specific finding
 
@@ -356,8 +388,12 @@ This automatically fetches a PDF (same chain as `fetch-pdf`), reads the
 *entire* document (not just the abstract), and proposes a relationship
 backed by quoted, page-cited passages — an independent judgment, not a
 rubber-stamp of the provisional guess. It never modifies the brief itself;
-it writes a dossier (`wake-out/<seed>/evidence/<citing-id>.md`) and returns
-a structured `proposed` finding + `quotes` for you to act on.
+it writes the dossier's JSON sidecar (`wake-out/<seed>/evidence/<citing-id>.json`)
+and returns a structured `proposed` finding + `quotes` for you to act on
+directly from that response — you don't need to read the rendered `.md`
+to act on a finding. The dossier's `.md` itself is not rendered by this
+call; run `wake rebuild "<seed>"` (see "Rendering the Wiki" below) whenever you want the
+human-readable wiki to reflect what you've built up so far.
 
 **You always run the promotion step yourself — never ask the human to run
 a command.** Two ways to close the loop, both ending the same way (you
@@ -381,12 +417,15 @@ call `wake override`):
   ```
 
 When `--verification-source evidence-dossier` is used, `wake override`
-automatically updates the dossier itself (`pending-human-review` →
-`verified`) and the evidence wiki's `index.md`/`log.md` — no separate
-step needed. `evidence/index.md` is a standing catalog of every
-investigated citing work, grouped **Verified** / **Pending Review**; skim
-it if you want a sense of what's already been checked before spending
-another `wake evidence` call on a work you may have already covered.
+automatically updates the dossier's JSON sidecar (`pending-human-review`
+→ `verified`) and appends to the evidence wiki's `log.md` — but does
+**not** re-render the dossier's `.md` or `evidence/index.md`; run `wake
+rebuild "<seed>"` (see "Rendering the Wiki" below) to bring the rendered wiki up to date with
+whatever JSON you've accumulated. `evidence/index.md`, once rebuilt, is
+a standing catalog of every investigated citing work, grouped
+**Verified** / **Pending Review**; skim it if you want a sense of what's
+already been checked before spending another `wake evidence` call on a
+work you may have already covered.
 
 (A dossier may propose more than one facet — e.g. a paper that's both
 `uses-as-tool` and `applies-to-domain`, see `references/classify.md`'s
@@ -398,22 +437,21 @@ unaffirmed reading, not deleted. Run `override` again with a different
 failed, verified) if you need to reconstruct what happened and when.
 `wake-out/<seed>/README.md` is the wiki's human entry point — what the
 folder is, what's been done so far, and where to start reading, ending
-in links to `impact.md`, `narrative.md`, and both indexes with counts;
-regenerated automatically alongside the artifacts it links to, worth
-pointing a human at when a packet is largely done.
+in links to `impact.md`, `narrative.md`, and both indexes with counts.
 `wake-out/<seed>/AGENTS.md` is the equivalent entry point for an agent
 handed just the folder, with no other context: a terse schema
 reference (every artifact type, the `.md`=human/`.json`=agent surface
 convention, and query recipes) rather than README.md's explanatory
-prose — see `references/output-layout.md`. Both are regenerated
-together, same trigger. A
-dossier, theme, and narrative section also cross-link each other
-directly: a dossier's own `.md` shows a "Referenced by:" line naming
-every theme and section that currently cites it, and a theme's `.md`
-shows a "## Referenced By" section naming every narrative section
-grounded in it — useful for jumping from a specific finding to the
-higher-level synthesis built on it, or vice versa, without re-deriving
-that mapping yourself.
+prose — see `references/output-layout.md`. Neither is regenerated as a
+side effect of any of the commands above — `wake rebuild "<seed>"`
+(see "Rendering the Wiki" below) is what refreshes both, together, from whatever JSON is
+currently on disk; run it before pointing a human at README.md, or
+before an agent session that expects AGENTS.md to be current. The same
+is true of a dossier's "Referenced by:" line (naming every theme/
+section that currently cites it) and a theme's "## Referenced By"
+section (naming every narrative section grounded in it) — both are
+recomputed only when that document is next rendered, so run `wake
+rebuild` first if you're relying on either to be current.
 
 If `wake evidence` can't get a PDF, it returns the same human-actionable
 fallback links as `fetch-pdf` (Unpaywall, Google Scholar, publisher DOI,
@@ -698,3 +736,11 @@ section as if a human had actually signed off on it.
     sign-off. If you find yourself expecting one of these commands to
     tell you whether something is a good idea, that's a sign the command
     is being asked to do a job it doesn't do.
+14. **JSON is written immediately; Markdown is rendered on demand.**
+    `evidence`, `override`, `unverify`, `theme create`/`confirm`,
+    `narrative outline create`, `narrative section create`/`confirm` all
+    write their JSON sidecar right away and return the data you need in
+    their response — you never have to wait for or read a `.md` file to
+    keep working. Run `wake rebuild "<seed>"` (see "Rendering the Wiki")
+    before pointing a human at any rendered file (a dossier, a theme,
+    `README.md`) so what they see reflects what you've actually recorded.

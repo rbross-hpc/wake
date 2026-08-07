@@ -227,5 +227,7 @@ def run_evidence(args) -> None:
             "once they accept or adjust it — never ask the human to run the "
             "override command."
         )
+        if d.get("rebuild_needed"):
+            print(f"Run `wake rebuild {args.seed}` to render this dossier's Markdown.")
 
     emit("evidence", result, as_json=args.json_out, human=human)

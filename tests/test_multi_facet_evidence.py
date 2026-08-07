@@ -214,7 +214,12 @@ def _build_multi_facet_dossier(tmp_path):
         "ok": True, "path": str(pdf_copy), "source": "osti",
     }), patch("wake.evidence.config.evidence_cfg", return_value={"prompt_version": "evidence-2"}), \
          patch("wake.evidence.chat_json", side_effect=_fake_multi_facet_evidence_response):
-        return evidence.build_dossier(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, verbose=False)
+        result = evidence.build_dossier(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, verbose=False)
+    # build_dossier() writes JSON only now (rendering is `wake rebuild`'s
+    # job, see build.py's module docstring) -- render immediately so
+    # this helper's callers can keep reading the .md as before.
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK["openalex_id"], base=tmp_path)
+    return result
 
 
 def test_build_dossier_multi_facet_renders_per_facet_sections(tmp_path):
@@ -281,6 +286,7 @@ def test_build_dossier_multi_facet_provisional_renders_per_facet_sections(tmp_pa
     }), patch("wake.evidence.chat_json", side_effect=_fake_single):
         result = evidence.build_dossier(PARALLEL_NETCDF_WORK, multi_facet_citing_work, base=tmp_path, verbose=False)
 
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, multi_facet_citing_work["openalex_id"], base=tmp_path)
     md_text = Path(result["dossier_path"]).read_text()
     assert "### uses-as-tool (confidence: 0.60)" in md_text
     assert "### applies-to-domain (confidence: 0.55)" in md_text
@@ -308,6 +314,7 @@ def test_single_facet_dossier_still_renders_without_subsections(tmp_path):
     }), patch("wake.evidence.chat_json", side_effect=_fake_single):
         result = evidence.build_dossier(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, base=tmp_path, verbose=False)
 
+    evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK["openalex_id"], base=tmp_path)
     md_text = Path(result["dossier_path"]).read_text()
     assert "### extends" not in md_text
     assert "> *extends* (confidence: 0.90)" in md_text

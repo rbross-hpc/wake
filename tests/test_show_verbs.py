@@ -103,6 +103,7 @@ def _make_confirmed_theme(tmp_path, slug="t1"):
 def test_theme_show_prints_theme_markdown(tmp_path, capsys):
     _seed_cached(tmp_path)
     _make_confirmed_theme(tmp_path, "t1")
+    _run_cli(["rebuild", "W2156077349"], tmp_path, capsys)
 
     code, captured = _run_cli(["theme", "show", "W2156077349", "t1"], tmp_path, capsys)
     assert code == 0
@@ -113,6 +114,7 @@ def test_theme_show_prints_theme_markdown(tmp_path, capsys):
 def test_theme_show_json_mode(tmp_path, capsys):
     _seed_cached(tmp_path)
     _make_confirmed_theme(tmp_path, "t1")
+    _run_cli(["rebuild", "W2156077349"], tmp_path, capsys)
 
     code, captured = _run_cli(["--json", "theme", "show", "W2156077349", "t1"], tmp_path, capsys)
     assert code == 0
@@ -139,6 +141,7 @@ def test_narrative_outline_show(tmp_path, capsys):
         components=[{"slug": "intro", "title": "Introduction", "kind": "free"}],
         base=tmp_path,
     )
+    _run_cli(["rebuild", "W2156077349"], tmp_path, capsys)
     code, captured = _run_cli(["narrative", "outline", "show", "W2156077349"], tmp_path, capsys)
     assert code == 0
     assert "Introduction" in captured.out
@@ -162,6 +165,7 @@ def test_narrative_section_show(tmp_path, capsys):
     narrative.create_section(
         PARALLEL_NETCDF_WORK, "intro", title="Introduction", prose="Opening paragraph.", base=tmp_path,
     )
+    _run_cli(["rebuild", "W2156077349"], tmp_path, capsys)
     code, captured = _run_cli(["narrative", "section", "show", "W2156077349", "intro"], tmp_path, capsys)
     assert code == 0
     assert "Opening paragraph." in captured.out
@@ -207,6 +211,7 @@ def test_show_dossier_prints_dossier_markdown(tmp_path, capsys):
     work = _classified_work(0)
     save_classified(PARALLEL_NETCDF_WORK["openalex_id"], [work], base=tmp_path)
     _build_dossier_for(tmp_path, work, pdf_name="w.pdf")
+    _run_cli(["rebuild", "W2156077349"], tmp_path, capsys)
 
     code, captured = _run_cli(["show", "dossier", "W2156077349", work["openalex_id"]], tmp_path, capsys)
     assert code == 0

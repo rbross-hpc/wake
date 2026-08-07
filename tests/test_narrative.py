@@ -166,7 +166,9 @@ def test_create_outline_theme_need_not_be_confirmed_yet(tmp_path):
 
 # --- create_outline: success + persistence -------------------------------
 
-def test_create_outline_writes_json_and_markdown(tmp_path):
+def test_create_outline_writes_json_only(tmp_path):
+    """create_outline() writes JSON only now -- rendering outline.md is
+    `wake rebuild`'s job (see build.py's module docstring)."""
     result = narrative.create_outline(
         PARALLEL_NETCDF_WORK,
         components=[
@@ -175,8 +177,9 @@ def test_create_outline_writes_json_and_markdown(tmp_path):
         base=tmp_path,
     )
     assert result["ok"] is True
+    assert result["rebuild_needed"] is True
     assert Path(result["outline_json_path"]).exists()
-    assert Path(result["outline_path"]).exists()
+    assert not Path(result["outline_path"]).exists()
 
     loaded = narrative.load_outline(PARALLEL_NETCDF_WORK["openalex_id"], base=tmp_path)
     assert loaded["components"][0]["slug"] == "intro"
@@ -667,6 +670,9 @@ def test_section_md_links_ref_marker_to_dossier_when_one_exists(tmp_path):
         PARALLEL_NETCDF_WORK, "s1", title="S",
         prose=f"This work extends PnetCDF. [ref:{cid}]", base=tmp_path,
     )
+    # create_section() writes JSON only now (rendering is `wake
+    # rebuild`'s job, see build.py's module docstring).
+    narrative.rerender_all_sections(PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path)
     text = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
     assert f"[{cid}](../../evidence/{cid}.md)" in text
     assert "[ref:" not in text
@@ -693,6 +699,7 @@ def test_section_md_links_seed_ref_to_impact_md(tmp_path):
         PARALLEL_NETCDF_WORK, "s1", title="S",
         prose="PnetCDF was introduced in 2003. [ref:SEED]", base=tmp_path,
     )
+    narrative.rerender_all_sections(PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path)
     text = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
     assert "[SEED](../../impact.md)" in text
 
@@ -711,6 +718,7 @@ def test_section_md_links_each_id_in_multi_id_marker(tmp_path):
         PARALLEL_NETCDF_WORK, "s1", title="S",
         prose=f"Both works extend PnetCDF. [ref:{ids}]", base=tmp_path,
     )
+    narrative.rerender_all_sections(PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path)
     text = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
     for w in works:
         assert f"[{w['openalex_id']}](../../evidence/{w['openalex_id']}.md)" in text
@@ -757,11 +765,14 @@ def test_rerender_all_sections_returns_sorted_slugs(tmp_path):
 
 def test_rerender_all_sections_picks_up_dossier_appearing_after_draft(tmp_path):
     """A section's own .md is a rendered snapshot -- if the underlying
-    dossier .md is later moved/rebuilt in a way that changes only its own
-    existence check timing (e.g. a wiki restored from a partial backup),
-    rerender_all_sections recomputes the [ref:ID] -> dossier link fresh
-    from what's on disk right now, rather than trusting whatever the
-    section's own .md happened to say at draft time."""
+    dossier's JSON sidecar is later moved/restored in a way that changes
+    only its own existence check timing (e.g. a wiki restored from a
+    partial backup), rerender_all_sections recomputes the [ref:ID] ->
+    dossier link fresh from what's on disk right now, rather than
+    trusting whatever the section's own .md happened to say at draft
+    time. (The link check is against the dossier's JSON, not its .md --
+    see _render_refs_in_section_prose's docstring -- since rendering is
+    now a separate explicit step.)"""
     works = _seed_classified(tmp_path, 1)
     cid = works[0]["openalex_id"]
     _build_dossier_for(tmp_path, works[0], pdf_name="w.pdf")
@@ -774,16 +785,18 @@ def test_rerender_all_sections_picks_up_dossier_appearing_after_draft(tmp_path):
         PARALLEL_NETCDF_WORK, "s1", title="S",
         prose=f"This work extends PnetCDF. [ref:{cid}]", base=tmp_path,
     )
+    narrative.rerender_all_sections(PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path)
     text_before = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
     assert f"[{cid}](../../evidence/{cid}.md)" in text_before
 
-    # Simulate the dossier .md having gone missing (e.g. a hand-edited/
-    # partially-restored wiki) and then reappearing -- rerender_all_sections
-    # should reflect whatever's actually on disk right now, not whatever
-    # was true the last time the section was rendered.
-    dossier_md = evidence.dossier_path(PARALLEL_NETCDF_WORK["openalex_id"], cid, base=tmp_path)
-    saved = dossier_md.read_text()
-    dossier_md.unlink()
+    # Simulate the dossier's JSON sidecar having gone missing (e.g. a
+    # hand-edited/partially-restored wiki) and then reappearing --
+    # rerender_all_sections should reflect whatever's actually on disk
+    # right now, not whatever was true the last time the section was
+    # rendered.
+    dossier_json = evidence.dossier_json_path(PARALLEL_NETCDF_WORK["openalex_id"], cid, base=tmp_path)
+    saved = dossier_json.read_text()
+    dossier_json.unlink()
 
     result = narrative.rerender_all_sections(
         PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
@@ -792,7 +805,7 @@ def test_rerender_all_sections_picks_up_dossier_appearing_after_draft(tmp_path):
     text_missing = narrative.section_md_path(PARALLEL_NETCDF_WORK["openalex_id"], "s1", base=tmp_path).read_text()
     assert f"[ref:{cid}]" in text_missing
 
-    dossier_md.write_text(saved)
+    dossier_json.write_text(saved)
     narrative.rerender_all_sections(
         PARALLEL_NETCDF_WORK["openalex_id"], PARALLEL_NETCDF_WORK, base=tmp_path,
     )

@@ -162,12 +162,18 @@ def run_show(args) -> None:
         emit("show", {"top_evidence": top}, as_json=args.json_out, human=lambda d: human(d["top_evidence"]))
 
     elif what == "dossier":
-        from ...evidence import dossier_path
+        from ...evidence import dossier_json_path, dossier_path
         p = dossier_path(oid, args.citing_id, base)
         if not p.exists():
-            emit_error("show", RuntimeError(
-                f"No dossier found for {args.citing_id}. Run `wake evidence {args.seed} {args.citing_id}` first."
-            ), as_json=args.json_out)
+            if dossier_json_path(oid, args.citing_id, base).exists():
+                emit_error("show", RuntimeError(
+                    f"Dossier for {args.citing_id} exists but hasn't been rendered yet. "
+                    f"Run `wake rebuild {args.seed}` first."
+                ), as_json=args.json_out)
+            else:
+                emit_error("show", RuntimeError(
+                    f"No dossier found for {args.citing_id}. Run `wake evidence {args.seed} {args.citing_id}` first."
+                ), as_json=args.json_out)
             sys.exit(1)
         text = p.read_text(encoding="utf-8")
         emit("show", {"markdown": text}, as_json=args.json_out, human=lambda d: print(d["markdown"]))

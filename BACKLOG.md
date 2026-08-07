@@ -19,9 +19,17 @@ next. See each linked section below for full detail.
 
 **Structural Hardening follow-ons** (Theme L closed; one of three
 original items closed by audit, two remain):
-1. Full `WakeContext` threading through the ~90 `base:`-taking domain
-   functions. *(Next phase.)*
-2. A persisted dirty/revision manifest for `wake rebuild`.
+1. A persisted dirty/revision manifest for `wake rebuild` -- **Phase 1
+   done** (v0.4.16: rendering is now a single explicit `wake rebuild`
+   step, not a write-time side effect of `evidence`/`override`/
+   `unverify`/`theme create`/`confirm`/`narrative outline create`/
+   `section create`/`confirm`). **Phase 2 remaining:** the manifest
+   itself, reporting what changed *between* renders (a diff/report, per
+   the user's framing — not an incremental-skip optimization of
+   `rebuild_seed()`, which continues to unconditionally re-render
+   everything). *(Next phase.)*
+2. Full `WakeContext` threading through the ~90 `base:`-taking domain
+   functions.
 
 (Formalizing the remaining `_normalize_*`/legacy-shape functions was
 closed by audit rather than by migration code — see
@@ -212,14 +220,27 @@ below. It had three deferred follow-ons; one is now also closed:
 
 Two remain open:
 
+- **A persisted dirty/revision manifest for `wake rebuild`** to track
+  staleness *between* calls, distinct from the per-call summary it
+  already returns. **Phase 1 done** (v0.4.16, `refactor/explicit-render`):
+  rendering is now a single explicit `wake rebuild` step -- every
+  JSON-mutating command (`evidence`, `override`, `unverify`, `theme
+  create`/`confirm`, `narrative outline create`, `section
+  create`/`confirm`) writes only JSON and returns `"rebuild_needed":
+  true`; `wake bake`/`wake narrative stitch` remain explicit render
+  verbs for `impact.md`/`narrative.md` but no longer additionally
+  refresh README.md/AGENTS.md as a side effect. This was a prerequisite
+  the user identified directly: a manifest reporting "what changed since
+  the last render" is only meaningful once rendering is a distinct act,
+  not something every write already did inline. **Phase 2 remaining:**
+  the manifest itself -- a diff/report of what changed between renders,
+  not an incremental-skip optimization of `rebuild_seed()` (which stays
+  unconditional).
 - **Full `WakeContext` threading** through all ~90 existing
   `base:`-taking domain functions. Phase 3 landed the context object and
   one canonical CLI construction point; `ctx.base` is a verified drop-in
   for any existing `base=` call site, but the mechanical rewrite of every
   call site itself was deliberately deferred given the blast radius.
-- **A persisted dirty/revision manifest for `wake rebuild`** to track
-  staleness *between* calls, distinct from the per-call summary it
-  already returns.
 
 Explicitly **not** planned: replacing the filesystem-artifact model with
 a database. Both the external assessment and independent review agree

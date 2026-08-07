@@ -99,10 +99,13 @@ def add_override(
         by `wake evidence` (quoted, page-cited passages)
 
     When *verification_source* is "evidence-dossier", also patches the
-    matching evidence dossier (pending-human-review -> verified) and
-    updates the evidence wiki's index.md/log.md (BACKLOG Theme D). A
-    plain "human-judgment" override has no dossier behind it and leaves
-    the evidence wiki untouched.
+    matching evidence dossier's JSON (pending-human-review -> verified)
+    and appends to the evidence wiki's log.md (BACKLOG Theme D). A plain
+    "human-judgment" override has no dossier behind it and leaves the
+    evidence wiki untouched. Does NOT re-render the dossier's .md,
+    evidence/index.md, or README.md/AGENTS.md -- rendering is `wake
+    rebuild`'s job now, not a write-time side effect (see build.py's
+    module docstring).
     """
     entry = {
         "schema_version": OVERRIDE_VERSION,
@@ -128,12 +131,7 @@ def add_override(
         f.write(json.dumps(entry, default=str) + "\n")
 
     if verification_source == "evidence-dossier":
-        from .evidence_wiki import (
-            append_log_entry,
-            mark_verified,
-            rebuild_index,
-            rebuild_wiki_orientation,
-        )
+        from .evidence_wiki import append_log_entry, mark_verified
         if mark_verified(
             seed_id, citing_id, justification=justification,
             relationship=relationship, base=base,
@@ -142,10 +140,6 @@ def add_override(
                 seed_id, event="verified_by_human", citing_id=citing_id,
                 detail=f"-> {relationship}", seed_title=seed_title, base=base,
             )
-            rebuild_index(seed_id, seed_title=seed_title, base=base)
-            from .seed import load_seed
-            seed_work = load_seed(seed_id, base) or {"openalex_id": seed_id, "title": seed_title}
-            rebuild_wiki_orientation(seed_id, seed_work, base=base)
 
     return entry
 
@@ -660,7 +654,7 @@ def bake_markdown(
     )
     lines.append("")
 
-    from .evidence import dossier_path
+    from .evidence import dossier_json_path
 
     for i, ev in enumerate(metrics.get("top_evidence", []), 1):
         ev_authors = ev.get("authors", [])
@@ -668,7 +662,12 @@ def bake_markdown(
         ev_title = ev.get("title", "Unknown")
         ev_id = ev.get("openalex_id")
         title_display = ev_title
-        if oid and ev_id and dossier_path(oid, ev_id, base).exists():
+        # Checked via the JSON sidecar, not the .md -- rendering is a
+        # separate explicit step (`wake rebuild`), so a dossier built in
+        # the same session legitimately has JSON but no .md yet (see
+        # build.py's module docstring); the emitted link still points at
+        # the eventual .md filename, which will resolve once rendered.
+        if oid and ev_id and dossier_json_path(oid, ev_id, base).exists():
             title_display = f"[{ev_title}](evidence/{ev_id}.md)"
         lines.append(
             f"**{i}. {title_display}** — "
@@ -730,6 +729,11 @@ def bake_and_save(
     brief will note partial coverage) or a pre-filtered subset. Human
     overrides from overrides.jsonl are applied unless disabled.
 
+    Does NOT refresh README.md/AGENTS.md wiki orientation -- that's `wake
+    rebuild`'s job (see build.py's module docstring), not a side effect
+    of this call, even though `wake bake` itself remains an explicit
+    render verb for impact.md/impact.json.
+
     Returns (json_path, md_path).
     """
     seed_id = seed_work["openalex_id"]
@@ -772,9 +776,12 @@ def bake_and_save(
 
     mark_stage_complete(wd, _STAGE, seed_id=seed_id)
 
-    from .evidence_wiki import rebuild_wiki_orientation
-    rebuild_wiki_orientation(seed_id, seed_work, base=base)
-
+    # README.md/AGENTS.md orientation is intentionally NOT refreshed here
+    # -- `wake bake` renders impact.md/impact.json (its whole point as an
+    # explicit render verb), but the wiki orientation files are `wake
+    # rebuild`'s job now, not a side effect of this call (see build.py's
+    # module docstring). `wake rebuild` itself calls bake_and_save and
+    # rebuild_wiki_orientation as two separate, explicit steps.
     if verbose:
         print("[wake] Report written:", file=sys.stderr)
         print(f"  {md_path}", file=sys.stderr)

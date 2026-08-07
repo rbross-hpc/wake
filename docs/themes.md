@@ -46,5 +46,10 @@ reviewed and re-asserted (re-run `wake theme create` with the same slug
 after reading the new dossier — its full-text finding may not actually
 support the thematic claim the way the abstract-only guess did).
 
+`wake theme create`/`confirm` write only the theme's JSON sidecar; the
+rendered `.md` (what `wake theme show` prints) is produced by `wake
+rebuild <seed>`, a separate explicit step -- see
+[`workflow.md`](workflow.md#rendering-the-wiki).
+
 `wake theme show <seed> <slug>` re-prints an already-written theme
 document (draft or confirmed) as-is.

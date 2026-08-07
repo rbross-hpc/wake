@@ -25,19 +25,13 @@ overrides.jsonl not existing until the first override.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
-from .evidence import dossier_path, evidence_dir
+from .evidence import dossier_json_path, evidence_dir
 from .io import atomic_write_text, now_iso
 from .models import EvidenceDossier
 from .seed import work_dir
-
-_STATUS_SECTION_RE = re.compile(
-    r"<!-- status-section:start -->.*?<!-- status-section:end -->",
-    re.DOTALL,
-)
 
 
 def index_path(seed_id: str, base: Path | None = None) -> Path:
@@ -167,10 +161,15 @@ def append_log_entry(
     """Append one chronological entry to log.md, newest at the bottom.
     Creates the file with an OKF header on first write.
 
-    Links to the dossier markdown when it exists (successful builds,
-    verifications); failed investigations (no PDF found, extraction
-    failed) have no dossier to link to, so the citing ID is left as
-    plain text instead of a dead link.
+    Links to the dossier markdown when a dossier exists for this citing
+    work (successful builds, verifications) -- checked via the JSON
+    sidecar, not the .md itself, since rendering is a separate explicit
+    step (`wake rebuild`) and a dossier freshly built/verified in this
+    same call legitimately has JSON but no .md yet (see build.py's
+    module docstring); the link still points at the eventual .md
+    filename, which will resolve once rendered. Failed investigations
+    (no PDF found, extraction failed) have no dossier JSON at all, so
+    the citing ID is left as plain text instead of a link.
 
     Concurrency assumption: wake is designed for single-process serial
     access per seed. Individual log-line writes are atomic on Linux for
@@ -182,7 +181,7 @@ def append_log_entry(
     append-only files (overrides.jsonl, exclusions.jsonl, etc.) as well.
     """
     p = log_path(seed_id, base)
-    has_dossier = dossier_path(seed_id, citing_id, base).exists()
+    has_dossier = dossier_json_path(seed_id, citing_id, base).exists()
     citing_ref = f"[{citing_id}]({citing_id}.md)" if has_dossier else citing_id
     line = f"- {now_iso()} — {event} — {citing_ref}"
     if detail:
@@ -218,8 +217,10 @@ def mark_verified(
     relationship: str | None = None,
     base: Path | None = None,
 ) -> bool:
-    """Patch an existing dossier (.json + .md) from pending-human-review
-    to verified, recording the human's justification and timestamp.
+    """Patch an existing dossier's JSON sidecar from pending-human-review
+    to verified, recording the human's justification and timestamp. Does
+    not touch the dossier's .md -- rendering is `wake rebuild`'s job now,
+    not a write-time side effect (see build.py's module docstring).
 
     *relationship* is the human-confirmed relationship from the `wake
     override` call, matched against the dossier's `proposed.relationships`
@@ -265,6 +266,9 @@ def mark_verified(
         "justification": justification,
         "verified_at": verified_at,
     }
+    # A fresh verification supersedes whatever reason a prior
+    # mark_pending() revert recorded -- see EvidenceDossier.pending_reason.
+    payload.pop("pending_reason", None)
 
     proposed = payload.setdefault("proposed", {})
     facets = _normalize_proposed_relationships(proposed, payload.get("quotes", []))
@@ -311,20 +315,12 @@ def mark_verified(
     EvidenceDossier.validate_or_raise(payload, context=f"evidence dossier {citing_id!r}")
     atomic_write_text(json_path, json.dumps(payload, indent=2, default=str))
 
-    # Full re-render, not the old targeted string replace: the dossier's
-    # proposed-facets structure may have changed shape (a new facet
-    # appended, or an existing facet's "verified" flag flipped), which a
-    # single-line tag/status text replace can't express once there's more
-    # than one facet. rerender_dossier_md() reads the JSON sidecar we
-    # just wrote and re-derives the whole .md from it -- tags, per-facet
-    # sections, and (via finding["human_verification"], which now
-    # includes "corrected_from" when applicable) the status block too.
-    if dossier_path(seed_id, citing_id, base).exists():
-        from .evidence import rerender_dossier_md
-        from .seed import load_seed
-        seed_work = load_seed(seed_id, base) or {"openalex_id": seed_id}
-        rerender_dossier_md(seed_work, citing_id, base=base)
-
+    # The dossier's .md is intentionally NOT re-rendered here -- rendering
+    # is an explicit step (`wake rebuild`), not a write-time side effect;
+    # see build.py's module docstring. rerender_dossier_md() re-derives
+    # the whole .md (tags, per-facet sections, status block, including
+    # "corrected_from" when applicable) from exactly the JSON just
+    # written above, whenever `wake rebuild` next runs.
     return True
 
 
@@ -335,7 +331,7 @@ def mark_pending(
     reason: str = "",
     base: Path | None = None,
 ) -> bool:
-    """Patch an existing dossier (.json + .md) back from verified to
+    """Patch an existing dossier's JSON sidecar back from verified to
     pending-human-review -- the reverse of `mark_verified()`, used by
     `wake unverify` to undo a mistaken verification.
 
@@ -364,6 +360,10 @@ def mark_pending(
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     payload["verification_status"] = "pending-human-review"
     payload.pop("human_verification", None)
+    if reason:
+        payload["pending_reason"] = reason
+    else:
+        payload.pop("pending_reason", None)
 
     proposed = payload.setdefault("proposed", {})
     model_facets = proposed.pop("model_relationships", None)
@@ -384,30 +384,12 @@ def mark_pending(
     EvidenceDossier.validate_or_raise(payload, context=f"evidence dossier {citing_id!r}")
     atomic_write_text(json_path, json.dumps(payload, indent=2, default=str))
 
-    # Full re-render (see mark_verified()'s comment on why a targeted
-    # string replace can't safely express a facets-list-shaped change).
-    if dossier_path(seed_id, citing_id, base).exists():
-        from .evidence import rerender_dossier_md
-        from .seed import load_seed
-        seed_work = load_seed(seed_id, base) or {"openalex_id": seed_id}
-        rerender_dossier_md(seed_work, citing_id, base=base)
-
-        if reason:
-            # rerender_dossier_md's pending-status block doesn't know
-            # about *reason* (unverify-specific context, not part of the
-            # dossier's own persisted state) -- append it after the fact
-            # via the same structural marker replace the old code used.
-            md_path = dossier_path(seed_id, citing_id, base)
-            md_text = md_path.read_text(encoding="utf-8")
-            m = _STATUS_SECTION_RE.search(md_text)
-            if m:
-                annotated = m.group(0).replace(
-                    "— see SKILL.md.",
-                    f"— see SKILL.md. (A prior verification was reverted: {reason})",
-                )
-                md_text = md_text[:m.start()] + annotated + md_text[m.end():]
-                atomic_write_text(md_path, md_text)
-
+    # The dossier's .md is intentionally NOT re-rendered here -- rendering
+    # is an explicit step (`wake rebuild`), not a write-time side effect;
+    # see build.py's module docstring. *reason* is persisted above
+    # (payload["pending_reason"]) so rerender_dossier_md() can reproduce
+    # it from JSON alone whenever `wake rebuild` next runs -- no more
+    # patching it into already-rendered .md text out of band.
     return True
 
 

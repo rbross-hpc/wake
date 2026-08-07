@@ -30,12 +30,15 @@ def _build_bake_parser(sub) -> None:
 def _build_rebuild_parser(sub) -> None:
     p = sub.add_parser(
         "rebuild",
-        help="Resync every derived Markdown/index file (dossiers, evidence/index.md, "
+        help="Render every derived Markdown/index file (dossiers, evidence/index.md, "
              "theme docs + their index, narrative outline/sections/stitched narrative.md, "
              "impact.md, README.md/AGENTS.md) from whatever JSON is currently on disk for "
-             "this seed. No LLM/network call -- pure re-render, safe to run any time, e.g. "
-             "after hand-editing a JSON sidecar or restoring from a partial backup. Skips "
-             "any artifact type that has no JSON backing yet for this seed.",
+             "this seed. This is the ONLY step that renders Markdown -- wake evidence/"
+             "override/unverify/theme create/confirm/narrative outline/section create/"
+             "confirm write JSON only and expect a `wake rebuild` afterward; run it after "
+             "any such command, not just for recovery (e.g. after hand-editing a JSON "
+             "sidecar). No LLM/network call. Skips any artifact type that has no JSON "
+             "backing yet for this seed.",
     )
     p.add_argument("seed", help="DOI, arXiv ID, OpenAlex ID, or title.")
 
@@ -122,5 +125,8 @@ def run_override(args) -> None:
         seed_title=work.get("title"),
         base=base,
     )
-    emit("override", entry, as_json=args.json_out,
-         human=lambda d: print(f"Override recorded: {args.citing_id} -> {d['relationship']}"))
+    def _human(d):
+        print(f"Override recorded: {args.citing_id} -> {d['relationship']}")
+        print(f"Run `wake rebuild {args.seed}` to render this in the wiki.")
+
+    emit("override", entry, as_json=args.json_out, human=_human)

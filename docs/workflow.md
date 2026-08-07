@@ -41,7 +41,10 @@ wake --json override "10.1145/1048935.1050189" <citing-id> \
   --relationship extends --justification "<quoted evidence>" \
   --verification-source evidence-dossier
 
-# Output: wake-out/W2156077349/impact.md
+# Render the wiki's Markdown from everything written above
+wake --json rebuild "10.1145/1048935.1050189"
+
+# Output: wake-out/W2156077349/impact.md, evidence/, README.md, ...
 ```
 
 Every command supports `--json` for machine-readable output (a stable
@@ -102,6 +105,36 @@ Most commands that write cache accept `--force` to bypass it and re-run.
 
 Global flags: `--json`, `--work-dir DIR` (or `WAKE_WORK_DIR` env var),
 `--verbose` (keep progress banners under `--json`).
+
+## Rendering the Wiki
+
+`wake evidence`, `wake override`, `wake unverify`, `wake theme
+create`/`confirm`, `wake narrative outline create`, and `wake narrative
+section create`/`confirm` write only that artifact's JSON sidecar. None
+of them render Markdown — not the artifact's own `.md`, not
+`evidence/index.md`/`evidence/themes/index.md`, not
+`README.md`/`AGENTS.md`. Each returns the structured data you need
+directly in its response, so nothing in the workflow above requires
+reading a `.md` file to keep going.
+
+`wake bake` and `wake narrative stitch` are the two exceptions: they
+remain explicit render verbs for `impact.md`/`narrative.md`
+respectively (that's their entire purpose), though even they don't
+refresh `README.md`/`AGENTS.md` as a side effect.
+
+Rendering everything else is one single, separate, explicit step:
+
+```bash
+wake rebuild <seed>
+```
+
+This re-derives every dossier/theme/section `.md`, both indexes,
+`narrative.md`, `impact.md`, and `README.md`/`AGENTS.md` from whatever
+JSON is currently on disk, in the correct dependency order. No LLM or
+network call — pure re-render, safe to run any time (after a batch of
+JSON-only writes, before pointing a human at a link into the wiki, or
+at the end of a session). See [`wake/build.py`](../wake/build.py)'s
+module docstring for the full rationale.
 
 ## Seed ID Formats
 

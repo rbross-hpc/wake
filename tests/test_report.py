@@ -647,7 +647,11 @@ def test_bake_markdown_top_evidence_title_plain_when_no_dossier(tmp_path):
 
 
 def test_bake_markdown_top_evidence_title_links_to_dossier_when_present(tmp_path):
-    from wake.evidence import dossier_path
+    """The link check is against the dossier's JSON sidecar, not its
+    .md -- rendering is a separate explicit step (`wake rebuild`), so a
+    dossier can legitimately have JSON but no .md yet (see build.py's
+    module docstring; wake.report.bake_markdown's own comment)."""
+    from wake.evidence import dossier_json_path
 
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
@@ -657,9 +661,9 @@ def test_bake_markdown_top_evidence_title_links_to_dossier_when_present(tmp_path
     metrics = build_metrics(seed, classified)
     top = metrics["top_evidence"][0]
 
-    p = dossier_path(seed["openalex_id"], top["openalex_id"], base=tmp_path)
+    p = dossier_json_path(seed["openalex_id"], top["openalex_id"], base=tmp_path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text("stub dossier")
+    p.write_text("{}")
 
     md = bake_markdown(seed, metrics, base=tmp_path)
     assert f"**1. [{top['title']}](evidence/{top['openalex_id']}.md)**" in md

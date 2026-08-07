@@ -13,8 +13,10 @@ wake narrative outline create <seed> --components '[
 
 The outline is a plan, not a claim — it can be freely revised, and
 referenced themes don't need to be confirmed yet (only at section-confirm
-time). Then draft each section's prose, having read the underlying
-theme(s)/dossiers yourself:
+time). This writes only the outline's JSON; the rendered `outline.md` is
+produced by `wake rebuild <seed>` (see
+[`workflow.md`](workflow.md#rendering-the-wiki)). Then draft each
+section's prose, having read the underlying theme(s)/dossiers yourself:
 
 ```bash
 wake narrative section create <seed> earth-adoption \
@@ -24,7 +26,8 @@ wake narrative section create <seed> earth-adoption \
 ```
 
 Like `wake theme create`, this is a pure write primitive — no LLM call.
-Every section starts `draft`.
+Every section starts `draft`, and only the section's JSON is written;
+run `wake rebuild <seed>` to render the section's `.md`.
 
 End every factual sentence with a `[ref:ID,...]` marker naming its
 source(s) — `SEED` for the seed paper, or a citing work's OpenAlex ID.
@@ -76,7 +79,10 @@ per-section preview file keeps the raw `[ref:...]` form.
 
 `wake narrative outline show <seed>`, `wake narrative section show <seed>
 <slug>`, and `wake narrative show <seed>` re-print the outline, one
-section, and the assembled document, respectively, as-is.
+section, and the assembled document, respectively, as-is. The outline
+and section commands need a `wake rebuild <seed>` to have run since the
+last `create`/`confirm` (`narrative stitch` renders `narrative.md`
+itself, so `narrative show` doesn't have this requirement).
 
 ## Verifying the References list against live scholarly databases
 

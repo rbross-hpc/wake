@@ -63,13 +63,16 @@ Promotion to `verified` always requires an explicit `wake override` call
 followed a dossier rather than an unaided human judgment.
 
 When `--verification-source evidence-dossier` is used, `wake override`
-also patches the matching dossier (`pending-human-review` → `verified`,
-in both its `.md` and `.json`) and regenerates `evidence/index.md`/
-`log.md` — no separate step needed. A plain `--verification-source
-human-judgment` override (no dossier behind it) leaves the wiki
-untouched. Re-running `wake evidence --force` on an already-verified
-dossier resets it back to `pending-human-review` — a fresh full-text read
-is a new finding, not a continuation of the old sign-off.
+also patches the matching dossier's JSON sidecar (`pending-human-review`
+→ `verified`) and appends to `log.md` -- it does **not** re-render the
+dossier's `.md` or `evidence/index.md`; run `wake rebuild "<seed>"` to
+bring those up to date (rendering is a separate, explicit step -- see
+`build.py`'s module docstring / SKILL.md's "Rendering the Wiki"). A plain
+`--verification-source human-judgment` override (no dossier behind it)
+leaves the wiki untouched. Re-running `wake evidence --force` on an
+already-verified dossier resets it back to `pending-human-review` in the
+JSON — a fresh full-text read is a new finding, not a continuation of
+the old sign-off.
 
 For a multi-facet dossier, `--relationship` affirms exactly one facet at
 a time: if it matches one of the dossier's existing facets, that facet
@@ -144,13 +147,16 @@ effect of any other command. Removes the citing work's entry from
 `overrides.jsonl` entirely (there's no "unverified" override shape to
 append -- the only way a work stops being verified is to have no
 override on file at all); if an evidence dossier exists for the work,
-also patches it back from `verified` to `pending-human-review`
-(undoing any relationship correction the reverted verification made,
-restoring the dossier's `proposed` field to the model's own original
-reading), writes a `verification_reverted` line to `evidence/log.md`,
-and regenerates `evidence/index.md` so the work moves back to Pending
-Review. Raises an error if `citing_id` was never verified in the first
-place (nothing to undo).
+also patches its JSON sidecar back from `verified` to
+`pending-human-review` (undoing any relationship correction the
+reverted verification made, restoring the dossier's `proposed` field to
+the model's own original reading, and recording *reason* in the
+dossier's `pending_reason` field so it survives a later re-render), and
+writes a `verification_reverted` line to `evidence/log.md`. It does
+**not** re-render `evidence/index.md` or the dossier's `.md` -- run
+`wake rebuild "<seed>"` to move the work back to Pending Review in the
+rendered wiki. Raises an error if `citing_id` was never verified in the
+first place (nothing to undo).
 
 Batch-recovery variant for exactly the failure mode this exists for --
 an agent auto-verifies a run of works it shouldn't have:
@@ -174,13 +180,13 @@ It's omitted entirely for a work not (yet) pulled into any theme or
 narrative section — most `background-mention` dossiers stay this way.
 
 This is a derived view, recomputed at render time from the theme/section
-JSON sidecars — nothing new to maintain by hand. It's kept fresh
-automatically: `wake theme create`/`confirm` re-render every dossier
-they cite, and `wake narrative section create`/`confirm` re-render every
-dossier cited in the section's `[ref:...]` markers. If it ever looks
-stale (e.g. after hand-editing a theme/section JSON directly, which you
-shouldn't normally do), `wake evidence "<seed>" --rerender-all` rescans
-every dossier and refreshes this line for all of them at once.
+JSON sidecars — nothing new to maintain by hand, but it is only
+recomputed when the dossier is next rendered. `theme create`/`confirm`
+and `narrative section create`/`confirm` write JSON only and do not
+themselves re-render any dossier `.md` -- run `wake rebuild "<seed>"`
+(the normal case) or `wake evidence "<seed>" --rerender-all` (a
+dossier-only rescan) to bring every "Referenced by" line up to date with
+whatever theme/section JSON currently exists.
 
 ## Re-rendering every dossier (`wake evidence --rerender-all`)
 
