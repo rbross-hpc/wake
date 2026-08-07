@@ -131,7 +131,10 @@ or your editor of choice — the folder is self-describing.
 | [`docs/themes.md`](docs/themes.md) | Combined-evidence thematic synthesis (`wake theme`) |
 | [`docs/narrative.md`](docs/narrative.md) | Narrative drafting from confirmed themes (`wake narrative`) |
 | [`wake/skills/impact-analysis/SKILL.md`](wake/skills/impact-analysis/SKILL.md) | The agent-facing workflow guide (primary way this tool is meant to be used) |
-| [`BACKLOG.md`](BACKLOG.md) | Roadmap, design decisions, and open questions |
+| [`BACKLOG.md`](BACKLOG.md) | Open roadmap: deferred features, held designs, not-yet-built items |
+| [`PLAN.md`](PLAN.md) | Design charter + current forward-looking plan |
+| [`docs/build-log.md`](docs/build-log.md) | Append-only engineering build log (every shipped version, what/why/how verified) |
+| [`docs/design/backlog-built-history.md`](docs/design/backlog-built-history.md) | Design rationale for already-shipped BACKLOG product themes |
 
 ## Configuration
 

@@ -11,6 +11,8 @@ split out once it grew past a comfortable single-screen overview.
 | [`evidence.md`](evidence.md) | The provisional → proposed → verified lifecycle, the evidence wiki, diagnosing a surprising finding |
 | [`themes.md`](themes.md) | Combined-evidence thematic synthesis (`wake theme`) |
 | [`narrative.md`](narrative.md) | Narrative drafting from confirmed themes (`wake narrative`), inline source references |
+| [`build-log.md`](build-log.md) | Append-only engineering journal: every shipped version, what/why/how verified. Not a forward plan — see the top-level `PLAN.md` for that. |
+| [`design/backlog-built-history.md`](design/backlog-built-history.md) | Design rationale, rejected alternatives, and lifecycle corrections for already-shipped `BACKLOG.md` product themes |
 
 For the agent-facing equivalent of this material (the same content,
 organized for an LLM to load selectively during a session), see

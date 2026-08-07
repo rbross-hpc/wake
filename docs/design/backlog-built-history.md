@@ -1,0 +1,855 @@
+# BACKLOG — Built Themes: Design Rationale & History
+
+> **Status: HISTORICAL RECORD.** This document preserves the full design
+> rationale — decisions made, alternatives rejected, lifecycle/trust-model
+> corrections, live-validation results — behind every BACKLOG theme that
+> has since been **built and shipped**. It is not a roadmap: nothing here
+> is pending or actionable. For the current open roadmap, see
+> [`BACKLOG.md`](../../BACKLOG.md). For the Structural Hardening
+> (engineering, not product) effort's build-by-build record, see
+> [`docs/build-log.md`](../build-log.md) — Theme L below only summarizes
+> and points there, since that's already its authoritative home.
+>
+> Text below is preserved **verbatim** from `BACKLOG.md` at the time each
+> theme was extracted (this reorg), including original theme
+> letters/numbers (`Theme C`, `Theme J item 9`, etc.) — existing code and
+> test comments citing `BACKLOG Theme X` refer to the sections here.
+
+---
+
+## Theme A — PDF Acquisition (`wake fetch-pdf`) — BUILT
+
+Standalone, reusable primitive — not just an internal helper for evidence
+dossiers. Also usable to streamline the existing `fill-abstract --from-pdf`
+workflow (skip the manual-download step when the PDF chain succeeds).
+
+`wake fetch-pdf <seed> <citing-id>` tries sources in order, all
+API-based (no scraping publisher landing pages, no sci-hub-style sources):
+
+1. **OSTI** — extend `sources/osti.py`'s existing DOI lookup to also check
+   `links[].rel == "fulltext"` (direct PDF at `osti.gov/servlets/purl/<id>`,
+   no auth wall, DOE-funded work only). Zero cost, no rate limit.
+2. **Semantic Scholar** — `openAccessPdf.url` field on the paper endpoint
+   (distinct from Unpaywall; often a repository copy).
+3. **Unpaywall** — `best_oa_location.url_for_pdf` (existing pattern from
+   backfill research). Frequently 403s on direct download from publisher
+   sites (confirmed: ScienceDirect during WIND Toolkit testing) — still
+   worth attempting.
+4. **Springer** — `sources/springer.py`, added during a real end-to-end
+   validation run (BACKLOG's "use A/C/D/E for real" gate) when older
+   Springer LNCS conference chapters kept failing OSTI/S2/Unpaywall/arXiv
+   but resolved cleanly at `link.springer.com/content/pdf/<DOI>.pdf`.
+   No API call — pure URL construction for `10.1007/...` DOIs, validated
+   the same way as every other source (`_looks_like_pdf` rejects a
+   paywall HTML page served at that URL). A no-op for non-Springer DOIs.
+5. **arXiv** — conditional: if title/author search finds a matching arXiv
+   preprint, download directly (always freely available, no bot-blocking).
+6. **CORE.ac.uk** — optional, gated behind `CORE_API_KEY` env var (silently
+   skipped if unset, same pattern as `SEMANTICSCHOLAR_API_KEY`). Large
+   aggregator of repository-hosted OA copies.
+
+On success: saves to `wake-out/<seed>/pdfs/<citing-id>.pdf`, returns the
+path.
+
+On failure (paywalled / no OA copy / all attempts 403): returns a
+ready-made set of links for the human to try manually:
+- Unpaywall lookup page for the DOI
+- Google Scholar search URL for the title ("All versions" often surfaces
+  a free copy)
+- Publisher's direct DOI link
+- CORE.ac.uk search link (if not already tried via API)
+
+---
+
+## Theme A2 — Evidence Deep-Dive Dossier (`wake evidence`) — BUILT
+
+`wake evidence <seed> <citing-id>` calls `fetch-pdf` first, extracts the
+**entire** document (page-tagged, `sources/pdf_fulltext.py`), then runs an
+LLM full-text verification pass (`evidence.py::verify_full_text()`) and
+writes `wake-out/<seed>/evidence/<citing-id>.md` as an **OKF concept
+document** (+ a `.json` sidecar for programmatic reuse).
+
+**Lifecycle — reframed mid-design at explicit user direction**:
+the abstract-only classification is not a baseline that full-text reading
+confirms/contradicts — it's inherently weak from the start, and full-text
+reading is the substantive assessment, pending human sign-off:
+
+- `provisional` — `classify.py`'s output, always, unconditionally (every
+  classified work, not just ones later verified). Never presented as a
+  finding, however high its confidence.
+- `proposed` — `wake evidence`'s full-text reading: an independent
+  judgment (not a rubber-stamp of the provisional guess), with quoted,
+  page-cited, full-paragraph passages. Never auto-applied.
+- `verified` — only via a human-approved `wake override` call
+  (`--verification-source evidence-dossier` or `human-judgment`), always
+  executed by the agent, never by asking the human to run it themselves.
+
+Dossier frontmatter:
+```yaml
+---
+type: citing-work-evidence
+title: "<citing work title>"
+description: "<one-line: how it uses the seed>"
+resource: "<DOI or OpenAlex URL>"
+verification_status: pending-human-review
+provisional_relationships: [<label>]
+proposed_relationships: [<label>]
+timestamp: <generated-at>
+---
+```
+
+(Originally emitted as a single `tags: [...]` list with colon-joined
+values, e.g. `provisional:<label>`. Replaced later — see the
+`refactor/frontmatter-named-keys` entry below — because Obsidian's
+Reading-mode tag styling misread `:`-joined values as malformed nested
+tags and struck them through; named keys carry the same information
+without colliding with Obsidian's tag syntax.)
+
+Body: full citation, complete abstract, the provisional classification
+(clearly framed as a placeholder), the proposed full-text reading, and
+every supporting quote as a **full paragraph, verbatim, with page number**
+— not a bare sentence fragment, per explicit requirement ("I want the
+human to see the literal text supporting the claim, in context").
+
+**Extraction approach (built as planned)**: lightweight — pypdf/pdfplumber,
+page-level only, no MinerU. Confirmed live that multi-column academic PDF
+layouts don't extract into clean paragraphs mechanically (both libraries
+interleave columns on the committed OSTI fixture), so the LLM — not a
+text splitter — is asked to quote the full containing paragraph; it
+handles the reading-order jumbling far better than mechanical splitting
+would, while wake still attaches a real page number.
+
+Interactive, single-reference tool by design: you decide which leads to
+follow, not a batch "process everything" command. Cached — a second call
+for the same citing work is a no-op (no LLM call) unless `--force`.
+
+**Extracted text is itself cached** (added in a follow-up pass, prompted
+by the user asking whether extraction is saved consistently enough to
+debug a surprising finding): `extract_pages_cached()` writes
+`wake-out/<seed>/pdfs/<citing-id>.json`, a sibling of the PDF, keyed by
+the PDF's sha256 (auto-invalidates on a re-fetched PDF) with an
+`extractor` field (`pypdf`/`pdfplumber`) and a timestamp. `wake evidence
+--force` re-runs extraction too, not just the LLM call. Lets a human or
+an agent debugging a finding on the human's behalf distinguish "the
+extraction was garbled" from "the model reasoned poorly" by reading the
+cache file directly — no re-run required.
+
+Author-email discovery (originally scoped as part of the dossier body)
+was **not built** in this pass — deferred, still an open item below.
+
+---
+
+## Theme C — Combined-Evidence / Thematic Documents — BUILT
+
+When several individual citing works together support a broader claim
+(e.g. "extensive use in Earth system modeling"), a theme document
+synthesizes them into `wake-out/<seed>/evidence/themes/<slug>.md` — an
+OKF concept doc linking out to each work's own dossier rather than
+duplicating content.
+
+**Built as `wake/themes.py`**, a pure write-primitive with **no LLM
+call**: the agent (having already read the underlying dossiers/
+classifications) supplies the title, synthesis paragraph, and which
+citing works belong together; `wake` validates and persists that
+judgment — it never decides what's thematically related and never writes
+the synthesis prose itself. Same trust model as `wake override`.
+
+**Two independent verification tracks**, matching the codebase-wide rule
+that only a human promotes anything to a settled state — this was an
+explicit design correction mid-session (the first draft let the *agent's*
+act of creating/re-asserting a theme count as confirmation, which broke
+the invariant that only a human sign-off produces a "verified"/"settled"
+result):
+
+1. **Per-work relationship claims** — unchanged, existing lifecycle
+   (`provisional` → `proposed` → `verified` via classify/evidence/
+   override). `create_theme()` never alters a work's own status; every
+   cited work is displayed with its own honest, current tag. A work
+   verified via a plain `human-judgment` override (no dossier at all)
+   is correctly treated as meeting the bar — it is never flagged as
+   needing evidence just because it has no dossier file.
+2. **The theme's synthesis claim** — new: `theme_status: "draft"` →
+   `"confirmed"`. `create_theme()` **always** writes `"draft"` — an
+   agent's judgment can never itself produce a confirmed theme. Only
+   `confirm_theme()` (`wake theme confirm`, run by the agent on the
+   human's behalf, exactly like `wake override`) can promote to
+   `"confirmed"` — and it **refuses unless every cited work is already
+   `"verified"`**, re-resolving each work's status fresh at confirm time
+   (not trusting the theme's own possibly-stale JSON), so a work verified
+   after the theme was created still counts. A theme can never appear
+   settled while resting on unverified findings.
+
+**Mixed sourcing (v1, deliberately simple — flagged for revisit)**:
+`create_theme()` allows citing works with no evidence dossier yet
+(provisional, abstract-only) to be included, tracked in the theme's own
+`needs_evidence` JSON field. This speeds up drafting (a theme doesn't
+need every member fully verified before it can exist as a draft) but
+means the mechanism for keeping that list honest as dossiers appear
+independently needed real thought:
+
+- `list_theme_needs_evidence()` (`wake theme queue <seed>`) is the
+  surfacing mechanism — it scans every theme's JSON at *query time* and
+  reports two states: `needs-evidence` (still no dossier) and
+  `dossier-available-unreviewed` (a dossier has appeared since the theme
+  was last created/reviewed, but hasn't been re-asserted).
+- **Nothing is ever silently upgraded.** A dossier appearing for a
+  `needs_evidence` citing work via an unrelated `wake evidence` call does
+  **not** mutate the theme's JSON automatically — `evidence.py` has zero
+  coupling to `themes.py` for this. The agent must explicitly read the
+  new dossier and decide whether it still supports the thematic claim
+  (the full-text reading may contradict the abstract-only guess the
+  theme was built on), then re-run `wake theme create` with the same
+  slug to re-assert inclusion.
+- This is intentionally the simplest mechanism that preserves the
+  human-confirms invariant; a more automatic reconciliation (e.g.
+  `evidence.py` proactively flagging affected themes) was considered and
+  explicitly deferred until real usage shows whether the manual
+  `wake theme queue` + re-create loop is actually a friction point.
+
+**CLI surface**:
+```
+wake theme create  <seed> <slug> --title "..." --summary "..." --citing-ids ID,ID,ID
+wake theme confirm <seed> <slug>
+wake theme queue   <seed>
+```
+`create` always overwrites (no `--force`) — unlike every other write
+command in this codebase, there's no expensive LLM/network call to
+protect against re-doing, so there's nothing to cache-guard. No
+`wake show theme` — theme docs are plain markdown, read directly, same as
+individual dossiers.
+
+`evidence_wiki.py` gained `themes_index_path()` / `rebuild_themes_index()`
+(catalog grouped Confirmed/Draft), called from `themes.py` after every
+write — same pattern as `evidence.py` calling `rebuild_index()`.
+
+---
+
+## Theme D — OKF Evidence Wiki (organization layer) — BUILT
+
+Google's **Open Knowledge Format** (OKF v0.1, June 2026) — a formalization
+of Karpathy's "LLM Wiki" pattern: a directory of markdown "concept"
+documents (file path = identity), each with minimal YAML frontmatter
+(`type` required; `title`, `description`, `resource`, `tags`, `timestamp`
+conventional) + a markdown body, linked via plain markdown links forming a
+graph. Reserved filenames: `index.md` (catalog, progressive disclosure) and
+`log.md` (chronological history).
+
+Lives inside `wake-out/<seed>/` (same work-dir/cache lifecycle as
+everything else — no separate init command):
+
+```
+wake-out/<seed>/
+  evidence/
+    index.md          — OKF catalog: concept + one-liner per dossier
+    log.md             — OKF chronological log: what was investigated, when
+    <citing-id>.md      — Theme A2/B dossiers (OKF concept docs)
+    themes/
+      index.md            — OKF catalog: theme docs, grouped Confirmed/Draft
+      <theme-slug>.md     — Theme C combined-evidence docs (built)
+      <theme-slug>.json   — same theme, structured (status, citing_works, needs_evidence)
+  pdfs/
+    <citing-id>.pdf     — locally-cached PDFs (Theme A)
+```
+
+**Built as `wake/evidence_wiki.py`**, a new leaf module derived entirely
+from the existing dossier `.json` sidecars (no separate index/log data
+store — `rebuild_index()` can always regenerate `index.md` from scratch
+by rescanning `evidence/*.json`):
+
+- `rebuild_index()` — groups dossiers **Verified** / **Pending Review**,
+  sorted within each group by the same score `report.py` uses for
+  "Strongest Evidence" (`RELATIONSHIP_STRENGTH[relationship] x
+  log1p(cited_by_count)`). Two new dossier JSON fields support this
+  without re-loading `classified.json`: `citing_cited_by_count` and an
+  explicit `verification_status` (previously only implicit in the
+  markdown frontmatter's `status:` tag).
+- `append_log_entry()` — one line per real event, newest at the bottom:
+  `dossier_built`, `dossier_rebuilt` (a `--force` re-run),
+  `investigation_failed` (no PDF found, or extraction produced no text),
+  and `verified_by_human`. A cache-hit `wake evidence` call (dossier
+  already exists, `force=False`) is a true no-op — nothing logged,
+  nothing rebuilt.
+- `mark_verified()` — patches a dossier's `.json` (`verification_status`
+  → `"verified"`, adds a `human_verification: {justification,
+  verified_at}` block) and its `.md` (frontmatter `status:` tag +
+  "Status" section body) in place.
+
+**Wiring** (both call sites fire only on real work, never on a cache hit):
+- `evidence.py::build_dossier()` calls `append_log_entry` +
+  `rebuild_index` after every fresh build or `--force` rebuild, and logs
+  the two failure paths (`no_pdf`, `extraction_failed`) too.
+- `report.py::add_override()` calls `mark_verified` + `append_log_entry`
+  + `rebuild_index` **only** when `verification_source ==
+  "evidence-dossier"` — a plain `"human-judgment"` override (no dossier
+  behind it) leaves the evidence wiki untouched. If no dossier exists for
+  the citing ID (override without a prior `wake evidence` call),
+  `mark_verified` is a silent no-op.
+- **`--force` always resets a previously-verified dossier back to
+  `pending-human-review`** — a fresh extraction + LLM read is a new
+  finding, not a continuation of the old human sign-off; it reappears in
+  `index.md`'s Pending Review section until re-confirmed. The prior
+  `human_verification` record is overwritten, not preserved as history
+  (the full history lives in `log.md` instead).
+
+`index.md`/`log.md` only spring into existence on the first real event —
+no empty scaffolding created at `resolve`/`citing` time, consistent with
+`impact.md` not existing until `wake bake` and `overrides.jsonl` not
+existing until the first override.
+
+No new CLI surface: both files are plain markdown, read directly (same as
+individual dossiers today — there's no `wake show dossier` either).
+
+`SKILL.md` plays the role of Karpathy's/OKF's "schema file" — extended
+with a note that `wake override` auto-updates the wiki, so the agent
+doesn't need a separate step.
+
+---
+
+## Theme E — Author-Overlap Tag — BUILT
+
+Answers: *"is 'enhanced by' one of the predicates we look for?"* — No, and
+it shouldn't be a new relationship predicate. `extends` already captures
+"directly extends the method/framework/theory of the seed" regardless of
+authorship. What's missing is **author-overlap detection** as an
+orthogonal tag:
+- `extends` + `author_overlap: true` = the original team's own
+  follow-on/enhancement paper
+- `extends` + `author_overlap: false` = independent third-party extension
+
+**Built as `wake/author_overlap.py`**, a small, pure, deterministic module
+(no LLM call): `compute_overlap(seed_work, citing_work)` returns
+`{"author_overlap": bool, "overlapping_authors": [name, ...]}` by
+intersecting OpenAlex author-ID sets. ID-based, not name-based — display
+names collide and OpenAlex formats the same author's name inconsistently
+across papers. Two works both lacking author IDs are never treated as
+"the same team" just because both sides are empty.
+
+`sources/openalex.py::_summarize_work()` now preserves `author_ids`
+alongside `authors` (previously discarded, display-name-only) —
+index-aligned with `authors`, `""` for an authorship entry with no
+OpenAlex author id. No new API field needed: `authorships[].author.id` is
+already returned by the existing `authorships` `select` field.
+
+Wired into both places BACKLOG originally called for:
+- `classify.py::classify_one()` — every classified work gets
+  `author_overlap`/`overlapping_authors` alongside its relationship,
+  orthogonal to (not a replacement for) the relationship label itself.
+- `evidence.py::verify_full_text()` — every dossier gets the same tag;
+  `_render_dossier_markdown()` surfaces it as an `author_overlap: true`
+  frontmatter key (originally `author-overlap:true` inside the old
+  `tags: [...]` list — see the frontmatter-named-keys refactor) plus an
+  inline note under the citing work's byline when true ("this appears to
+  be the original team's own follow-on work").
+
+`report.py` aggregates it too: `build_metrics()` adds a
+`self_extension_count` (works with `author_overlap: true` among the
+classified set), surfaced in the brief's "Nature of Impact" section as a
+one-line callout, and every `top_evidence` entry carries
+`author_overlap`/`overlapping_authors` — rendered as a `[SELF-EXTENSION —
+seed's own team]` tag alongside the existing provisional/verified tag in
+"Strongest Evidence".
+
+Powers the Theme F1 differentiator narrative (the tool's own evolution by
+its creators is a different story thread than third-party adoption).
+
+---
+
+## Theme F1 — Narrative Drafting (`wake narrative`) — BUILT
+
+Built directly out of the first real end-to-end validation run (a live
+408-work Parallel netCDF run, 3 confirmed themes) — the original BACKLOG
+sketch ("contribution narrative draft using seed abstract + Theme E
+self-extension papers") turned out to under-specify the actual need once
+real confirmed themes existed: a narrative isn't one paragraph, it's
+several theme-grounded sections plus free-form framing, drafted one
+component at a time and assembled at the end. Explicit user direction
+mid-design: "describe an overall narrative with a set of themes, then do
+what we just did to support the themes, and then do this narrative
+generation piece one component at a time. Then stitch it all together."
+
+Three explicit stages, same trust model as `wake theme`/`wake override`
+throughout (`wake` never writes prose or decides what's related; it
+validates and persists the agent's/human's judgment):
+
+1. **Outline** (`wake narrative outline create`) — the agent plans the
+   overall structure before writing any prose: an ordered list of
+   components, each `"theme"` (backed by one or more already-existing
+   themes — not required to be confirmed yet, since planning ahead of
+   confirmation is fine) or `"free"` (framing prose, e.g. intro/
+   conclusion, no evidence claim). Always overwritable, no confirmation
+   of its own — a plan, not a claim.
+2. **Sections** (`wake narrative section create` / `section confirm`) —
+   one component drafted at a time. `create` always writes `"draft"`
+   (mirrors `create_theme()` — drafting is never itself a sign-off).
+   `confirm` promotes to `"confirmed"`: for a theme-backed section,
+   refuses unless *every* referenced theme is **currently** confirmed,
+   re-checked fresh at confirm time (not cached) — if a theme is later
+   reopened to draft (e.g. a new unverified work added), a section built
+   on it is caught, not silently left stale. A section can reference
+   *multiple* confirmed themes (explicit user choice: not a strict 1:1
+   constraint). Free-form sections go through the same draft→confirmed
+   lifecycle uniformly (explicit user choice — framing prose can still
+   make claims worth a human's eye) but confirm immediately since there's
+   no theme to check.
+3. **Stitch** (`wake narrative stitch`) — assembles the outline order +
+   every section into `wake-out/<seed>/narrative.md`. Works on partial
+   data like `wake bake` — missing or still-draft sections are clearly
+   labeled ("Partial narrative — N section(s) not yet written: ...", a
+   `⚠ DRAFT` banner on unconfirmed prose), never silently hidden or
+   overstated as more final than they are.
+
+Validated live against the real Parallel netCDF packet: outline created
+referencing all 3 confirmed themes + 2 free sections, one theme-backed
+section drafted and confirmed (blocked correctly when tested against an
+unconfirmed theme first), partial stitch correctly labeled the 4 not-yet-
+drafted sections.
+
+**Per-sentence source references, added in a follow-up round (absorbing
+most of F3 into F1):** explicit user requirement — "each sentence with a
+factual basis" should carry a reference an agent or human can verify.
+Every factual sentence in `--prose` can end with a `[ref:ID,ID,...]`
+marker (`SEED` for the seed paper, or a citing OpenAlex ID for anything
+else). `create_section` validates every marker in two passes before
+writing anything:
+
+1. **Packet consistency** — every citing work `.overrides.jsonl` calls
+   human-verified must have an actual dossier file on disk; if any are
+   missing, the whole packet is refused as inconsistent (a corrupted
+   packet can't be trusted for any reference, not just the one being
+   added).
+2. **Per-marker validity** — each named ID must be `SEED` or a citing
+   work that is *currently* human-verified for this seed (`.overrides
+   .jsonl`, not `classified.json`'s own never-updated `verification_
+   status` field — same "verified" definition `wake theme confirm`
+   already uses). Unknown/unverified IDs are rejected, naming every bad
+   ID at once.
+
+This guarantees every reference names a real, checked source — it does
+**not** guarantee the source supports the sentence's specific claim,
+which stays an agent/human judgment (a future `wake narrative section
+audit` command, deliberately deferred, is the intended place for that
+semantic check).
+
+Raw `[ref:...]` markers are the source of truth, kept as-written in
+`section.json`/`section.md`/`outline.md`. Only `wake narrative stitch`
+renumbers them — once the whole document is available — into `[R1]`,
+`[R2]`, ... in reading order (stable across reuse: the same source cited
+in two sections keeps one number), and appends a Chicago-author-date
+`## References` list at the bottom, one entry per distinct source, with
+a DOI link where available. wake has no persisted OSTI identifier for
+any citing work (OSTI is used only transiently as one candidate
+PDF-acquisition source, never written back to `classified.json`), so no
+OSTI suffix is rendered — noted as a known gap, not silently faked.
+
+Validated live: drafted a 3-paragraph narrative (what PnetCDF is, its own
+evolution; broad adoption across scientific computing; earth-system
+adoption) directly from the 3 confirmed Parallel netCDF themes, every
+factual sentence carrying a marker, stitched with a dense R1...Rn
+reference list.
+
+Deferred, now that F1 (+ per-sentence refs) exists:
+- **F2** — Thematic impact bullet summary: a shorter, bullet-style
+  section-drafting mode alongside full prose (F1's sections are already
+  "cluster confirmed-theme evidence into a narrative unit," so F2 may
+  turn out to be a rendering variant of the same `section create`
+  primitive rather than a separate mechanism — revisit once F1 is used
+  for a second real seed).
+- **Claim-vs-source semantic audit** — `wake narrative section audit`:
+  for each `[ref:...]`-marked sentence, have an LLM read the referenced
+  dossier(s) and flag whether the sentence's claim is actually supported
+  — a real value-add for long, multi-session narratives, deliberately
+  kept as a separate opt-in step rather than folded into `create_section`
+  or `confirm_section`.
+- Packaging (zip a folder of `narrative.md` + linked `evidence/` +
+  `evidence/themes/` for a tech editor) — F1's `narrative.md` +
+  `evidence/` directory already are that folder; only the packaging step
+  itself (zip, or a `wake export` command) remains unbuilt.
+
+
+---
+
+## Built — Theme K (Pass 1): Seed paper PDF acquisition
+
+**Pass 1 (acquire and store) — BUILT.** `wake seed fetch-pdf <seed>
+[--from-pdf PATH] [--force]`. The same open-access source chain used for
+citing-work PDFs (`wake fetch-pdf`) now also acquires the seed paper's
+own PDF, stored at `wake-out/<seed>/seed.pdf` (distinct from `pdfs/`
+which is exclusively citing works). Extracted full text cached at
+`wake-out/<seed>/seed.pdf.json` using the same `extract_pages_cached`
+machinery as citing-work dossiers. `seed.json` gains a `seed_pdf`
+sub-object on success or failure. Attempted automatically at `wake resolve`
+time (config flag `pdf_fetch.seed_pdf_at_resolve`, default `true`); on
+failure, emits human-readable fallback links and records the attempt in
+`seed.json` -- never blocks resolve. `wake status` shows a "Seed PDF"
+line. `--from-pdf PATH` uses the same three-signal metadata check as
+`wake evidence --from-pdf`; `--force` bypasses refusal but still logs.
+`wake/pdf_fetch.py` refactored to extract the shared download loop into
+`_fetch_pdf_to()` so `fetch_pdf` (citing works) and `fetch_seed_pdf`
+(seed) share one implementation. Log events `seed_pdf_fetched` /
+`seed_pdf_fetch_failed` / `seed_pdf_supplied_verified` /
+`seed_pdf_supplied_mismatch` / `seed_pdf_forced_despite_mismatch` keep
+seed-fetch events distinguishable from citing-work fetch events in
+`evidence/log.md`. 22 new tests. Live-validated against the Parallel
+netCDF dry-run packet: automatic chain correctly failed (SC03 ACM paper,
+not in OSTI), recorded fallback links, `wake seed fetch-pdf --from-pdf`
+with the wrong fixture PDF correctly refused; `wake status` shows the
+"not available" banner.
+
+Pass 2 (wiring seed-PDF text into `describe`/`evidence`/`narrative`
+consumers) is not yet built — tracked in `BACKLOG.md`'s "Open / Not Yet
+Built" section (Theme K Pass 2).
+
+---
+
+## Theme J — Session-notes batch (post-narrative-refs housekeeping + trust-model rounding)
+
+Raised as a long list of notes after the first live narrative was drafted
+and reference-checked. Sequenced for execution (each item its own
+branch, merged before the next); see the design-doc note above for why
+the workflow reframe (originally "item 5" in this list) was pulled out
+and held separately rather than sequenced here.
+
+**Sequence:**
+
+1. ~~Workflow reframe design capture~~ — done first, see Theme F4 above;
+   held, not executed.
+2. ~~**Rename dotfiles in packet directories.**~~ — BUILT. `.overrides
+   .jsonl` → `overrides.jsonl`, `.classify/` → `classify/`. Read-either
+   compat shim (old dotfile name/directory still read if the new one
+   doesn't exist yet), migrates to the new name/directory automatically
+   on the next write (`add_override`/`_write_sidecar`), never overwrites
+   an existing new-named file/directory. `.cost.jsonl` and `.state.json`
+   deliberately left as dotfiles — genuinely internal bookkeeping the
+   human isn't expected to read directly, unlike overrides (the human's
+   own verification decisions) and classify sidecars (debuggable raw
+   per-work LLM output).
+3. ~~**Split `wake/skills/impact-analysis/references/reference.md` into
+   per-workflow-phase files.**~~ — BUILT. It had grown to ~475 lines
+   covering every command's JSON schema and output layout in one file.
+   Split by actual content boundary (some originally-proposed phases —
+   resolve/citing/sample/bake — turned out to have no reference-page
+   content of their own beyond the command list, which stays in the
+   index) into `references/classify.md`, `pdf-acquisition.md`,
+   `evidence.md`, `themes.md`, `narrative.md`, `output-layout.md`,
+   `environment.md`, with `references/reference.md` itself rewritten
+   down to a ~55-line index (seed ID formats, full command list, and a
+   table linking to each phase file) plus SKILL.md's own two inline
+   pointers redirected to the specific file they actually meant. No
+   behavior change; docs-only.
+4. ~~**`wake <noun> show` verbs.**~~ — BUILT. Added `wake theme show
+   <seed> <slug>`, `wake narrative show <seed>` (the stitched top-level
+   `narrative.md`), `wake narrative outline show <seed>`, `wake
+   narrative section show <seed> <slug>`, following the subject-noun-
+   first precedent already set by `wake config show`/`wake skill show`.
+   One deviation from the original plan: `wake evidence <seed>
+   <citing-id>` already has two bare positional args and no subaction
+   structure, so adding an `evidence show` subaction created a genuine
+   argparse ambiguity (confirmed interactively: argparse can't
+   disambiguate `wake evidence W1 W2` from a third case `wake evidence
+   show W1 W2` once both a subparser and top-level positionals are
+   registered on the same parser). Rather than restructure `evidence`'s
+   primary invocation shape, dossier re-printing was added as `wake show
+   dossier <seed> <citing-id>` instead, alongside the existing
+   `brief`/`metrics`/`top`. All five re-emit an already-written file
+   as-is with no computation, matching `wake show brief`'s existing
+   convention; 11 new end-to-end CLI tests (full `wake.cli.main.main()`
+   invocation via `sys.argv`, not just the underlying module functions)
+   verify success and not-yet-built-error paths for all five, live-
+   tested against the real Parallel netCDF dry-run packet.
+5. ~~**CLI help + SKILL.md write-primitive clarity audit.**~~ — BUILT.
+   Small documentation-only pass triggered by the "wait: what does
+   `theme create` *do*?" question mid-session. Every `wake theme
+   create`/`confirm`, `wake narrative outline create`, `wake narrative
+   section create`/`confirm`, and `wake override` `--help` text now says
+   plainly that wake validates and persists a judgment already made
+   (by the agent for `create`, by the human for `confirm`/`override`)
+   rather than deciding anything itself or running an LLM. Added a new
+   Principle 13 to SKILL.md's "Principles for Agents" section stating
+   the same rule generally, as a catch-all for any future write-
+   primitive command: "if you find yourself expecting one of these
+   commands to tell you whether something is a good idea, that's a sign
+   the command is being asked to do a job it doesn't do." No behavior
+   change; docs-only.
+6. ~~**Split top-level `README.md` into a short README + `docs/` topic
+   pages.**~~ — BUILT. README had grown to 514 lines including full
+   workflow narrative, PDF-source explanation, abstract-recovery
+   philosophy, thematic-synthesis and narrative-drafting walkthroughs.
+   New top-level `docs/` (repo docs, not packaged with the pip install)
+   holds `docs/workflow.md` (full command list, quick-start, seed ID
+   formats, relationship classes), `docs/abstract-recovery.md`,
+   `docs/pdf-sources.md`, `docs/evidence.md` (verification lifecycle +
+   the evidence wiki), `docs/themes.md`, `docs/narrative.md`, plus
+   `docs/README.md` as a small index page. Top-level `README.md` is now
+   137 lines: what wake is, install, a trimmed quick-start, a
+   documentation table linking to every `docs/` page, configuration,
+   environment variables, and a pointer to
+   `references/output-layout.md` for the full directory tree. Agent-
+   facing files (SKILL.md, the skill's own `references/`) untouched by
+   this split — they serve a different reader. No behavior change.
+7. ~~**`wake narrative refs-check` — verify the stitched narrative's
+   References list with the external `ref-checker` tool**~~ — BUILT
+   (https://github.com/rbross-hpc/ref-checker). Distinct from the
+   already-noted "claim-vs-source semantic audit" deferred item under
+   Theme F1/F3 — this checks that the *bibliographic entries themselves*
+   (authors, year, title, DOI) are correct and resolvable, not whether a
+   sentence's claim is actually supported by its source. Two
+   subcommands bookend an agent-run `ref-checker check` call, same
+   "wake never orchestrates external tools, it validates its own
+   inputs/outputs" rule as everywhere else: `wake narrative refs-check
+   export <seed>` writes `narrative/refs.json` in ref-checker's expected
+   bare-array shape, numbered identically to `narrative.md`'s
+   `[R1]`/`[R2]`/... so a flagged index always maps back to the same
+   reference the human sees in the document; `wake narrative refs-check
+   summarize <seed> <results.json>` parses ref-checker's schema_version-3
+   results sidecar into a clean-OK count and a flagged list. Flagged
+   includes not just `CLOSEST`/`NO MATCH` but also an identifier-
+   confirmed `OK` match that still carries a note (year mismatch,
+   DOI-title divergence, dead URL, exhausted retries) — the match being
+   confirmed doesn't mean every detail about it is trustworthy. 10 new
+   tests. Live-validated against the real Parallel netCDF narrative's
+   19-entry reference list end to end (wake export → real `ref-checker
+   check` subprocess → wake summarize): all 19 resolved `OK` with title
+   similarity 1.00 against OpenAlex, 0 flagged.
+8. ~~**`wake dedup` — surface likely-duplicate citing works for human
+   sign-off.**~~ — BUILT. Covers all three duplicate shapes seen or
+   expected: preprint vs. published version, workshop vs. expanded
+   journal version, and the same paper independently double-published.
+   `wake dedup candidates <seed>` scans classified works for pairs with
+   both high title similarity (`similarity.title_ratio`, ≥0.85 default,
+   tunable via `--min-title-similarity`) *and* shared OpenAlex author
+   IDs — title similarity alone is deliberately insufficient (live-
+   validated: two unrelated "Reply on RC1"/"Reply on RC2" peer-review
+   threads by different single authors would otherwise generate a false
+   positive at 0.92 similarity from generic short titles). A
+   preprint/no-venue signal on one side is reported as `likely_kind`
+   but not required, so a same-title, same-author double-publication
+   with two full journal venues is still caught, just labeled
+   differently. Never auto-merges — `wake dedup confirm <seed>
+   <duplicate-id> <canonical-id>` and `wake dedup reject <seed> <id-a>
+   <id-b>` are always run by the agent one pair at a time after
+   explicit human sign-off, appending to `duplicates.jsonl`/
+   `dedup_rejected.jsonl` (same one-decision-per-line, last-write-wins
+   log shape as `overrides.jsonl`). A confirmed duplicate is excluded
+   everywhere downstream: `wake bake` drops it from reach metrics
+   (canonical work still counted once), `wake theme create` refuses to
+   cite it directly, `wake narrative` reference validation refuses it
+   in a `[ref:...]` marker too — all three point back at the canonical
+   ID instead. Duplicates are never chained (`confirm_duplicate`
+   refuses if the proposed canonical is itself already someone else's
+   duplicate). 17 new tests in `test_dedup.py`, including downstream-
+   exclusion coverage exercising `report.bake_and_save`,
+   `themes.create_theme`, and `narrative.create_section` directly.
+   Live-validated against the real Parallel netCDF dry-run packet's
+   full 408-work classified set: the heuristic found all 15 real
+   duplicate/near-duplicate pairs present in the data (including both
+   `W4229646607`/`W2137705743` and `W4251231835`/`W2153325196`, the two
+   caught by hand earlier this session, both at 1.00 similarity) with
+   zero missed hits; confirming those two dropped `wake bake`'s
+   `total_citing_works` from 408 to 406 as expected.
+9. ~~**Posters/conference-abstracts: surface for human sign-off, same
+   shape as dedup.**~~ — BUILT. Executed after item 10 (`wake exclude`)
+   since this item depends on it for the actual downstream effect. New
+   `wake/posters.py`: `poster_candidates()` scans classified works for a
+   `type == "conference-abstract"` OpenAlex type or a `Poster:`/
+   `Abstract:` title prefix (either signal alone is sufficient — a
+   mistyped/mis-indexed OpenAlex type shouldn't hide an obvious
+   title-prefix case; an ordinary title that merely starts with the
+   English word "Abstract" without the colon, e.g. "Abstraction Layers
+   for...", does not match). Pure read, deterministic, no LLM call —
+   same trust model as `wake dedup` throughout: never excludes anything
+   itself, only surfaces candidates for a human to look at one at a
+   time. `keep_candidate()` records a human's decision that a flagged
+   candidate is a false positive and should stay fully usable, so it
+   isn't resurfaced by a later scan (`posters_reviewed.jsonl`, same
+   append-only shape as `duplicates.jsonl`/`dedup_rejected.jsonl`).
+   Already-excluded works (any `wake exclude` category) are also
+   filtered out of scan results. CLI: `wake posters candidates <seed>`,
+   `wake posters keep <seed> <citing-id> --reason "..."`. Once a human
+   confirms a candidate really is a poster/abstract stub, the agent
+   excludes it the normal way: `wake exclude <seed> <citing-id> --reason
+   "..." --category poster-or-abstract` — `wake posters` has no
+   exclusion mechanism of its own, it only feeds `wake exclude`. 10 new
+   tests in `test_posters.py`. Docs: new
+   `wake/skills/impact-analysis/references/posters.md`, `reference.md`
+   index + full command list, SKILL.md new step 8 (renumbering steps
+   9-15 accordingly, all "step N" cross-references fixed), `docs/
+   workflow.md` command table. Live-validated against the real Parallel
+   netCDF dry-run packet: found all 4 real poster/abstract-type works in
+   the 408-work classified set (`W2036045262` "Poster reception---...",
+   `W2130808347` "Poster: Bringing Task and Data Parallelism...",
+   `W4256234323` "Abstract: Bringing Task and Data Parallelism...", and
+   `W2173402311` "SRC", an ACM Student Research Competition abstract
+   caught purely by its `conference-abstract` type since its title gives
+   no hint); confirmed `wake posters keep` removed a candidate from
+   subsequent scans, then reverted that smoke-test state to leave the
+   packet's real, unresolved poster candidates for an actual future
+   human sign-off pass rather than deciding on the human's behalf.
+10. ~~**`wake exclude` — first-class exclude state.**~~ — BUILT. A citing
+    work judged not actually about the seed (e.g. background-mention
+    where the seed appears only in a bibliography) previously just sat
+    as a low-relevance `verified` work — nothing stopped a future theme
+    or narrative section from citing it. `wake exclude <seed>
+    <citing-id> --reason "..." [--category not-about-seed|poster-or-
+    abstract|irrelevant|other]` records an explicit, permanent exclusion
+    (required reason, `exclusions.jsonl`, same append-only/last-write-
+    wins shape as `overrides.jsonl`/`duplicates.jsonl`) that makes the
+    work unusable everywhere downstream: `wake theme create` refuses to
+    include it, `wake narrative` reference validation refuses it in a
+    `[ref:...]` marker (even if the work is itself independently
+    human-verified — the realistic sequence is verify-then-notice, not
+    notice-then-verify), `wake bake` drops it from reach metrics, and
+    `wake gaps`/`wake theme queue` stop surfacing it (the latter
+    computed fresh at query time, so an exclusion recorded *after* a
+    theme was created is still honored). Undoing an exclusion is a
+    separate, explicit `wake unexclude <seed> <citing-id> --reason
+    "..."` action with its own required justification — never implicit.
+    13 new tests plus downstream-exclusion coverage exercising
+    `report.bake_and_save`, `themes.create_theme`,
+    `narrative.create_section`, `gaps.find_gaps`, and
+    `themes.list_theme_needs_evidence` directly. Live-validated against
+    the real Parallel netCDF dry-run packet: excluded a real
+    verified-but-unused work (`W2138238632`, the Blue Gene/L
+    architecture paper), confirmed `wake bake` dropped
+    `total_citing_works` from 406 to 405 and `wake theme create`
+    refused to cite it, then `wake unexclude`d it and confirmed
+    `total_citing_works` was restored to 406.
+11. ~~**`wake unverify <seed> <citing-id> [--reason "..."]` — first-class
+    undo for a mistaken verification.**~~ — BUILT. This session needed
+    exactly this when an agent misread a bulk go-ahead and auto-verified
+    13 works; recovery was a manual `.overrides.jsonl` backup-and-restore
+    rather than a real command. New `report.remove_override()` rewrites
+    `overrides.jsonl` with every entry for the citing ID removed (unlike
+    `exclude`/`dedup`'s reversal pattern, there's no "unverified" entry
+    shape to append -- the only way a work stops being verified is to
+    have no override on file at all). New `evidence_wiki.mark_pending()`
+    is the mirror image of `mark_verified()`: patches an existing dossier
+    back from `verified` to `pending-human-review`, undoing any
+    relationship correction the reverted verification made (restoring
+    `proposed.relationship`/`justification` to the model's own original
+    reading, removing `human_verification` entirely). New
+    `wake/unverify.py` ties both together plus a `verification_reverted`
+    line written to `evidence/log.md` (matching the exact ad hoc format
+    used during this session's manual recovery) and an `evidence/
+    index.md` rebuild so the work moves back to Pending Review. CLI:
+    `wake unverify <seed> <citing-id> [--reason "..."]`, plus the
+    batch-recovery variant for exactly this failure mode: `wake unverify
+    <seed> --since <timestamp> [--reason "..."]` or `--last N [--reason
+    "..."]` (mutually exclusive with each other and with a citing-id
+    positional). Works for both a plain human-judgment override (no
+    dossier, just removes the `overrides.jsonl` entry) and an
+    evidence-dossier-backed one (also reverts the dossier). 17 new tests
+    in `test_unverify.py`. Docs: new "Undoing a mistaken verification"
+    section in `wake/skills/impact-analysis/references/evidence.md`,
+    reference.md command list, SKILL.md's Refine step, `docs/
+    workflow.md` command table, `docs/evidence.md`. Live-validated
+    against the real Parallel netCDF dry-run packet: found a real
+    verified-but-unused work (`W4386771176`) with a dossier not cited in
+    any theme or narrative section, confirmed `wake unverify` reverted
+    its dossier to `pending-human-review` and dropped it from
+    `overrides.jsonl` (also triggering the still-pending
+    `.overrides.jsonl` → `overrides.jsonl` migration from item 2, since
+    this packet had never had a fresh `wake override`/`wake unverify`
+    call since that rename), confirmed `wake bake` no longer counted it
+    as verified, then re-verified it via a fresh `wake override
+    --verification-source evidence-dossier` call and confirmed the
+    packet was restored to its original state (`impact.json`'s
+    `total_citing_works` unchanged at 406 throughout, since verification
+    status doesn't affect that count -- only bake's evidence tagging).
+
+**Additional Theme J work, built after the numbered sequence above (not
+originally sequenced, but shipped in the same housekeeping spirit):**
+
+- ~~`wake evidence --from-pdf <path> <citing-id>`~~ — **BUILT**
+  (`wake/pdf_verify.py`, referenced in code as "BACKLOG deferred item
+  D.1"). Verifies a human-supplied PDF actually matches the citing
+  work's metadata (title fuzzy-match against extracted first-page text,
+  author match, DOI-in-text where present) before copying it into the
+  packet; refuses with a clear message on mismatch. The batch variant,
+  `wake evidence --from-pdf-dir <folder> <seed>` (try every PDF in a
+  folder against every currently-provisional citing work), was **not**
+  built — still open, see `BACKLOG.md`.
+- ~~`wake missing-pdfs <seed>`~~ — **BUILT** (`wake/missing_pdfs.py`,
+  referenced in code as "BACKLOG deferred item A"). Read-only report of
+  provisional citing works with no cached PDF and which fetch sources
+  have already been exhausted, callable any time.
+- ~~Investigate Springer PDF page-count validation for false-negative
+  failures.~~ — **Closed, no wake-side action needed.** The observation
+  was from `curl --head` run externally (not a wake-internal check) —
+  curl reported a misleading byte count for a real Springer LNCS PDF
+  that was actually valid. wake has no page-count validation of its own;
+  the existing `_looks_like_pdf` (magic bytes) + `min_valid_pdf_bytes`
+  checks in `pdf_fetch._download` are sufficient and unaffected by this.
+  A note added to `wake/sources/springer.py` and `docs/pdf-sources.md`
+  to prevent a future contributor from adding a page-count gate based on
+  external tool output for Springer URLs specifically.
+
+Still open from this list — moved to `BACKLOG.md`'s "Open / Not Yet
+Built" section: `wake assess`/`theme coverage`, `wake narrative section
+audit`/`wake narrative audit`, interactive review rendering polish,
+README multi-harness skill-install docs, the `--from-pdf-dir` batch
+variant above.
+
+---
+
+## Theme L — Structural Hardening (engineering, not product features) — CLOSED
+
+**Full build-by-build record lives in
+[`docs/build-log.md`](../build-log.md) (`v0.4.0`–`v0.4.12`) — this is a
+summary, not a duplicate, matching the non-duplication convention
+`BACKLOG.md` itself originally established for this theme.**
+
+Prompted by an external static assessment of `main`: wake's product
+architecture (epistemic-state tracking, thin agent-facing primitives,
+file-first artifacts) was judged sound, but the implementation — a
+2,000+-line CLI dispatch module, an implicit dict-based domain model with
+no schema versioning, dependency rebuilding via bidirectional dynamic
+imports between `evidence`/`evidence_wiki`/`themes`/`narrative`,
+non-transactional JSON+MD dual writes, process-global config/state, a
+weakly-typed LLM boundary, and no CI/static tooling — was flagged as
+outgrowing its current shape. Independently verified against the real
+source before acting on it.
+
+Thirteen phases total, one branch each, offline suite (651 tests at the
+start, 790 at the end) kept green throughout, `--no-ff` merged to `main`
+before the next phase started:
+
+**Six original phases** (`docs/build-log.md` "Phase 3"): CI + ruff +
+mypy (`chore/ci-and-tooling`, v0.4.0); explicit Pydantic domain models +
+`schema_version` (`refactor/domain-models`, v0.4.1); `WakeContext` +
+two real process-global bug fixes (`refactor/wake-context`, v0.4.2); a
+centralized build layer + `wake rebuild` (`refactor/build-layer`,
+v0.4.3); the `cli/main.py` split into `cli/commands/<family>.py`
+(`refactor/cli-split`, v0.4.4); LLM retry-policy split by failure class
+(`refactor/llm-boundary`, v0.4.5).
+
+**Migration-story follow-on** (four phases replicating schema-versioning
++ migration to the remaining artifact families, using a real vendored
+golden packet — Dorier Mofka, `W4414299303` — as the acceptance test for
+each): dossier versioning (`refactor/dossier-versioning`, v0.4.6);
+domain-vocabulary single-sourcing (`refactor/domain-vocabulary`, v0.4.7);
+the golden-packet fixture itself (`test/golden-packet`, v0.4.8); theme
+versioning (`refactor/theme-versioning`, v0.4.9); narrative
+outline+section versioning (`refactor/narrative-versioning`, v0.4.10);
+classification versioning + new `ClassifiedFile` wrapper model
+(`refactor/classify-versioning`, v0.4.11); override versioning, the
+append-only JSONL case (`refactor/override-versioning`, v0.4.12).
+
+This closed the migration story: all five persisted artifact families
+(dossiers, themes, narrative outline+sections, classification,
+overrides) now carry an explicit `schema_version`, a
+strict-write/permissive-read model split, and a `migrate_*()` function
+invoked at every canonical read site.
+
+Explicitly **not** adopted: replacing the filesystem-artifact model with
+a database — both the external assessment and independent review agree
+file-first is a real strength of wake's design, not a symptom needing a
+fix.
+
+Deferred follow-on work (real, not forgotten) is tracked in
+`BACKLOG.md`'s "Open / Not Yet Built" section: formalizing the remaining
+`_normalize_*`/legacy-shape functions; full `WakeContext` threading
+through the ~90 existing `base:`-taking domain functions; a persisted
+dirty/revision manifest for `wake rebuild`.
+
+---
+
