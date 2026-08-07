@@ -1140,14 +1140,37 @@ baseline) to 713 across all six phases, entirely additive.
     acceptance test confirming the real (pre-Phase-11, unversioned)
     Mofka classify sidecars + classified.json migrate correctly on read.
 
+13. `refactor/override-versioning` — **BUILT**, see PLAN.md v0.4.12.
+    Fourth and final phase. `overrides.jsonl` is append-only (not a
+    single document), so the migration mechanic differs from the other
+    three: `migrate_override()` runs per-record inside `load_overrides()`
+    (in-memory only, on-disk lines never rewritten by a read), rather
+    than the whole-file rewrite pattern used elsewhere.
+    `OVERRIDE_VERSION=1`, `OverrideWrite` (`extra="forbid"`), used only
+    by `add_override()`'s append -- `remove_override()`'s
+    verbatim-preserving rewrite is deliberately left untouched. 8 new
+    tests (782->790), including a golden-packet acceptance test
+    confirming the real (pre-Phase-12, unversioned) Mofka
+    `overrides.jsonl` migrates correctly per-record on read.
+
+    **This closes the migration story.** All five persisted artifact
+    families (dossiers, themes, narrative outline+sections,
+    classification, overrides) are now versioned: explicit
+    `schema_version`, a strict-write/permissive-read model split, and a
+    `migrate_*()` function invoked at every canonical read site. The
+    golden packet (v0.4.8) served as the acceptance test for all four
+    family-versioning phases (v0.4.9-v0.4.12), each confirming migration
+    correctness against genuinely produced, pre-migration artifacts.
+    Offline test count: 747 (post golden-packet) -> 755 -> 769 -> 782 ->
+    790.
+
 **Deferred follow-on work, not forgotten, all real:**
-- Replicating the strict-write / permissive-read split and migration
-  chain to the last remaining artifact family (overrides, JSONL
-  append-only -- a different migration mechanic since there's no single
-  document to rewrite): same pattern, in progress.
-- Replacing the 15 catalogued `_normalize_*`/legacy-shape functions
-  with the migration-chain pattern now established by dossiers/themes/
-  narrative.
+- Replacing the 15 originally-catalogued `_normalize_*`/legacy-shape
+  functions with the migration-chain pattern now established across all
+  five artifact families (some, like the bare-list `classified.json`
+  shape and absolute/relative dossier paths, are already formalized as
+  explicit migration steps; the rest are candidates for the same
+  treatment).
 - Full `WakeContext` threading through all ~90 existing `base:`-taking
   domain functions (Phase 3 landed the context object and one
   canonical CLI construction point; `ctx.base` is a verified drop-in

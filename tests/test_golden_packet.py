@@ -239,6 +239,27 @@ def test_overrides_jsonl_validates_as_override():
         assert o["verification_status"] == "verified"
 
 
+def test_overrides_jsonl_is_unversioned_pre_phase_12_and_migrates_on_read():
+    """The golden packet's overrides.jsonl was generated before Phase 12
+    (override versioning) existed -- no schema_version on any line.
+    Phase-12 acceptance test: load_overrides() must migrate each record
+    on read, mirroring the Phase-6/9/10/11 acceptance tests.  Unlike the
+    single-document families, the on-disk .jsonl is never rewritten by a
+    read -- this is verified separately by test_models.py's
+    test_load_overrides_migrates_legacy_unversioned_lines_per_record."""
+    from wake.models import OVERRIDE_VERSION
+
+    raw_lines = (_PACKET_ROOT / "overrides.jsonl").read_text().splitlines()
+    raw_entries = [json.loads(line) for line in raw_lines if line.strip()]
+    assert len(raw_entries) == len(_VERIFIED_IDS)
+    for entry in raw_entries:
+        assert "schema_version" not in entry
+
+    overrides = load_overrides(_SEED_ID, base=_PACKET_ROOT.parent.parent)
+    for o in overrides.values():
+        assert o["schema_version"] == OVERRIDE_VERSION
+
+
 # ---------------------------------------------------------------------------
 # 2. Phase-6 acceptance test: dossier versioning on real artifacts
 # ---------------------------------------------------------------------------

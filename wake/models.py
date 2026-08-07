@@ -527,6 +527,35 @@ class Override(WakeModel):
     overridden_at: str
 
 
+OVERRIDE_VERSION = 1
+
+
+class OverrideWrite(Override):
+    """Strict write variant of Override -- see ThemeWrite/
+    EvidenceDossierWrite for the read-permissive/write-strict rationale.
+    Used only by add_override()'s append; remove_override()'s rewrite
+    deliberately preserves every surviving line verbatim (including
+    unparseable ones) and must not be routed through this."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+def migrate_override(raw: dict[str, Any]) -> dict[str, Any]:
+    """Migrate one raw overrides.jsonl record forward to OVERRIDE_VERSION.
+
+    Unlike the single-document artifacts (dossiers/themes/narrative/
+    classify sidecars), overrides.jsonl is an append-only log with no
+    single document to rewrite in place -- load_overrides() calls this
+    per-record, in memory, on every parsed line; on-disk lines are never
+    rewritten by a read.  Idempotent.  v0 (no key) -> v1: stamp
+    schema_version -- no shape change.
+    """
+    result = dict(raw)
+    if result.get("schema_version", 0) < 1:
+        result["schema_version"] = OVERRIDE_VERSION
+    return result
+
+
 class ArtifactReference(WakeModel):
     """The ``[ref:ID]`` marker family used in narrative prose (see
     narrative.py's ``_REF_RE``/``_parse_ref_markers``): a reference is

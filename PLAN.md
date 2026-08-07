@@ -1890,3 +1890,81 @@ un-migrated legacy file, change the exact dict shape by design).
 ### Verification
 
 ruff, mypy, 782/782 offline tests passing.
+
+## v0.4.12 — Override versioning, JSONL append-only (`refactor/override-versioning`)
+
+**Fourth and final phase** replicating the dossier-versioning pattern.  This closes the
+migration story: all five artifact families (dossiers, themes, narrative outline+sections,
+classification, overrides) are now versioned, with an explicit `migrate_*()` step and a
+strict-write/permissive-read split.
+
+**The migration mechanic differs from the other four families**, as anticipated in the Phase-9
+research pass: `overrides.jsonl` is an append-only log, not a single document. There is no
+whole-file rewrite to hook a migration into on read -- `load_overrides()` must migrate **each
+parsed line, in memory**, as it reads it, rather than rewriting the file. The on-disk lines stay
+exactly as they were written; only the in-memory dict handed to callers is upgraded.
+
+### What changed
+
+**`wake/models.py`**
+
+- `OVERRIDE_VERSION = 1`.
+- `OverrideWrite(Override)` -- strict, `extra="forbid"`.  Used only by `add_override()`'s
+  append; `remove_override()`'s rewrite deliberately preserves every surviving line verbatim
+  (including unparseable ones, by design -- see its own docstring) and must not be routed
+  through a validating write model.
+- `migrate_override(raw) -> dict` -- v0->v1: stamp `schema_version` on one record (no shape
+  change). Explicitly documented as per-record, not whole-file, unlike every other
+  `migrate_*()` in this module.
+
+**`wake/report.py`**
+
+- `load_overrides()`: each parsed JSONL line is passed through `migrate_override()` before
+  being keyed by `citing_id` -- non-destructive, in-memory only.
+- `add_override()` write site: stamps `schema_version`, uses
+  `OverrideWrite.validate_or_raise(...).to_json_dict()` before appending the line.
+- `remove_override()`: **left untouched**, exactly as planned -- its verbatim-preserving
+  rewrite contract (surviving lines, including malformed ones, pass through unchanged) is
+  incompatible with routing through a migrating/validating write model.
+
+### Tests
+
+8 new tests (782->790 offline passing):
+
+- Migration-chain correctness: stamp, already-current no-op, idempotent.
+- `test_load_overrides_migrates_legacy_unversioned_lines_per_record` -- confirms the on-disk
+  file is untouched by a read while the in-memory result is upgraded (the core distinguishing
+  behavior of this family's migration mechanic).
+- Strict-write rejects unknown field / permissive-read accepts unknown field.
+- `test_remove_override_preserves_lines_verbatim_including_unversioned` -- confirms
+  `remove_override()`'s rewrite still passes a legacy unversioned line for an unrelated
+  `citing_id` through completely unchanged (not upgraded, not touched).
+
+**Golden-packet acceptance test:**
+`test_overrides_jsonl_is_unversioned_pre_phase_12_and_migrates_on_read` -- confirms the real
+Mofka packet's `overrides.jsonl` (2 entries, generated before this phase existed) has no
+`schema_version` on any line on disk, and that `load_overrides()` upgrades every record on read.
+
+### Updated existing test
+
+`test_override_validates_real_overrides_jsonl_entry` (test_models.py) now additionally asserts
+`entry.get("schema_version") == OVERRIDE_VERSION`.
+
+### Verification
+
+ruff, mypy, 790/790 offline tests passing.
+
+## Migration story: complete
+
+With this phase, **all five persisted artifact families** (`EvidenceDossier`, `Theme`,
+`NarrativeOutline`/`NarrativeSection`, `ClassificationResult`/`ClassifiedFile`, `Override`) now
+carry an explicit `schema_version`, a `<Model>Write` strict-write variant, and a `migrate_*()`
+function invoked at every canonical read site. The ~15 implicit `_normalize_*`/legacy-shape
+checks the original assessment catalogued are now either formalized into an explicit migration
+step (the bare-list `classified.json` shape, absolute/relative dossier paths) or superseded by
+the versioning discipline itself. The golden packet (v0.4.8) served as the acceptance test for
+all four of this run's phases (v0.4.9-v0.4.12), each confirming migration correctness against
+genuinely produced, pre-migration artifacts rather than only synthetic test dicts.
+
+Offline test count across the four phases: 747 (post golden-packet baseline) -> 755 (themes) ->
+769 (narrative) -> 782 (classification) -> 790 (overrides).

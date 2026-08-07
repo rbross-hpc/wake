@@ -28,6 +28,7 @@ from wake.models import (
     EVIDENCE_DOSSIER_VERSION,
     NARRATIVE_OUTLINE_VERSION,
     NARRATIVE_SECTION_VERSION,
+    OVERRIDE_VERSION,
     SCHEMA_VERSION,
     THEME_VERSION,
     ArtifactReference,
@@ -42,6 +43,7 @@ from wake.models import (
     NarrativeSection,
     NarrativeSectionWrite,
     Override,
+    OverrideWrite,
     Theme,
     ThemeWrite,
     Work,
@@ -49,6 +51,7 @@ from wake.models import (
     migrate_classified,
     migrate_dossier,
     migrate_outline,
+    migrate_override,
     migrate_section,
     migrate_theme,
 )
@@ -746,6 +749,7 @@ def test_override_validates_real_overrides_jsonl_entry(tmp_path):
     assert parsed.relationship == "extends"
     assert parsed.verification_status == "verified"
     assert parsed.confidence == 1.0
+    assert entry.get("schema_version") == OVERRIDE_VERSION
 
 
 def test_override_rejects_unknown_relationship():
@@ -754,6 +758,89 @@ def test_override_rejects_unknown_relationship():
             "citing_id": "W1", "relationship": "not-a-real-label",
             "verification_source": "human-judgment", "overridden_at": "2026-01-01T00:00:00",
         })
+
+
+# --- migrate_override / OverrideWrite (Phase 12) ----------------------------
+
+_MINIMAL_OVERRIDE_V0: dict = {
+    "citing_id": "W1",
+    "relationship": "extends",
+    "verification_source": "human-judgment",
+    "overridden_at": "2025-01-01T00:00:00",
+}
+
+
+def test_migrate_override_v0_stamps_schema_version():
+    migrated = migrate_override(dict(_MINIMAL_OVERRIDE_V0))
+    assert migrated["schema_version"] == OVERRIDE_VERSION
+
+
+def test_migrate_override_already_current_is_noop():
+    raw = {**_MINIMAL_OVERRIDE_V0, "schema_version": OVERRIDE_VERSION}
+    migrated = migrate_override(raw)
+    assert migrated == raw
+
+
+def test_migrate_override_idempotent():
+    once = migrate_override(dict(_MINIMAL_OVERRIDE_V0))
+    twice = migrate_override(once)
+    assert once == twice
+
+
+def test_load_overrides_migrates_legacy_unversioned_lines_per_record(tmp_path):
+    """An overrides.jsonl written before Phase 12 (no schema_version on
+    any line) must be upgraded in memory by load_overrides() -- the
+    on-disk file is never rewritten by a read (append-only log)."""
+    import json as _json
+    seed_id = "W1"
+    wd = tmp_path / "wake-out" / seed_id
+    wd.mkdir(parents=True)
+    (wd / "overrides.jsonl").write_text(_json.dumps(_MINIMAL_OVERRIDE_V0) + "\n")
+
+    overrides = load_overrides(seed_id, base=tmp_path)
+    assert overrides["W1"]["schema_version"] == OVERRIDE_VERSION
+
+    on_disk = (wd / "overrides.jsonl").read_text()
+    assert "schema_version" not in on_disk
+
+
+def test_override_write_rejects_unknown_field():
+    good = {**_MINIMAL_OVERRIDE_V0, "schema_version": OVERRIDE_VERSION}
+    with pytest.raises(ValueError, match="schema"):
+        OverrideWrite.validate_or_raise({**good, "typo_field": "oops"}, context="test")
+
+
+def test_override_read_model_accepts_unknown_field():
+    raw = {**_MINIMAL_OVERRIDE_V0, "future_field": "ok"}
+    parsed = Override.model_validate(raw)
+    assert parsed.citing_id == "W1"
+
+
+def test_remove_override_preserves_lines_verbatim_including_unversioned(tmp_path):
+    """remove_override()'s rewrite is deliberately verbatim-preserving --
+    it must not be routed through migrate_override/OverrideWrite. A
+    legacy unversioned line for a *different* citing_id must survive
+    remove_override() untouched (still no schema_version)."""
+    import json as _json
+
+    from wake.report import remove_override
+
+    seed_id = "W1"
+    wd = tmp_path / "wake-out" / seed_id
+    wd.mkdir(parents=True)
+    other_entry = {**_MINIMAL_OVERRIDE_V0, "citing_id": "W2"}
+    (wd / "overrides.jsonl").write_text(
+        _json.dumps(_MINIMAL_OVERRIDE_V0) + "\n" + _json.dumps(other_entry) + "\n"
+    )
+
+    removed = remove_override(seed_id, "W1", base=tmp_path)
+    assert removed is True
+
+    remaining_text = (wd / "overrides.jsonl").read_text()
+    remaining = [_json.loads(line) for line in remaining_text.splitlines() if line.strip()]
+    assert len(remaining) == 1
+    assert remaining[0]["citing_id"] == "W2"
+    assert "schema_version" not in remaining[0]
 
 
 # --- ArtifactReference -------------------------------------------------------
