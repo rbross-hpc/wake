@@ -1955,3 +1955,38 @@ row description was corrected to reflect its new, narrower scope.
 (`pytest tests/ -m 'not network'`) still 790 passed, 14 deselected -- confirms no test reads these
 markdown files as data. Anchor-resolution grep (above) confirms every cited BACKLOG/PLAN anchor
 resolves in its new location.
+
+---
+
+## v0.4.14 — Fix `test_openai_client.py` false pass in credential-free environments (`fix/openai-client-test-creds`)
+
+The first real GitHub Actions CI run on this repo (triggered by the v0.4.13 docs-reorg merge)
+surfaced 7 test failures that had never appeared locally: every test in `test_openai_client.py`
+that calls `chat_json` directly (mocking only `_stream_completion` or the low-level
+`openai.resources.chat.completions.Completions.create`) failed with `openai.OpenAIError: Missing
+credentials`, not the mocked/asserted behavior.
+
+Root cause: `chat_json`/`chat_text` call `_client()`, which constructs a real `openai.OpenAI()`.
+The `OpenAI` client validates credentials (`OPENAI_API_KEY` or equivalent) at *construction* time,
+before any request is made -- so even though every one of these 7 tests mocks the actual network
+call, `_client()` itself raises first. This had passed silently in every prior local/sandbox run
+purely because those environments happened to have a real `OPENAI_API_KEY` set (e.g. this
+project's own dev sandbox, configured against the Argo gateway) -- CI correctly has no such
+credentials configured, which is what exposed the gap. No other test file in the suite has this
+problem: every other module exercising the LLM path mocks `wake.<module>.chat_json` itself (one
+level higher than `_client()`), never reaching `OpenAI()`'s constructor at all.
+
+Fixed with a single `autouse=True` pytest fixture in `tests/test_openai_client.py`
+(`_fake_openai_credentials`) that sets `OPENAI_API_KEY` to a fake value via `monkeypatch.setenv`
+for every test in the module -- `OpenAI()` only *validates the value is present* at construction,
+it doesn't validate the key is real, so a fake value is sufficient and no real request is ever
+made (every test already mocks the network layer below construction). Same pattern
+`tests/test_config.py` already uses (`_clear_all_env` autouse fixture) for the inverse case
+(guaranteeing a clean env-var slate).
+
+Verified locally by reproducing the CI failure exactly:
+`env -u OPENAI_API_KEY -u OPENAI_BASE_URL -u OPENAI_API_BASE pytest tests/test_openai_client.py`
+failed the same 7 tests before the fix, passed all 23 after. Full offline suite re-run the same
+way (`env -u OPENAI_API_KEY ... pytest tests/ -m 'not network'`): 790 passed, 14 deselected --
+matching the pre-existing count exactly, confirming this is a test-only fix with zero production
+code changes. `ruff`/`mypy` clean.
