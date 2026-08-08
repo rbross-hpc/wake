@@ -2211,3 +2211,69 @@ still re-renders even when the manifest reports zero source changes (confirms re
 incremental); CLI `--json`/human-output coverage for both first-render and no-change paths.
 `rtk ruff check wake/ tests/` clean, `rtk mypy` clean. Full offline suite under CI-parity
 conditions: 803 passed, 14 deselected (790 prior baseline + 13 new tests, no regressions).
+
+## v0.4.18 — Theme K Pass 2: wire seed-PDF consumers (`feature/seed-pdf-consumers`)
+
+Theme K Pass 1 (v0.4.x, acquire and cache the seed paper's own PDF at `seed.pdf`/`seed.pdf.json`)
+shipped with explicitly no downstream consumers. This closes Pass 2 for the two LLM consumers and
+documents the third (agent-driven, no code needed).
+
+### What was built
+
+New shared reader `seed_pdf.load_seed_excerpt(seed_id, *, base, max_chars) -> str | None`: reads
+`seed.json`'s `seed_pdf.extracted_text_path`, loads the page-tagged extraction cache, joins via
+`extract_full_text_from_pages`, truncates to `max_chars`. Returns `None` (never raises) for every
+"no seed PDF text yet" case -- no `seed_pdf` key, a failed fetch attempt (`extracted_text_path:
+null`), a cache file missing from disk, or a scanned PDF whose extraction produced only blank
+pages. Both consumers below treat `None` as "fall back to today's behavior," so a seed with no PDF
+acquired yet is completely unaffected.
+
+**`wake describe`** (`describe.describe_seed`): the user prompt now appends a "Seed paper excerpt"
+block (only when `load_seed_excerpt` returns something) alongside the existing title/authors/year/
+venue/abstract fields -- the abstract alone routinely undersells a paper's actual contribution.
+New config `describe.seed_excerpt_chars` (default 6000 -- enough for an intro + contribution
+section). `describe.prompt_version` bumped `describe-1` -> `describe-2` so cached descriptions
+regenerate.
+
+**`wake evidence`** (`evidence.verify_full_text`): same excerpt block prepended to the user message
+before the citing work's full text, framed as "ground truth for what the seed actually
+contributes" -- lets the model check a claimed "extends"/"builds-on"/"benchmarks" relationship
+against what the seed paper really did, not just its title. New system prompt `_SYSTEM_EVIDENCE_3`
+(evidence-2's multi-facet shape, patched with one added instruction about the excerpt) registered
+in `_SYSTEM_BY_VERSION`. New config `evidence.seed_excerpt_chars` (default 4000 -- supporting
+context alongside the 40k-char citing full text, not the star of the prompt).
+`evidence.prompt_version` default bumped `evidence-1` -> `evidence-3`, which also modernizes the
+packaged default off the legacy single-facet prompt onto the multi-facet one.
+
+**`wake narrative section create`** -- documentation-only, as scoped: SKILL.md,
+`references/narrative.md`, and `docs/narrative.md` now note that `[ref:SEED]`-marked sentences
+should be grounded in `seed.pdf` directly (open it as a plain file) rather than the abstract alone.
+No code change -- the agent already had everything needed, it just wasn't written down.
+
+`wake narrative section audit` (the fourth Pass-2 item from BACKLOG.md) remains a wholly separate,
+still-unbuilt deferred item (a claim-vs-dossier semantic check) -- explicitly out of scope here.
+
+### Verification
+
+New tests: `tests/test_describe.py` (4, new file -- no prior describe tests existed): abstract-only
+fallback with no seed PDF, excerpt included when available, `seed_excerpt_chars` cap respected,
+fallback when extraction produced no text. `tests/test_seed_fetch_pdf.py` (+7):
+`load_seed_excerpt`'s five fallback-to-None cases (no seed.json, no `seed_pdf` key, failed fetch,
+missing cache file, blank-page extraction) plus the present/truncated-text cases.
+`tests/test_evidence.py` (+4): excerpt included/omitted in `verify_full_text`'s user message,
+char-cap respected, `_SYSTEM_EVIDENCE_3` mentions the seed excerpt.
+
+`rtk ruff check wake/ tests/` clean, `rtk mypy` clean. Full offline suite under CI-parity
+conditions: 818 passed, 14 deselected (803 prior baseline + 15 new, no regressions). Confirmed the
+`evidence-1`/`evidence-2`/`describe-1` prompt-version default bumps didn't destabilize existing
+tests -- every test that cares about a specific prompt version already patches `evidence_cfg`/
+`describe_cfg` explicitly rather than relying on the packaged default.
+
+### Next phase
+
+Full `WakeContext` threading (the one remaining Structural Hardening follow-on) stays deliberately
+deferred -- confirmed via a fresh audit this session that `WakeContext.settings`/
+`.llm_client_factory` still have zero real consumers, so threading it now would be pure mechanical
+churn (~137 `base:`-taking function signatures across 19 files) with no realized payoff. Next
+candidates are product features: Theme B/G/H, or smaller carried-forward items like `wake assess`/
+`theme coverage` evidence-gap triage.

@@ -90,6 +90,11 @@ judgment when drafting and confirming. A future `wake narrative section
 audit` command (not yet built) is the intended place for a
 claim-vs-dossier semantic check, kept deliberately separate.
 
+For `[ref:SEED]`-marked sentences specifically, ground the claim in the
+seed paper's own PDF (`wake-out/<seed>/seed.pdf`, if acquired — check
+`seed.json`'s `seed_pdf` sub-object) rather than the abstract alone; no
+`wake` command loads this for you, it's a plain file to read directly.
+
 The raw `[ref:...]` marker form is always what's *stored*:
 `section.json`'s `prose` field keeps every marker exactly as written,
 regardless of what the rendered `.md` does with it — this is what

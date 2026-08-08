@@ -42,8 +42,9 @@ migration in the first place.)
 - Theme B — DOE-relevance signals (`signals_doe.py`, off-by-default).
 - Theme G — Timeline generation.
 - Theme H — Non-publication evidence search.
-- Theme K Pass 2 — wire seed-PDF consumers (`describe`/`evidence`/
-  `narrative`).
+
+(Theme K Pass 2 — wire seed-PDF consumers — is now BUILT, v0.4.18. See
+"Built — Theme K (Pass 2)" below.)
 
 **Smaller deferred items** (see "Open items carried forward" below for
 full detail): `wake evidence --from-pdf-dir` (batch variant), `wake
@@ -72,6 +73,7 @@ author-email discovery, `wake fetch-pdf` negative-result caching, F2
 | E | Author-overlap tag | [history](docs/design/backlog-built-history.md) — Theme E |
 | F1 | Narrative drafting (`wake narrative`) | [history](docs/design/backlog-built-history.md) — Theme F1 |
 | K (Pass 1) | Seed paper PDF acquisition | [history](docs/design/backlog-built-history.md) — Theme K |
+| K (Pass 2) | Wire seed-PDF consumers (`describe`/`evidence`/`narrative`) | this file — "Built — Theme K (Pass 2)", v0.4.18 |
 | J | Session-notes batch (11 items: dotfile rename, docs split, `show` verbs, help-text audit, README split, `refs-check`, `dedup`, `posters`, `exclude`, `unverify`) | [history](docs/design/backlog-built-history.md) — Theme J |
 | L | Structural Hardening (13 phases, v0.4.0–v0.4.12) | [build log](docs/build-log.md), summarized in [history](docs/design/backlog-built-history.md) — Theme L |
 
@@ -96,23 +98,34 @@ this pass** — still fully deferred, tracked here for the next session.
 
 ---
 
-## Open — Theme K (Pass 2): wire seed-PDF consumers
+## Built — Theme K (Pass 2): wire seed-PDF consumers
 
 Pass 1 (acquire and store the seed's own PDF) is BUILT — see "Theme K"
 in [`docs/design/backlog-built-history.md`](docs/design/backlog-built-history.md).
 
-**Pass 2 (wire consumers) — NOT YET DONE.** Each consumer is a separate
-future item requiring its own design decision (prompt changes, cost
-impact per call):
-- `wake describe` — feed seed full text or first-few-pages instead of
-  just the abstract for the contribution paragraph.
-- `wake evidence` — include seed text excerpt in the LLM verification
-  system prompt so the model can better judge claimed extensions.
-- `wake narrative section create` — agent can open seed.pdf directly
-  when drafting seed-contribution sentences; no code change needed, just
-  documentation.
-- `wake narrative section audit` (deferred F) — load seed text for
-  `[ref:SEED]`-marked sentences.
+**Pass 2 (wire consumers) — BUILT** (v0.4.18, `feature/seed-pdf-consumers`):
+- `wake describe` — `describe_seed()` now includes up to
+  `describe.seed_excerpt_chars` (default 6000) of the seed's own
+  extracted PDF text via the new shared `seed_pdf.load_seed_excerpt()`,
+  alongside (not instead of) the abstract. Falls back to abstract-only
+  when no seed PDF text exists. Prompt version bumped `describe-1` ->
+  `describe-2`.
+- `wake evidence` — `verify_full_text()` includes up to
+  `evidence.seed_excerpt_chars` (default 4000) of the same seed excerpt
+  as context for judging claimed extensions/relationships. New
+  `evidence-3` system prompt (evidence-2's multi-facet shape + one
+  instruction to treat the excerpt as ground truth for what the seed
+  contributes); `evidence.prompt_version` default bumped `evidence-1` ->
+  `evidence-3`.
+- `wake narrative section create` — documentation-only, as scoped:
+  SKILL.md / `references/narrative.md` / `docs/narrative.md` now note
+  that `[ref:SEED]`-marked sentences should be grounded in `seed.pdf`
+  directly, not just the abstract. No code change (none was needed).
+
+**Still deferred:** `wake narrative section audit` (a separate item, not
+yet built at all — see "Open items carried forward" below) is the
+intended place for a claim-vs-dossier semantic check for `[ref:SEED]`
+sentences specifically; out of scope for this pass.
 
 ---
 

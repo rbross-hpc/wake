@@ -1,6 +1,15 @@
 # BSD 3-Clause License
 # Copyright (c) 2026, UChicago Argonne, LLC, Argonne National Laboratory.
-"""LLM-generated one-paragraph contribution description for a seed paper."""
+"""LLM-generated one-paragraph contribution description for a seed paper.
+
+As of describe-2 (Theme K Pass 2), this also includes an excerpt of the
+seed paper's own extracted full text as context when one is available
+(see seed_pdf.load_seed_excerpt) -- the abstract alone often undersells
+what a paper actually contributes; the paper's own introduction/
+contribution section is a better source than a citing work's provisional
+guess about it. Falls back to abstract-only when no seed PDF text exists
+yet, identical to pre-describe-2 behavior.
+"""
 from __future__ import annotations
 
 import sys
@@ -12,6 +21,7 @@ from . import cost as cost_mod
 from .io import atomic_write_json, now_iso, read_json
 from .llm.openai_client import chat_text
 from .seed import work_dir
+from .seed_pdf import load_seed_excerpt
 from .state import is_stage_current, mark_stage_complete
 
 _STAGE = "describe"
@@ -36,6 +46,15 @@ Abstract: {abstract}
 Write a one-paragraph contribution description for this paper.\
 """
 
+_SEED_EXCERPT_BLOCK = """
+
+Seed paper excerpt (from the paper's own full text, for additional context \
+beyond the abstract):
+---
+{seed_excerpt}
+---\
+"""
+
 
 def _prompt_version() -> str:
     return config.describe_cfg().get("prompt_version", "describe-1")
@@ -43,6 +62,10 @@ def _prompt_version() -> str:
 
 def _model() -> str:
     return config.models().get("describe", "Claude Sonnet 4.6")
+
+
+def _seed_excerpt_chars() -> int:
+    return config.describe_cfg().get("seed_excerpt_chars", 6000)
 
 
 def describe_seed(
@@ -62,6 +85,12 @@ def describe_seed(
         venue=seed_work.get("venue") or "Unknown",
         abstract=seed_work.get("abstract") or "(abstract not available)",
     )
+
+    seed_id = seed_work.get("openalex_id")
+    if seed_id:
+        excerpt = load_seed_excerpt(seed_id, base=base, max_chars=_seed_excerpt_chars())
+        if excerpt:
+            user_msg += _SEED_EXCERPT_BLOCK.format(seed_excerpt=excerpt)
 
     cost_sink = None
     if record_cost:

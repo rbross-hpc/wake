@@ -1,7 +1,6 @@
 # BSD 3-Clause License
 # Copyright (c) 2026, UChicago Argonne, LLC, Argonne National Laboratory.
-"""Seed-paper PDF acquisition and text extraction (Pass 1 -- acquire and
-store only; no downstream consumers wired in this pass).
+"""Seed-paper PDF acquisition and text extraction.
 
 The seed paper's PDF lives at wake-out/<seed>/seed.pdf, distinct from
 pdfs/ which holds citing-work PDFs only. Extracted text lives alongside
@@ -19,6 +18,12 @@ On success or failure, seed.json gains a "seed_pdf" sub-object:
   success: {"path": "...", "extracted_text_path": "...", "source": "...", "fetched_at": "..."}
   failure: {"path": null, "extracted_text_path": null, "source": null,
             "attempted_at": "...", "tried": [...], "fallback_links": {...}}
+
+Acquisition (Pass 1) shipped first; `load_seed_excerpt()` below (Pass 2)
+is the shared reader every LLM consumer that wants seed full-text context
+(`describe.describe_seed`, `evidence.verify_full_text`) calls, rather than
+each reimplementing "load seed.json, check seed_pdf.extracted_text_path,
+load the page cache, join, truncate" itself.
 """
 from __future__ import annotations
 
@@ -34,6 +39,48 @@ from .seed import load_seed, work_dir
 def seed_extracted_text_path(seed_id: str, base: Path | None = None) -> Path:
     from .sources.pdf_fulltext import extracted_text_path
     return extracted_text_path(seed_pdf_path(seed_id, base))
+
+
+def load_seed_excerpt(seed_id: str, *, base: Path | None = None, max_chars: int) -> str | None:
+    """Return up to *max_chars* of the seed paper's own extracted full
+    text, or None if no seed PDF text is available for this seed (no
+    seed_pdf.extracted_text_path recorded in seed.json, a fetch attempt
+    that failed, a scanned PDF with no text layer, or a cache file that's
+    gone missing on disk).
+
+    Callers that want seed full-text context (describe.describe_seed,
+    evidence.verify_full_text) treat None as "fall back to today's
+    behavior" -- this never raises for the ordinary "no seed PDF yet"
+    case, since most seeds go through their whole lifecycle without one.
+    """
+    from .io import read_json
+    from .sources.pdf_fulltext import extract_full_text_from_pages
+
+    seed = load_seed(seed_id, base)
+    if not seed:
+        return None
+    seed_pdf_info = seed.get("seed_pdf")
+    if not isinstance(seed_pdf_info, dict):
+        return None
+    text_path_str = seed_pdf_info.get("extracted_text_path")
+    if not text_path_str:
+        return None
+
+    cache_path = Path(text_path_str)
+    if not cache_path.exists():
+        return None
+    try:
+        cached = read_json(cache_path)
+    except (ValueError, OSError):
+        return None
+    pages = cached.get("pages")
+    if not isinstance(pages, list):
+        return None
+
+    full_text = extract_full_text_from_pages(pages)
+    if not full_text.strip():
+        return None
+    return full_text[:max_chars]
 
 
 def _extract_seed_text(seed_pdf: Path, *, verbose: bool = False) -> str | None:

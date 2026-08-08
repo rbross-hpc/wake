@@ -134,6 +134,81 @@ def test_verify_full_text_no_quotes_when_seed_barely_mentioned():
     assert finding["proposed"]["relationship"] == "background-mention"
 
 
+# --- Theme K Pass 2: seed excerpt in verify_full_text -----------------------
+
+def test_verify_full_text_includes_seed_excerpt_when_available(tmp_path):
+    """When the seed has extracted PDF text on disk, verify_full_text's
+    user message must include it -- captured via the chat_json call args
+    since the finding itself doesn't echo back the prompt."""
+    from wake.io import atomic_write_json
+    from wake.seed import work_dir
+
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    wd = work_dir(seed_id, tmp_path)
+    ext_path = wd / "seed.pdf.json"
+    atomic_write_json(wd / "seed.json", {
+        **PARALLEL_NETCDF_WORK,
+        "seed_pdf": {"path": str(wd / "seed.pdf"), "extracted_text_path": str(ext_path),
+                     "source": "osti", "fetched_at": "2020-01-01T00:00:00"},
+    })
+    atomic_write_json(ext_path, {"pdf_sha256": "x", "pages": ["The seed paper introduces a novel subfiling scheme."]})
+
+    with patch("wake.evidence.chat_json", return_value=_fake_verification_response()) as mock_chat:
+        evidence.verify_full_text(
+            PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, "some full text here",
+            seed_id=seed_id, base=tmp_path, record_cost=False,
+        )
+
+    user_msg = mock_chat.call_args[0][1]
+    assert "novel subfiling scheme" in user_msg
+    assert "Seed paper excerpt" in user_msg
+
+
+def test_verify_full_text_omits_seed_excerpt_when_unavailable(tmp_path):
+    """No seed.json / no seed_pdf sub-object -- the excerpt block must be
+    silently omitted, not raise, and the user message must not mention it."""
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+
+    with patch("wake.evidence.chat_json", return_value=_fake_verification_response()) as mock_chat:
+        evidence.verify_full_text(
+            PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, "some full text here",
+            seed_id=seed_id, base=tmp_path, record_cost=False,
+        )
+
+    user_msg = mock_chat.call_args[0][1]
+    assert "Seed paper excerpt" not in user_msg
+
+
+def test_verify_full_text_seed_excerpt_respects_char_cap(tmp_path):
+    from wake.io import atomic_write_json
+    from wake.seed import work_dir
+
+    seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
+    wd = work_dir(seed_id, tmp_path)
+    ext_path = wd / "seed.pdf.json"
+    atomic_write_json(wd / "seed.json", {
+        **PARALLEL_NETCDF_WORK,
+        "seed_pdf": {"path": str(wd / "seed.pdf"), "extracted_text_path": str(ext_path),
+                     "source": "osti", "fetched_at": "2020-01-01T00:00:00"},
+    })
+    atomic_write_json(ext_path, {"pdf_sha256": "x", "pages": ["A" * 10000]})
+
+    with patch("wake.evidence.chat_json", return_value=_fake_verification_response()) as mock_chat, \
+         patch("wake.evidence.config.evidence_cfg", return_value={"prompt_version": "evidence-3", "seed_excerpt_chars": 50}):
+        evidence.verify_full_text(
+            PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, "some full text here",
+            seed_id=seed_id, base=tmp_path, record_cost=False,
+        )
+
+    user_msg = mock_chat.call_args[0][1]
+    assert "A" * 51 not in user_msg  # never more than the 50-char cap survives
+    assert "A" in user_msg  # but some of the truncated excerpt is present
+
+
+def test_evidence_3_system_prompt_mentions_seed_excerpt():
+    assert "seed excerpt" in evidence._SYSTEM_EVIDENCE_3.lower()
+
+
 def test_build_dossier_no_pdf_available(tmp_path):
     with patch("wake.evidence.fetch_pdf", return_value={
         "ok": False, "tried": ["osti", "semanticscholar"], "fallback_links": {"google_scholar": "http://..."},

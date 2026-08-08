@@ -67,8 +67,14 @@ pdf_fetch:
 # human and runs `wake override` on their behalf once accepted. See
 # BACKLOG.md's provisional -> proposed -> verified lifecycle.
 evidence:
-  prompt_version: "evidence-1"
+  prompt_version: "evidence-3"
   max_fulltext_chars: 40000
+  # When the seed paper's own PDF has been acquired, include up to this
+  # many characters of its extracted full text as ground truth for what
+  # the seed actually contributes (see evidence-3's system prompt). No
+  # seed PDF text available -> the block is silently omitted, same as
+  # pre-evidence-3 behavior.
+  seed_excerpt_chars: 4000
 
 classify:
   prompt_version: "classify-2"
@@ -100,7 +106,14 @@ classify:
     background-mention: 1
 
 describe:
-  prompt_version: "describe-1"
+  prompt_version: "describe-2"
+  # When the seed paper's own PDF has been acquired (wake resolve's
+  # automatic fetch, or `wake seed fetch-pdf --from-pdf`), include up to
+  # this many characters of its extracted full text as context for the
+  # contribution paragraph, in addition to the abstract. No seed PDF text
+  # available -> silently falls back to abstract-only, same as before
+  # this setting existed.
+  seed_excerpt_chars: 6000
 
 report:
   top_evidence_n: 20

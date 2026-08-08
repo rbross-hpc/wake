@@ -597,6 +597,13 @@ itself, guarantee the source actually supports that sentence's claim;
 that judgment is yours when drafting and the human's at confirm time.
 Framing sentences with no factual content don't need a marker.
 
+For sentences describing what the **seed paper itself** did (marked
+`[ref:SEED]`), read `wake-out/<seed>/seed.pdf` directly if it's been
+acquired (see `seed.json`'s `seed_pdf` sub-object, or `wake status`) —
+don't rely on the abstract alone for claims about the seed's own method
+or contribution. No `wake` command surfaces this for you; it's a plain
+file to open like any other source PDF.
+
 Present the drafted section to the human, then confirm it on their behalf:
 
 ```bash
