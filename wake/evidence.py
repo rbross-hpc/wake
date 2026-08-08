@@ -179,9 +179,29 @@ List the facets most-confident first. "agrees_with_provisional" is true
 if any facet you return matches the provisional label.\
 """
 
+# evidence-3: Theme K Pass 2 -- adds the seed paper's own extracted-text
+# excerpt (when the seed PDF has been acquired) as ground truth for what
+# the seed actually contributes, so a claimed "extends"/"builds-on" can be
+# checked against the seed's real content, not just its title. Otherwise
+# identical to evidence-2 (same multi-facet output shape). When no seed
+# excerpt is available (the common case for a seed with no PDF yet), the
+# excerpt block is simply omitted from the user message -- this system
+# prompt still functions correctly without it.
+_SYSTEM_EVIDENCE_3 = _SYSTEM_EVIDENCE_2.replace(
+    "  1. The seed paper being cited (title, year).\n",
+    "  1. The seed paper being cited (title, year, and -- when available --\n"
+    "     an excerpt of its own extracted full text). When a seed excerpt is\n"
+    "     present, use it as ground truth for what the seed paper actually\n"
+    "     contributes, so you can judge a claimed \"extends\"/\"builds-on\"/\n"
+    "     \"benchmarks\" relationship against what the seed really did, not\n"
+    "     just its title.\n",
+)
+assert _SYSTEM_EVIDENCE_3 != _SYSTEM_EVIDENCE_2, "evidence-3 patch target text not found in evidence-2"
+
 _SYSTEM_BY_VERSION: dict[str, str] = {
     "evidence-1": _SYSTEM_EVIDENCE_1,
     "evidence-2": _SYSTEM_EVIDENCE_2,
+    "evidence-3": _SYSTEM_EVIDENCE_3,
 }
 
 
@@ -194,7 +214,7 @@ def _system_prompt(prompt_version: str) -> str:
 
 _USER_TEMPLATE = """\
 Seed paper: "{seed_title}" ({seed_year})
-
+{seed_excerpt_block}
 Provisional classification (abstract-only, UNVERIFIED): "{provisional_relationship}" \
 (confidence {provisional_confidence}) — {provisional_justification}
 
@@ -206,6 +226,14 @@ Full text:
 ---
 
 Read the full text and determine the actual relationship to the seed paper.\
+"""
+
+_SEED_EXCERPT_BLOCK = """
+Seed paper excerpt (from its own extracted full text -- ground truth for \
+what the seed actually contributes):
+---
+{seed_excerpt}
+---
 """
 
 
@@ -223,6 +251,10 @@ def _model() -> str:
 
 def _max_fulltext_chars() -> int:
     return _evidence_cfg().get("max_fulltext_chars", 40000)
+
+
+def _seed_excerpt_chars() -> int:
+    return _evidence_cfg().get("seed_excerpt_chars", 4000)
 
 
 def evidence_dir(seed_id: str, base: Path | None = None) -> Path:
@@ -358,9 +390,18 @@ def verify_full_text(
         "relationships": provisional_facets,
     }
 
+    seed_excerpt_block = ""
+    excerpt_seed_id = seed_id or seed_work.get("openalex_id")
+    if excerpt_seed_id:
+        from .seed_pdf import load_seed_excerpt
+        excerpt = load_seed_excerpt(excerpt_seed_id, base=base, max_chars=_seed_excerpt_chars())
+        if excerpt:
+            seed_excerpt_block = _SEED_EXCERPT_BLOCK.format(seed_excerpt=excerpt)
+
     user_msg = _USER_TEMPLATE.format(
         seed_title=seed_work.get("title") or "Unknown",
         seed_year=seed_work.get("year") or "Unknown",
+        seed_excerpt_block=seed_excerpt_block,
         provisional_relationship=provisional["relationship"],
         provisional_confidence=provisional["confidence"],
         provisional_justification=provisional["justification"] or "(none)",

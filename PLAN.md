@@ -150,11 +150,28 @@ rebuild) in its return value and human/`--json` output.
 report-only, never a gate. This closes the second of the two remaining
 Structural Hardening follow-ons.
 
-**Next phase:** full `WakeContext` threading through the ~90 existing
-`base:`-taking domain functions — the one remaining Structural Hardening
-follow-on — see `BACKLOG.md`'s "Open / Not Yet Built" section for
-current sequencing. Otherwise, product features (Theme B/G/H, Theme K
-Pass 2) are the next candidates.
+v0.4.18 built Theme K Pass 2 (wire seed-PDF consumers): `wake describe`
+and `wake evidence` both now include an excerpt of the seed paper's own
+extracted PDF text (via new shared `seed_pdf.load_seed_excerpt()`) as
+context, falling back cleanly to abstract-only when no seed PDF text
+exists. `describe-2`/`evidence-3` prompt versions. `wake narrative
+section create` got a documentation-only note (open `seed.pdf` directly
+for `[ref:SEED]` sentences); `wake narrative section audit` remains
+separately deferred.
+
+Full `WakeContext` threading through the ~137 existing `base:`-taking
+domain functions remains the one open Structural Hardening follow-on,
+deliberately not prioritized: `WakeContext.settings`/`.llm_client_factory`
+have zero real consumers today, so threading it now would be pure
+mechanical churn with no realized payoff — see `BACKLOG.md`'s "Theme L
+follow-on" section. Revisit only if a concrete driver appears (hermetic
+LLM-client injection for tests, or multi-config embedding).
+
+**Next phase:** product features — Theme B (DOE-relevance signals), Theme
+G (timeline generation), Theme H (non-publication evidence search) — or
+smaller carried-forward items (`wake assess`/`theme coverage` evidence-gap
+triage is the highest-leverage of these). See `BACKLOG.md`'s "Open / Not
+Yet Built" section for current sequencing.
 
 **Deferred, real, not forgotten:**
 - Product features: Theme B (DOE-relevance signals), Theme G (timeline

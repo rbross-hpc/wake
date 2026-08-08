@@ -40,6 +40,10 @@ guarantee the source actually supports that sentence, which stays a
 judgment call for you and the human. Framing sentences with no factual
 content don't need a marker.
 
+For `[ref:SEED]` sentences, ground the claim in the seed paper's own PDF
+(`wake-out/<seed>/seed.pdf`, if acquired) rather than the abstract alone —
+open it directly, there's no `wake` command that surfaces it for you.
+
 Promote a section after human sign-off:
 
 ```bash

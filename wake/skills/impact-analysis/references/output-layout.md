@@ -43,7 +43,10 @@ wake-out/<OpenAlex-ID>/
                              it's surfaced in README.md/AGENTS.md/impact.md's
                              seed_pdf_status until someone supplies a copy)
   seed.pdf.json           — seed PDF full text, page-tagged (sibling cache, same format
-                             as pdfs/<citing-id>.pdf.json)
+                             as pdfs/<citing-id>.pdf.json). When present, `wake describe`
+                             and `wake evidence` both include an excerpt of it as context
+                             (see seed_pdf.load_seed_excerpt) -- no seed PDF text yet ->
+                             both fall back to abstract-only, same as before this existed
   citing.json             — all citing works (paginated, cached)
   classified.json         — per-citing-work relationship + evidence
                              (verification_status: "provisional" by default)

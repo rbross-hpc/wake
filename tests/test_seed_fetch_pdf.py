@@ -24,7 +24,7 @@ from wake.evidence_wiki import log_path
 from wake.io import atomic_write_json
 from wake.pdf_fetch import fetch_seed_pdf, seed_pdf_path
 from wake.seed import load_seed, work_dir
-from wake.seed_pdf import acquire_seed_pdf, acquire_seed_pdf_from_path
+from wake.seed_pdf import acquire_seed_pdf, acquire_seed_pdf_from_path, load_seed_excerpt
 from wake.state import mark_stage_complete
 
 from .conftest import PARALLEL_NETCDF_WORK
@@ -529,3 +529,80 @@ def test_status_shows_seed_pdf_line(tmp_path, capsys):
     )
     assert code == 0
     assert "Seed PDF" in captured.out
+
+
+# --- load_seed_excerpt (Theme K Pass 2) -------------------------------------
+
+def _seed_with_pdf_text(tmp_path, pages):
+    seed_id = _SEED["openalex_id"]
+    wd = work_dir(seed_id, tmp_path)
+    ext_path = wd / "seed.pdf.json"
+    atomic_write_json(wd / "seed.json", {
+        **_SEED,
+        "seed_pdf": {
+            "path": str(wd / "seed.pdf"), "extracted_text_path": str(ext_path),
+            "source": "osti", "fetched_at": "2020-01-01T00:00:00",
+        },
+    })
+    atomic_write_json(ext_path, {"pdf_sha256": "x", "pages": pages})
+    return seed_id
+
+
+def test_load_seed_excerpt_returns_text_when_available(tmp_path):
+    seed_id = _seed_with_pdf_text(tmp_path, ["First page of the seed paper."])
+    excerpt = load_seed_excerpt(seed_id, base=tmp_path, max_chars=1000)
+    assert excerpt is not None
+    assert "First page of the seed paper" in excerpt
+
+
+def test_load_seed_excerpt_truncates_to_max_chars(tmp_path):
+    seed_id = _seed_with_pdf_text(tmp_path, ["A" * 500])
+    excerpt = load_seed_excerpt(seed_id, base=tmp_path, max_chars=20)
+    assert excerpt is not None
+    assert len(excerpt) == 20
+
+
+def test_load_seed_excerpt_none_when_no_seed_json(tmp_path):
+    assert load_seed_excerpt("W_NOPE", base=tmp_path, max_chars=1000) is None
+
+
+def test_load_seed_excerpt_none_when_no_seed_pdf_key(tmp_path):
+    _seed_cached(tmp_path)
+    assert load_seed_excerpt(_SEED["openalex_id"], base=tmp_path, max_chars=1000) is None
+
+
+def test_load_seed_excerpt_none_when_seed_pdf_fetch_failed(tmp_path):
+    """A failed fetch attempt's seed_pdf sub-object has
+    extracted_text_path: null -- must return None, not raise."""
+    seed_id = _SEED["openalex_id"]
+    wd = work_dir(seed_id, tmp_path)
+    atomic_write_json(wd / "seed.json", {
+        **_SEED,
+        "seed_pdf": {
+            "path": None, "extracted_text_path": None, "source": None,
+            "attempted_at": "2020-01-01T00:00:00", "tried": ["osti"], "fallback_links": {},
+        },
+    })
+    assert load_seed_excerpt(seed_id, base=tmp_path, max_chars=1000) is None
+
+
+def test_load_seed_excerpt_none_when_cache_file_missing(tmp_path):
+    """seed.json points at an extracted_text_path that doesn't exist on
+    disk (e.g. moved/deleted packet) -- must return None, not raise."""
+    seed_id = _SEED["openalex_id"]
+    wd = work_dir(seed_id, tmp_path)
+    atomic_write_json(wd / "seed.json", {
+        **_SEED,
+        "seed_pdf": {
+            "path": str(wd / "seed.pdf"), "extracted_text_path": str(wd / "seed.pdf.json"),
+            "source": "osti", "fetched_at": "2020-01-01T00:00:00",
+        },
+    })
+    assert load_seed_excerpt(seed_id, base=tmp_path, max_chars=1000) is None
+
+
+def test_load_seed_excerpt_none_when_extraction_produced_no_text(tmp_path):
+    """A scanned PDF's extraction cache has pages but every page is
+    empty -- must return None, not an empty/whitespace-only string."""
+    seed_id = _seed_with_pdf_text(tmp_path, ["", "   "])
+    assert load_seed_excerpt(seed_id, base=tmp_path, max_chars=1000) is None
