@@ -2277,3 +2277,75 @@ deferred -- confirmed via a fresh audit this session that `WakeContext.settings`
 churn (~137 `base:`-taking function signatures across 19 files) with no realized payoff. Next
 candidates are product features: Theme B/G/H, or smaller carried-forward items like `wake assess`/
 `theme coverage` evidence-gap triage.
+
+## v0.4.19 — `wake assess`: evidence-gap triage report (`feature/assess`)
+
+Closes the "smaller deferred item" from BACKLOG.md: before this, deciding which provisional
+citing works to spend a `wake fetch-pdf`/`wake evidence` call on required an agent to read
+`classified.json` directly (the only complete provisional set -- `impact.json`'s `top_evidence`
+is truncated to `top_evidence_n`), stat the `evidence/` directory per work (dossier existence is
+not surfaced by any read command), read every theme's own JSON sidecar for membership, and
+re-derive the relationship-strength × log(citations) ranking formula from config rather than
+reusing `report._score()`. `wake theme queue`/`wake missing-pdfs`/`wake gaps` each cover one slice
+of this but none combine them, and none report the complete unranked set of works.
+
+### What was built
+
+`report.build_assessment(seed_work, base) -> dict`: the single join, reusing existing primitives
+rather than re-deriving any of them --
+`themes._resolve_work_status()` for honest per-work status (`verified`/`proposed`/`provisional`,
+derived from `overrides.jsonl` and dossier existence, never the classify-time-stale
+`verification_status` field), `report._score()`/`relationship_strength()` for the ranking score
+(also exposed as `score_inputs` so an agent can re-rank by its own criteria instead), and the same
+PDF-fetch-log derivation `missing_pdfs.list_missing_pdfs()` uses (cached/never-attempted/exhausted/
+fetched-but-gone), applied here to every classified work rather than only the ones missing a PDF.
+Returns `{seed, totals, themes, works, triage}`:
+- `totals` -- aggregate counts (classified/verified/proposed/provisional/unclassified/error/
+  excluded/duplicate).
+- `themes` -- per-theme evidence coverage (verified/proposed/provisional/unclassified member
+  counts) plus `member_ids`, from glob-scanning `evidence/themes/*.json` (same pattern as
+  `report.bake_markdown`'s existing theme-count scan).
+- `works` -- every classified work (not truncated), each with relationship/confidence/citations,
+  status, `has_dossier`, `author_overlap` (reported only -- does not affect `score`, matching
+  `impact.json`'s existing ranking), theme membership (reverse-indexed from the theme scan),
+  `score`/`score_inputs`, and a `pdf` block. A work whose classify call errored (no `relationship`
+  key) is included with `status: null` and its `error` message, counted in `totals.error`, and
+  excluded from `triage`.
+- `triage` -- the opinionated shortcut: provisional (not excluded, not a confirmed duplicate)
+  `openalex_id`s, score-descending. `works` remains the complete, unranked truth for an agent that
+  wants to re-sort by different criteria.
+
+`wake assess <seed> [--top N]` (`wake/cli/commands/assess.py`), registered in `cli/main.py`
+alongside `gaps`/`missing-pdfs`. Read-only, no LLM/network call, same trust model as `wake gaps`/
+`wake missing-pdfs`/`wake theme queue` -- never mutates classify/evidence/theme state. Human output:
+coverage line, a per-theme table (flagging themes with zero verified members), and the top
+`--top` (default 15) triage entries with score/relationship/citations/PDF state/theme tags; the
+full ranked list is always present under `--json`.
+
+SKILL.md: new Step 12 ("Triage what's worth verifying next"), inserted between baking (11) and
+deep-dive verification (renumbered 12->13); the vague "reserve it for works where the narrative
+genuinely hinges on getting the relationship right" language in the deep-dive step now points at
+`wake assess`'s `data.triage` instead. Steps 13/14/15 renumbered from 13/14/15... (14/15/16); two
+"step 12" cross-references fixed to "step 13". `docs/workflow.md`'s command table gained a
+`wake assess` row.
+
+### Verification
+
+New `tests/test_assess.py` (9): empty-classified baseline; mixed verified/proposed/provisional/
+errored states (totals + per-work status + triage membership/ordering); score parity against
+`report._score()` directly (guards against the ranking formula drifting between `build_metrics`
+and `build_assessment`); excluded/duplicate flags present but excluded from `triage`; all four PDF
+fetch-state variants (cached/never-attempted/exhausted/fetched-but-gone); theme membership
+reverse-index across two themes plus per-theme coverage counts; CLI `--json` envelope and human
+output (including the no-provisional-works and populated-triage-worklist paths).
+
+`rtk ruff check wake/ tests/` clean, `rtk mypy` clean. Full offline suite under CI-parity
+conditions: 827 passed, 14 deselected (818 prior baseline + 9 new, no regressions).
+
+### Next phase
+
+No further follow-on identified for this item -- it was a self-contained read-only report. Open
+roadmap items remain: full `WakeContext` threading (deliberately deferred, no realized payoff),
+Theme B (DOE-relevance signals, explicitly wanted by the user for their own use case), Theme G
+(timeline generation), Theme H (non-publication evidence search), and `wake narrative section
+audit` (claim-vs-dossier semantic check for `[ref:...]`-marked sentences).

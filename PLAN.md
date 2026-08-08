@@ -167,16 +167,22 @@ mechanical churn with no realized payoff — see `BACKLOG.md`'s "Theme L
 follow-on" section. Revisit only if a concrete driver appears (hermetic
 LLM-client injection for tests, or multi-config embedding).
 
+v0.4.19 built `wake assess`: a read-only evidence-gap triage report
+(`report.build_assessment()`) joining classified.json, override/dossier
+status (via `themes._resolve_work_status()`), theme membership, and PDF
+fetch state into one per-work document, plus a `triage` worklist ranked
+by the same `report._score()` formula `impact.md` already uses. Closes
+the highest-leverage remaining carried-forward item — previously an
+agent had to read `classified.json` directly, stat `evidence/`, and
+re-derive the ranking formula from config by hand.
+
 **Next phase:** product features — Theme B (DOE-relevance signals), Theme
-G (timeline generation), Theme H (non-publication evidence search) — or
-smaller carried-forward items (`wake assess`/`theme coverage` evidence-gap
-triage is the highest-leverage of these). See `BACKLOG.md`'s "Open / Not
-Yet Built" section for current sequencing.
+G (timeline generation), Theme H (non-publication evidence search). See
+`BACKLOG.md`'s "Open / Not Yet Built" section for current sequencing.
 
 **Deferred, real, not forgotten:**
 - Product features: Theme B (DOE-relevance signals), Theme G (timeline
-  generation), Theme H (non-publication evidence search), Theme K Pass 2
-  (wiring seed-PDF consumers).
+  generation), Theme H (non-publication evidence search).
 
 Explicitly **not** planned: replacing the filesystem-artifact model with
 a database. Both the original external assessment and independent

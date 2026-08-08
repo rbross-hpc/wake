@@ -419,6 +419,217 @@ def build_metrics(
     }
 
 
+def build_assessment(seed_work: dict[str, Any], base: Path | None = None) -> dict[str, Any]:
+    """Complete, per-work evidence-gap triage state for `wake assess`.
+
+    Unlike `build_metrics`' `top_evidence` (truncated to `top_evidence_n`
+    and missing dossier/theme/PDF state), this reports *every* classified
+    work, joining the sources an agent would otherwise have to read by
+    hand: classified.json (relationship/confidence/citations), overrides
+    + dossier existence (via `themes._resolve_work_status` -- the same
+    honest status resolver themes.py uses, never trusting the stale
+    `verification_status` field baked onto a classified work at
+    classify-time), every theme's own JSON sidecar (membership), and the
+    PDF fetch log (cached/never-attempted/exhausted/fetched-but-gone,
+    same derivation as `missing_pdfs.list_missing_pdfs`).
+
+    `score`/`score_inputs` reuse `_score`/`relationship_strength()`
+    directly -- never a second, drifted copy of the ranking formula.
+    `triage` is the opinionated shortcut (provisional, not excluded/
+    duplicated, score-descending); `works` is the complete, unranked
+    truth an agent can re-sort by its own criteria instead.
+    """
+    from .classify import load_classified
+    from .dedup import load_duplicates
+    from .evidence import dossier_json_path
+    from .exclude import is_excluded, load_exclusions
+    from .missing_pdfs import _parse_log_events
+    from .pdf_fetch import pdf_path as _pdf_path
+    from .themes import _resolve_work_status, themes_dir
+
+    oid = seed_work["openalex_id"]
+    classified = load_classified(oid, base) or []
+    overrides = load_overrides(oid, base)
+    duplicates = load_duplicates(oid, base)
+    exclusions = load_exclusions(oid, base)
+    log_events = _parse_log_events(oid, base)
+    strengths = relationship_strength()
+
+    classified_by_id = {wid: w for w in classified if (wid := w.get("openalex_id"))}
+
+    theme_membership: dict[str, list[str]] = {}
+    themes_out: list[dict[str, Any]] = []
+    td = themes_dir(oid, base)
+    if td.exists():
+        for p in sorted(td.glob("*.json")):
+            try:
+                theme = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                continue
+            slug = theme.get("slug", p.stem)
+            member_ids: list[str] = []
+            counts: Counter[str] = Counter()
+            for cw in theme.get("citing_works", []):
+                cid = cw.get("citing_id")
+                if not cid:
+                    continue
+                member_ids.append(cid)
+                theme_membership.setdefault(cid, []).append(slug)
+                resolved = _resolve_work_status(
+                    oid, cid, classified_by_id=classified_by_id, overrides=overrides, base=base,
+                )
+                counts[resolved["status"]] += 1
+            themes_out.append({
+                "slug": slug,
+                "title": theme.get("title"),
+                "theme_status": theme.get("theme_status", "draft"),
+                "counts": {
+                    "verified": counts.get("verified", 0),
+                    "proposed": counts.get("proposed", 0),
+                    "provisional": counts.get("provisional", 0),
+                    "unclassified": counts.get("unclassified", 0),
+                },
+                "member_ids": member_ids,
+            })
+
+    totals: Counter[str] = Counter()
+    works_out: list[dict[str, Any]] = []
+    triage_scored: list[tuple[float, str]] = []
+
+    for w in classified:
+        cid = w.get("openalex_id")
+        if not cid:
+            continue
+
+        excluded = is_excluded(cid, exclusions)
+        duplicate = cid in duplicates
+        if excluded:
+            totals["excluded"] += 1
+        if duplicate:
+            totals["duplicate"] += 1
+
+        cached = _pdf_path(oid, cid, base).exists()
+        ev = log_events.get(cid)
+        sources_tried: list[str]
+        if cached:
+            fetch_state, last_attempted, sources_tried = "cached", (ev or {}).get("timestamp"), []
+        elif ev is None:
+            fetch_state, last_attempted, sources_tried = "never-attempted", None, []
+        elif ev["event"] == "pdf_fetched":
+            fetch_state, last_attempted, sources_tried = "fetched-but-gone", ev["timestamp"], []
+        else:
+            fetch_state = "exhausted"
+            last_attempted = ev["timestamp"]
+            tried_part = ev["detail"].removeprefix("tried: ")
+            sources_tried = [
+                s.strip() for s in tried_part.split(",")
+                if s.strip() and s.strip() != "none applicable"
+            ]
+        pdf_block = {
+            "cached": cached,
+            "fetch_state": fetch_state,
+            "last_attempted": last_attempted,
+            "sources_tried": sources_tried,
+        }
+
+        # Same convention as build_metrics' `classified` filter: a work
+        # with no "relationship" key errored during classify.py's LLM
+        # call and was never actually classified, regardless of what
+        # _resolve_work_status (which doesn't distinguish this case)
+        # would otherwise report.
+        if not w.get("relationship"):
+            totals["error"] += 1
+            works_out.append({
+                "openalex_id": cid,
+                "title": w.get("title"),
+                "year": w.get("year"),
+                "cited_by_count": w.get("cited_by_count", 0),
+                "status": None,
+                "has_dossier": dossier_json_path(oid, cid, base).exists(),
+                "relationship": None,
+                "relationships": None,
+                "confidence": None,
+                "author_overlap": bool(w.get("author_overlap")),
+                "excluded": excluded,
+                "duplicate": duplicate,
+                "themes": theme_membership.get(cid, []),
+                "score": None,
+                "score_inputs": None,
+                "has_abstract": bool(w.get("has_abstract")),
+                "pdf": pdf_block,
+                "error": w.get("error"),
+            })
+            continue
+
+        resolved = _resolve_work_status(
+            oid, cid, classified_by_id=classified_by_id, overrides=overrides, base=base,
+        )
+        status = resolved["status"]
+        totals[status] += 1
+
+        relationships = w.get("relationships")
+        if relationships:
+            labels = [
+                label for f in relationships
+                if isinstance(f, dict) and isinstance(label := f.get("label"), str)
+            ]
+            best_strength = max((strengths.get(label, 1) for label in labels), default=1)
+        else:
+            best_strength = strengths.get(w.get("relationship", "background-mention"), 1)
+
+        score = _score(w)
+        row = {
+            "openalex_id": cid,
+            "title": w.get("title"),
+            "year": w.get("year"),
+            "cited_by_count": w.get("cited_by_count", 0),
+            "status": status,
+            "has_dossier": resolved["has_dossier"],
+            "relationship": w.get("relationship"),
+            "relationships": relationships,
+            "confidence": w.get("confidence"),
+            "author_overlap": bool(w.get("author_overlap")),
+            "excluded": excluded,
+            "duplicate": duplicate,
+            "themes": theme_membership.get(cid, []),
+            "score": round(score, 3),
+            "score_inputs": {
+                "best_strength": best_strength,
+                "cited_by_count": w.get("cited_by_count", 0),
+            },
+            "has_abstract": bool(w.get("has_abstract")),
+            "pdf": pdf_block,
+            "error": None,
+        }
+        works_out.append(row)
+
+        if status == "provisional" and not excluded and not duplicate:
+            triage_scored.append((score, cid))
+
+    triage_scored.sort(key=lambda t: -t[0])
+
+    return {
+        "seed": {
+            "openalex_id": oid,
+            "title": seed_work.get("title"),
+            "cited_by_count": seed_work.get("cited_by_count", 0),
+        },
+        "totals": {
+            "classified": len(classified),
+            "verified": totals.get("verified", 0),
+            "proposed": totals.get("proposed", 0),
+            "provisional": totals.get("provisional", 0),
+            "unclassified": totals.get("unclassified", 0),
+            "error": totals.get("error", 0),
+            "excluded": totals.get("excluded", 0),
+            "duplicate": totals.get("duplicate", 0),
+        },
+        "themes": themes_out,
+        "works": works_out,
+        "triage": [cid for _, cid in triage_scored],
+    }
+
+
 def bake_markdown(
     seed_work: dict[str, Any],
     metrics: dict[str, Any],
