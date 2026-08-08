@@ -44,14 +44,15 @@ migration in the first place.)
 - Theme H — Non-publication evidence search.
 
 (Theme K Pass 2 — wire seed-PDF consumers — is now BUILT, v0.4.18. See
-"Built — Theme K (Pass 2)" below.)
+"Built — Theme K (Pass 2)" below. `wake assess`/evidence-gap triage is
+now BUILT, v0.4.19 — see "Built — `wake assess`" below.)
 
 **Smaller deferred items** (see "Open items carried forward" below for
 full detail): `wake evidence --from-pdf-dir` (batch variant), `wake
-assess`/`theme coverage`, `wake narrative section audit`, interactive
-review rendering polish, README multi-harness skill-install docs,
-author-email discovery, `wake fetch-pdf` negative-result caching, F2
-(bullet-style narrative sections), narrative packaging/export.
+narrative section audit`, interactive review rendering polish, README
+multi-harness skill-install docs, author-email discovery, `wake
+fetch-pdf` negative-result caching, F2 (bullet-style narrative
+sections), narrative packaging/export.
 
 **Held — do not execute without a live walkthrough:**
 - Theme F4 — two-phase theme workflow reframe (`theme declare`/`theme
@@ -74,6 +75,7 @@ author-email discovery, `wake fetch-pdf` negative-result caching, F2
 | F1 | Narrative drafting (`wake narrative`) | [history](docs/design/backlog-built-history.md) — Theme F1 |
 | K (Pass 1) | Seed paper PDF acquisition | [history](docs/design/backlog-built-history.md) — Theme K |
 | K (Pass 2) | Wire seed-PDF consumers (`describe`/`evidence`/`narrative`) | this file — "Built — Theme K (Pass 2)", v0.4.18 |
+| — | Evidence-gap triage report (`wake assess`) | this file — "Built — `wake assess`", v0.4.19 |
 | J | Session-notes batch (11 items: dotfile rename, docs split, `show` verbs, help-text audit, README split, `refs-check`, `dedup`, `posters`, `exclude`, `unverify`) | [history](docs/design/backlog-built-history.md) — Theme J |
 | L | Structural Hardening (13 phases, v0.4.0–v0.4.12) | [build log](docs/build-log.md), summarized in [history](docs/design/backlog-built-history.md) — Theme L |
 
@@ -129,6 +131,36 @@ sentences specifically; out of scope for this pass.
 
 ---
 
+## Built — `wake assess`: evidence-gap triage report
+
+**BUILT** (v0.4.19, `feature/assess`). Read-only report run between
+`wake classify` and `wake fetch-pdf`, joining classified.json (relationship/
+confidence/citations), `themes._resolve_work_status()` (honest status +
+dossier existence, derived from overrides — never the classify-time-stale
+`verification_status` field), every theme's own JSON sidecar (membership),
+and the PDF fetch log into one per-work document —
+`report.build_assessment()`. Reuses `report._score()`/
+`relationship_strength()` directly for ranking rather than a second,
+drifted copy of the formula.
+
+Returns `{seed, totals, themes, works, triage}`: `totals` is aggregate
+coverage; `themes` is per-theme verified/proposed/provisional/unclassified
+counts; `works` is every classified work (not truncated, unlike
+`impact.json`'s `top_evidence`) with full per-work detail including
+`score_inputs` (so an agent can re-rank by its own criteria) and a `pdf`
+block (cached/never-attempted/exhausted/fetched-but-gone, same derivation
+`missing_pdfs.list_missing_pdfs()` uses); `triage` is the opinionated
+shortcut — provisional, not excluded/duplicate, score-descending.
+`author_overlap` is reported but does not affect `score` (matches
+`impact.json`'s existing ranking).
+
+`wake assess <seed> [--top N]`. SKILL.md gained a new Step 12 pointing the
+agent at `data.triage` instead of the previous vague "reserve it for
+works where the narrative genuinely hinges on getting the relationship
+right" heuristic.
+
+---
+
 ## Deferred — Theme G: Timeline Generation
 
 Markdown timeline of key developments/uses/adoption (derived from
@@ -175,12 +207,6 @@ Revisit only if/when MinerU or another genuinely slow step gets adopted.
   are left alone in the input folder and simply reported (not deleted,
   not moved) — the command is stateless, so pointing it at the same
   folder again just re-reports the same mismatches.
-- `wake assess <seed>` (or `wake theme coverage <seed>`) — evidence-gap
-  triage report run between `wake classify` and `wake fetch-pdf`:
-  current theme evidence density, and which classified-but-unverified
-  works look highest-value for each theme (by relationship + confidence
-  + citation count) — so PDF-fetching effort gets prioritized rather
-  than spent uniformly across every provisional work.
 - Interactive review rendering polish — when presenting a citing work to
   the human pre-verify, include authors alongside title, and surface the
   dossier's per-quote text + page numbers inline (not just title +

@@ -22,7 +22,7 @@ placeholder guess, not a finding. `wake evidence` reads a citing work's
 *actual full text* and proposes a real, quote-backed relationship
 (`"proposed"`). Only after a human reviews that proposal does it become
 `"verified"` — and **you** (the agent) are the one who runs `wake override`
-to record that, never the human. See step 12 below; this lifecycle
+to record that, never the human. See step 13 below; this lifecycle
 (provisional → proposed → verified) is the core epistemic model of the
 whole brief, so keep it in mind throughout — a `[PROVISIONAL]`-tagged
 relationship in the brief is not settled, no matter how high its
@@ -381,7 +381,44 @@ a render step, every artifact type is always re-rendered — but it's a
 quick way to tell the human (or yourself, resuming a session) what's
 new since the wiki was last brought up to date.
 
-### 12. (Optional) Deep-dive verification of a specific finding
+### 12. Triage what's worth verifying next
+
+Every classification in the brief is `[PROVISIONAL]` by default, but not
+every provisional work is worth the cost of a full-text `wake evidence`
+call. Before picking which ones to deep-dive, get a complete, ranked
+picture of the gap between classify and verification:
+
+```bash
+wake --json assess "<seed>"
+```
+
+This joins everything a full triage decision needs — relationship,
+confidence, citation count, dossier existence, theme membership, and PDF
+fetch state — into one document, per classified work, rather than
+requiring you to cross-reference `classified.json`, `evidence/`, theme
+sidecars, and `impact.json`'s (truncated) `top_evidence` yourself. Two
+fields matter most:
+
+- `data.themes` — per-theme evidence coverage; a theme with zero
+  `verified` works is not yet backed by anything a human has actually
+  signed off on, however many provisional works are cited in it.
+- `data.triage` — every provisional (not excluded, not a duplicate) work's
+  OpenAlex ID, ranked by the same relationship-strength × log(citations)
+  score `impact.md`'s "Strongest Evidence" table uses, highest first.
+  `data.works` has the full per-work detail (including `pdf.fetch_state`
+  and `score_inputs`) for each ID in `data.triage`, keyed by
+  `openalex_id`, if you want to re-rank by different criteria than the
+  default score.
+
+Work down `data.triage` with step 10 (abstract gaps) and step 13 (deep-dive
+verification) rather than picking works ad hoc or working strictly by
+citation count alone — a lower-cited work that's the sole support for an
+otherwise-thin theme can matter more than a highly-cited one already
+backed by two verified works. `wake assess` never mutates anything; re-run
+it any time to see how the picture has changed after a batch of
+`wake evidence`/`wake theme create` calls.
+
+### 13. (Optional) Deep-dive verification of a specific finding
 
 Every classification in the brief is `[PROVISIONAL]` by default — an
 abstract-only guess, not a checked fact. For works that matter to the
@@ -498,10 +535,10 @@ needs a fresh look before you re-run `override`.
 
 This step is optional and selective — don't try to verify every citing
 work full-text; that defeats the purpose of the provisional/abstract-only
-tier existing at all. Reserve it for works where the narrative genuinely
-hinges on getting the relationship right.
+tier existing at all. Use `wake assess`'s `data.triage` (step 12) rather
+than eyeballing citation counts to decide which works are worth it.
 
-### 13. (Optional) Synthesize a theme from related evidence
+### 14. (Optional) Synthesize a theme from related evidence
 
 When several citing works together support a broader claim (e.g.
 "extensive use in Earth system modeling"), write a combined-evidence
@@ -554,7 +591,7 @@ support the thematic claim the abstract-only guess suggested it did.
 This step is optional — only synthesize themes that genuinely help tell
 the impact story; don't force citing works into artificial groupings.
 
-### 14. (Optional) Draft a narrative from confirmed themes
+### 15. (Optional) Draft a narrative from confirmed themes
 
 Once you have one or more confirmed themes, draft a fuller narrative
 instead of relying on the brief's "Strongest Evidence" list alone. Plan
@@ -664,7 +701,7 @@ or even an `OK` match carrying a year-mismatch or dead-URL note — and
 let them decide whether to fix the citing work's metadata or accept it
 as a known limitation.
 
-### 15. Refine
+### 16. Refine
 
 If the human disagrees with a specific classification (with or without a
 `wake evidence` dossier backing it up):
@@ -673,7 +710,7 @@ wake --json override "<seed>" <citing-openalex-id> --relationship extends --just
 ```
 `--verification-source` defaults to `human-judgment`; pass
 `--verification-source evidence-dossier` when the override follows a
-`wake evidence` finding the human accepted (step 12). Then re-bake
+`wake evidence` finding the human accepted (step 13). Then re-bake
 (`wake --json bake "<seed>"`) — overrides always win over the LLM
 classification and are marked `[VERIFIED via ...]` in the brief.
 

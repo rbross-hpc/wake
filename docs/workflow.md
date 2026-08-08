@@ -64,6 +64,7 @@ envelope: `{"wake_version", "command", "ok", "data"}` or `{"ok": false,
 | `wake classify <seed>` | LLM relationship classification (`--ids`, `--limit`, `--sort`, `--dry-run`, resumable) |
 | `wake gaps <seed>` | Surface high-value citing works with no recoverable abstract (`--min-cited-by`, `-n/--limit`, `--no-auto-backfill-check`) |
 | `wake missing-pdfs <seed>` | Read-only report of classified works with no cached PDF: fetch state (`never-attempted`, `exhausted`, `fetched-but-gone`) + sources tried (`--min-cited-by`, `--limit`) |
+| `wake assess <seed>` | Evidence-gap triage report: overall + per-theme coverage, and a `data.triage` worklist of provisional works ranked by relationship-strength × citations, joining classify/override/dossier/theme/PDF state per work (`--top`) |
 | `wake dedup candidates <seed>` | Scan for likely-duplicate citing works (title similarity + shared authors) |
 | `wake dedup confirm <seed> <dup-id> <canonical-id>` | Record a human-confirmed duplicate; excluded from bake/theme/narrative thereafter |
 | `wake dedup reject <seed> <id-a> <id-b>` | Record that a candidate pair is genuinely distinct, not a duplicate |

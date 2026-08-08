@@ -33,6 +33,7 @@ import sys
 from ..llm.openai_client import LLMInvalidRequestError, LLMResponseError
 from . import main_helpers
 from .commands import (
+    assess,
     citing,
     classify,
     dedup,
@@ -74,6 +75,7 @@ def _build_parser() -> argparse.ArgumentParser:
     classify._build_classify_parser(sub)
     gaps._build_gaps_parser(sub)
     gaps._build_missing_pdfs_parser(sub)
+    assess._build_assess_parser(sub)
     dedup._build_dedup_parser(sub)
     posters._build_posters_parser(sub)
     pdf._build_fill_abstract_parser(sub)
@@ -109,6 +111,7 @@ _DISPATCH = {
     "classify": classify.run_classify,
     "gaps": gaps.run_gaps,
     "missing-pdfs": gaps.run_missing_pdfs,
+    "assess": assess.run_assess,
     "dedup": dedup.run_dedup,
     "posters": posters.run_posters,
     "fill-abstract": pdf.run_fill_abstract,
