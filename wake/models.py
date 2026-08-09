@@ -33,6 +33,7 @@ VerificationSource = Literal["human-judgment", "evidence-dossier"]
 ThemeStatus = Literal["draft", "confirmed"]
 SectionStatus = Literal["draft", "confirmed"]
 SectionKind = Literal["theme", "free"]
+TimelinePeriodStatus = Literal["draft", "confirmed"]
 
 _SLUG_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -517,6 +518,78 @@ def migrate_section(raw: dict[str, Any]) -> dict[str, Any]:
     result = dict(raw)
     if result.get("schema_version", 0) < 1:
         result["schema_version"] = NARRATIVE_SECTION_VERSION
+    return result
+
+
+class TimelineHighlight(WakeModel):
+    """One highlighted citing work within a TimelinePeriod. `status`/
+    `has_dossier`/`title` mirror ThemeWork's snapshot-at-write-time
+    convenience fields (never trusted for the confirm_period() gate,
+    which always re-resolves fresh against classified.json/overrides.jsonl
+    at confirm time, exactly like confirm_theme())."""
+
+    citing_id: str
+    note: str | None = None
+    status: Literal["verified", "proposed", "provisional", "unclassified"]
+    has_dossier: bool = False
+    title: str | None = None
+
+
+class TimelinePeriod(WakeModel):
+    """timeline.py::create_period()'s JSON sidecar shape
+    (timeline/periods/<slug>.json).
+
+    A period is either a predefined named span (label + from_year/to_year
+    set explicitly by the team before curating highlights into it -- the
+    lightweight equivalent of a narrative outline entry, folded into this
+    one command rather than a separate outline step) or an emergent
+    single-year bucket (bare year slug, label/from_year/to_year all
+    omitted or defaulted to that year) -- create_period() supports both
+    with the same shape, deliberately not requiring periods be defined
+    up front. Periods may overlap or leave year gaps between them; that's
+    the team's editorial call, never enforced or auto-corrected here (see
+    stitch()'s docstring)."""
+
+    schema_version: int = SCHEMA_VERSION
+    seed_openalex_id: str
+    slug: str
+    label: str | None = None
+    from_year: int | None = None
+    to_year: int | None = None
+    note: str | None = None
+    highlights: list[TimelineHighlight] = Field(default_factory=list)
+    period_status: TimelinePeriodStatus = "draft"
+    created_at: str
+    updated_at: str
+    confirmed_at: str | None = None
+
+    @field_validator("slug")
+    @classmethod
+    def _slug_shape(cls, v: str) -> str:
+        return _validate_slug(v)
+
+
+TIMELINE_PERIOD_VERSION = 1
+
+
+class TimelinePeriodWrite(TimelinePeriod):
+    """Strict write variant of TimelinePeriod -- see ThemeWrite/
+    NarrativeSectionWrite for the read-permissive/write-strict rationale.
+    Read paths (load_period, and the glob-scan bypass readers that load
+    every period sidecar for stitch()/rebuild) use the permissive
+    TimelinePeriod (extra="allow"); write paths (create_period,
+    confirm_period) use this subclass, which sets extra="forbid"."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+def migrate_period(raw: dict[str, Any]) -> dict[str, Any]:
+    """Migrate a raw timeline period dict forward to
+    TIMELINE_PERIOD_VERSION. Idempotent. v0 (no key) -> v1: stamp
+    schema_version -- no shape change."""
+    result = dict(raw)
+    if result.get("schema_version", 0) < 1:
+        result["schema_version"] = TIMELINE_PERIOD_VERSION
     return result
 
 

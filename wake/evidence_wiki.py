@@ -519,6 +519,7 @@ def _orientation_counts(seed_id: str, base: Path | None = None) -> dict[str, Any
     from .classify import load_classified
     from .narrative import narrative_md_path
     from .report import load_overrides
+    from .timeline import timeline_md_path
 
     wd = work_dir(seed_id, base)
 
@@ -538,6 +539,7 @@ def _orientation_counts(seed_id: str, base: Path | None = None) -> dict[str, Any
     return {
         "impact_exists": (wd / "impact.md").exists(),
         "narrative_exists": narrative_md_path(seed_id, base).exists(),
+        "timeline_exists": timeline_md_path(seed_id, base).exists(),
         "citing_count": len(load_citing_ids(seed_id, base)),
         "classified_count": classified_count,
         "dossier_count": len(dossiers),
@@ -633,6 +635,8 @@ def _build_readme_lines(seed_id: str, seed_work: dict[str, Any] | None, counts: 
         )
     if counts["narrative_exists"]:
         what_was_done.append("a narrative assembled from those confirmed themes")
+    if counts["timeline_exists"]:
+        what_was_done.append("a timeline of key developments curated across periods")
 
     # Only "attempted-failed" gets a bullet here -- "not-attempted" isn't
     # an actionable problem (nothing has happened yet, same as every
@@ -668,6 +672,12 @@ def _build_readme_lines(seed_id: str, seed_work: dict[str, Any] | None, counts: 
             "- **Read the story** — read the [Narrative](narrative.md), "
             "prose that stitches the confirmed themes together with "
             "numbered citations back to the evidence."
+        )
+    if counts["timeline_exists"]:
+        lines.append(
+            "- **See it unfold over time** — read the [Timeline](timeline.md), "
+            "curated periods with highlighted works, and timeline.json for "
+            "a graphic-rendering tool."
         )
     if counts["dossier_count"]:
         lines.append(
@@ -757,6 +767,7 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     year = (seed_work or {}).get("year")
 
     narrative_status = "assembled" if counts["narrative_exists"] else "absent"
+    timeline_status = "assembled" if counts["timeline_exists"] else "absent"
 
     lines: list[str] = []
     lines.append("# AGENTS.md — orientation for an agent handed this folder")
@@ -784,6 +795,7 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     lines.append(f"- Full-text-verified: {counts['verified_count']}")
     lines.append(f"- Confirmed themes: {counts['themes_confirmed']}")
     lines.append(f"- Narrative status: {narrative_status}")
+    lines.append(f"- Timeline status: {timeline_status}")
     seed_pdf = counts["seed_pdf"]
     if seed_pdf["status"] == "cached":
         lines.append("- Seed PDF: cached")
@@ -828,6 +840,8 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     lines.append("- `narrative` — narrative.md")
     lines.append("- `narrative-outline` — narrative/outline.md")
     lines.append("- `narrative-section` — narrative/sections/<slug>.md")
+    lines.append("- `timeline` — timeline.md")
+    lines.append("- `timeline-period` — timeline/periods/<slug>.md")
     lines.append("- `theme` — evidence/themes/<slug>.md")
     lines.append("- `citing-work-evidence` — evidence/<id>.md")
     lines.append("- `index` — evidence/index.md, evidence/themes/index.md")
@@ -842,6 +856,7 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     lines.append("classified.json         per-citing-work relationship classification")
     lines.append("impact.json / .md       aggregated reach metrics + ranked evidence")
     lines.append("narrative.md            assembled prose (sections live in narrative/)")
+    lines.append("timeline.md / .json     curated timeline (confirmed periods only in .json)")
     lines.append("overrides.jsonl         human-reviewed relationship corrections")
     lines.append("duplicates.jsonl        citing works marked as duplicates of another")
     lines.append("exclusions.jsonl        citing works excluded from theme synthesis")
@@ -855,6 +870,7 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     lines.append("evidence/themes/index.md      theme catalog: Confirmed / Draft")
     lines.append("narrative/sections/*.md/.json  individual narrative section prose")
     lines.append("narrative/outline.md/.json     planned section order/status")
+    lines.append("timeline/periods/*.md/.json    individual curated timeline periods")
     lines.append("```")
     lines.append("")
 
@@ -914,6 +930,34 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     )
     lines.append("")
 
+    lines.append("### `timeline-period` — `timeline/periods/<slug>.json`")
+    lines.append("")
+    lines.append(
+        "Keys: `slug` (a bare year, e.g. `2012`, or a kebab-case named "
+        "span), `label`, `from_year`, `to_year`, `note` (period framing), "
+        "`period_status` (`draft` | `confirmed`), `highlights` (list of "
+        "`{citing_id, note, status, has_dossier, title}`)."
+    )
+    lines.append(
+        "`period_status` becomes `confirmed` only once every highlighted "
+        "work is `status: verified` (`wake timeline period confirm` "
+        "re-checks this fresh, not from a cached value)."
+    )
+    lines.append("")
+
+    lines.append("### `timeline` — `timeline.json`")
+    lines.append("")
+    lines.append(
+        "The CONFIRMED selection only (draft periods are shown in "
+        "timeline.md but never appear here) -- the handoff to a separate "
+        "graphic-rendering tool. Keys: `seed_openalex_id`, `seed_title`, "
+        "`generated_at`, `periods` (list of `{slug, label, from_year, "
+        "to_year, note, highlights: [{citing_id, title, note}]}`), "
+        "`overlaps` (reported pairs of periods whose year ranges overlap; "
+        "never auto-corrected)."
+    )
+    lines.append("")
+
     lines.append("### `impact-brief` — `impact.json`")
     lines.append("")
     lines.append(
@@ -966,11 +1010,12 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
         "If you have wake installed (`pip install wake`), `wake rebuild "
         "<seed>` resyncs every derived file below (dossiers, evidence/"
         "index.md, theme docs + their index, narrative outline/sections/"
-        "narrative.md, impact.md, and this folder's own README.md/"
-        "AGENTS.md) from whatever JSON is already on disk, in one call, "
-        "with no LLM/network calls — e.g. after hand-editing a JSON "
-        "sidecar, or restoring from a partial backup. It skips any "
-        "artifact type that has no JSON backing yet for this seed."
+        "narrative.md, timeline periods + timeline.md/.json, impact.md, "
+        "and this folder's own README.md/AGENTS.md) from whatever JSON is "
+        "already on disk, in one call, with no LLM/network calls — e.g. "
+        "after hand-editing a JSON sidecar, or restoring from a partial "
+        "backup. It skips any artifact type that has no JSON backing yet "
+        "for this seed."
     )
     lines.append("")
     lines.append(
@@ -983,6 +1028,7 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     lines.append("- `wake theme rerender-all` — regenerate all theme .md files from .json")
     lines.append("- `wake narrative section rerender-all` — regenerate all section .md files from .json")
     lines.append("- `wake narrative stitch` — regenerate narrative.md from sections")
+    lines.append("- `wake timeline stitch` — regenerate timeline.md/timeline.json from periods")
     lines.append("")
     lines.append(
         "If wake is not installed, every `.md`/`.json` file here remains "

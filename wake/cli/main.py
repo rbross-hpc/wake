@@ -47,6 +47,7 @@ from .commands import (
     report,
     resolve,
     theme,
+    timeline,
 )
 from .emit import emit_error
 
@@ -83,6 +84,7 @@ def _build_parser() -> argparse.ArgumentParser:
     evidence._build_evidence_parser(sub)
     theme._build_theme_parser(sub)
     narrative._build_narrative_parser(sub)
+    timeline._build_timeline_parser(sub)
     report._build_bake_parser(sub)
     report._build_rebuild_parser(sub)
     report._build_override_parser(sub)
@@ -119,6 +121,7 @@ _DISPATCH = {
     "evidence": evidence.run_evidence,
     "theme": theme.run_theme,
     "narrative": narrative.run_narrative,
+    "timeline": timeline.run_timeline,
     "bake": report.run_bake,
     "rebuild": report.run_rebuild,
     "override": report.run_override,

@@ -40,12 +40,12 @@ migration in the first place.)
 
 **Product features, decided but not built:**
 - Theme B — DOE-relevance signals (`signals_doe.py`, off-by-default).
-- Theme G — Timeline generation.
 - Theme H — Non-publication evidence search.
 
 (Theme K Pass 2 — wire seed-PDF consumers — is now BUILT, v0.4.18. See
 "Built — Theme K (Pass 2)" below. `wake assess`/evidence-gap triage is
-now BUILT, v0.4.19 — see "Built — `wake assess`" below.)
+now BUILT, v0.4.19 — see "Built — `wake assess`" below. Theme G —
+timeline curation — is now BUILT, v0.4.20 — see "Built — Theme G" below.)
 
 **Smaller deferred items** (see "Open items carried forward" below for
 full detail): `wake evidence --from-pdf-dir` (batch variant), `wake
@@ -76,6 +76,7 @@ sections), narrative packaging/export.
 | K (Pass 1) | Seed paper PDF acquisition | [history](docs/design/backlog-built-history.md) — Theme K |
 | K (Pass 2) | Wire seed-PDF consumers (`describe`/`evidence`/`narrative`) | this file — "Built — Theme K (Pass 2)", v0.4.18 |
 | — | Evidence-gap triage report (`wake assess`) | this file — "Built — `wake assess`", v0.4.19 |
+| G | Timeline curation (`wake timeline`) | this file — "Built — Theme G", v0.4.20 |
 | J | Session-notes batch (11 items: dotfile rename, docs split, `show` verbs, help-text audit, README split, `refs-check`, `dedup`, `posters`, `exclude`, `unverify`) | [history](docs/design/backlog-built-history.md) — Theme J |
 | L | Structural Hardening (13 phases, v0.4.0–v0.4.12) | [build log](docs/build-log.md), summarized in [history](docs/design/backlog-built-history.md) — Theme L |
 
@@ -161,12 +162,38 @@ right" heuristic.
 
 ---
 
-## Deferred — Theme G: Timeline Generation
+## Built — Theme G: Timeline Curation
 
-Markdown timeline of key developments/uses/adoption (derived from
-classified works' years + relationship strength), meant to be handed to a
-separate model/tool for Tufte-style graphic rendering. Lower complexity —
-mostly a new `report.py`-adjacent renderer.
+**BUILT** (v0.4.20, `feature/timeline`). Originally scoped as a
+`report.py`-adjacent metrics renderer (a markdown timeline derived
+non-interactively from classified works' years + relationship strength);
+re-scoped mid-design once framed around who actually uses it — an agent
+and human iterating together, deciding what belongs on the timeline, not
+wake computing it for them. Rebuilt on the same "candidate material →
+curated units → stitch" pattern as `wake theme`/`wake narrative`, not a
+one-shot aggregate:
+
+- `wake timeline candidates` — read-only, complete, scored/dated/bucketed
+  view of every classified work (`report.relationship_score()` directly,
+  never a second formula); never pre-selects a "top N" or filters weak
+  relationships by default — the editorial threshold stays in the
+  agent/human conversation, not baked into a config default.
+- `wake timeline period create`/`confirm` — a period (a bare-year
+  emergent bucket or a named span with `--from`/`--to`) holds a curated
+  set of highlighted works, each with its own optional note plus a
+  period-level framing note. Always writes `draft`; `confirm` refuses
+  unless every highlighted work is currently human-verified (re-resolved
+  fresh, same bar `wake theme confirm` enforces) — a confirmed period is
+  an evidentiary claim, not just a classification guess.
+- `wake timeline stitch` — assembles every period (chronological) into
+  `timeline.md` (the working artifact, all periods, like `narrative.md`)
+  and `timeline.json` (the CONFIRMED periods only — the handoff to a
+  separate Tufte-style graphic-rendering tool). Overlapping period
+  ranges are reported, never blocked.
+- Wired into `wake rebuild` (re-renders periods + re-stitches) and the
+  rebuild manifest (`timeline/periods/*.json` tracked as inputs); a
+  `[timeline](timeline.md)` nav link added to `impact.md`/README/AGENTS
+  when it exists.
 
 ## Deferred — Theme H: Non-Publication Evidence Search
 

@@ -41,6 +41,8 @@ KNOWN_TYPES = {
     "citing-work-evidence",
     "index",
     "log",
+    "timeline",
+    "timeline-period",
 }
 
 # Required frontmatter keys per `type:` value, over and above `type`
@@ -68,6 +70,12 @@ REQUIRED_KEYS_BY_TYPE: dict[str, set[str]] = {
     },
     "index": {"title", "timestamp"},
     "log": {"title"},
+    "timeline": {
+        "title", "seed_openalex_id", "confirmed_periods", "draft_periods", "timestamp",
+    },
+    "timeline-period": {
+        "title", "seed_openalex_id", "slug", "period_status", "generated_at",
+    },
 }
 
 

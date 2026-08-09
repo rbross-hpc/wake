@@ -14,13 +14,14 @@ every file honor the same frontmatter/anchor conventions.
 """
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from wake import evidence, narrative, report, themes
+from wake import evidence, narrative, report, themes, timeline
 from wake.classify import save_classified
 from wake.report import add_override
 
@@ -428,6 +429,14 @@ def _build_full_wiki(tmp_path):
     narrative.confirm_section(PARALLEL_NETCDF_WORK, "s1", base=tmp_path)
     narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
 
+    timeline.create_period(
+        PARALLEL_NETCDF_WORK, "t0", highlight_ids=[w0["openalex_id"]],
+        label="Early adoption", from_year=w0.get("year"), to_year=w0.get("year"),
+        base=tmp_path,
+    )
+    timeline.confirm_period(PARALLEL_NETCDF_WORK, "t0", base=tmp_path)
+    timeline.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
+
     classified = [
         {**w0, "relationship": "extends", "confidence": 1.0, "justification": "accepted",
          "verification_status": "verified", "verification_source": "evidence-dossier"},
@@ -496,7 +505,18 @@ def test_full_wiki_output_satisfies_all_invariants(tmp_path):
     assert "[Narrative](narrative.md)" in readme_text
     assert "[Evidence Wiki](evidence/index.md)" in readme_text
     assert "[Themes](evidence/themes/index.md)" in readme_text
+    assert "[Timeline](timeline.md)" in readme_text
     assert "[AGENTS.md](AGENTS.md)" in readme_text
+
+    # Timeline: one confirmed period, rendered .md + confirmed-only .json.
+    assert (wiki_root / "timeline.md").exists()
+    assert (wiki_root / "timeline.json").exists()
+    assert (wiki_root / "timeline" / "periods" / "t0.md").exists()
+    timeline_json = json.loads((wiki_root / "timeline.json").read_text())
+    assert [p["slug"] for p in timeline_json["periods"]] == ["t0"]
+
+    impact_text_for_nav = (wiki_root / "impact.md").read_text()
+    assert "[timeline](timeline.md)" in impact_text_for_nav
 
     agents_text = (wiki_root / "AGENTS.md").read_text()
     assert_agents_md_declares_all_types(agents_text, md_files, source="AGENTS.md")
