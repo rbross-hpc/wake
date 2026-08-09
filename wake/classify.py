@@ -2,16 +2,37 @@
 # Copyright (c) 2026, UChicago Argonne, LLC, Argonne National Laboratory.
 """LLM-classify each citing work's relationship to the seed paper.
 
-Relationship classes (ordered by strength, strongest first):
-  extends              – directly extends the method/framework of the seed
-  builds-on            – builds a new system/algorithm on top of the seed
-  uses-as-tool         – uses the seed's software/tool/dataset as-is
-  benchmarks           – compares against the seed as a baseline/benchmark
-  applies-to-domain    – applies the seed's approach to a new domain/problem
-  related-infrastructure – complementary tooling in the same ecosystem/stack
-                           (e.g. another I/O library operating alongside the
-                           seed), without a direct usage/extension dependency
-  background-mention   – cites as background/related work without direct use
+Relationship classes (ordered by default strength, strongest first --
+also noting the nearest CiTO (Citation Typing Ontology) property, where
+one exists, since this taxonomy was deliberately aligned toward CiTO's
+naming in v0.4.21):
+  applies-to-domain – applies the seed's method to a new domain/problem
+                      (a special case of uses-method-from, kept distinct
+                      because domain transfer is its own useful signal).
+                      Nearest CiTO: cito:usesMethodIn.
+  uses-method-from  – uses the seed's method, algorithm, or software tool,
+                      whether applied as-is or incorporated as a
+                      component/dependency of a new system. Nearest CiTO:
+                      cito:usesMethodIn (exact).
+  uses-data-from    – uses the seed's dataset/data. Nearest CiTO:
+                      cito:usesDataFrom (exact).
+  extends           – directly extends/modifies the seed's OWN method,
+                      framework, or theory (contrast with uses-method-from,
+                      which uses it unchanged). Nearest CiTO: cito:extends
+                      (exact).
+  benchmarks        – compares against the seed as a baseline/benchmark.
+                      Nearest CiTO: cito:citesAsPotentialSolution (weak --
+                      CiTO has no dedicated "baseline comparison"
+                      property).
+  related           – complementary work/infrastructure in the same
+                      ecosystem, an affirmative "these are related"
+                      judgment, without a direct usage/extension
+                      dependency. Nearest CiTO: cito:citesAsRelated.
+  cites             – the fallback: cites the seed, but no more specific
+                      relationship is determinable from the text
+                      (including unclear/indirect/merely contextual
+                      mentions). Nearest CiTO: cito:cites (exact) -- CiTO's
+                      own root "cites, unspecified" property.
 
 This exact set of seven labels is fixed in code (CANONICAL_RELATIONSHIPS
 below) because the LLM prompts in this module and in evidence.py spell
@@ -20,15 +41,15 @@ be extended purely through config without also rewriting those prompts.
 What IS configurable is how much each label counts for when ranking
 citing works (see relationship_strength() below and
 `classify.relationship_strength` in config.yaml) -- e.g. an analysis
-where domain reach matters more than tooling adoption can weight
-`applies-to-domain` above `uses-as-tool` without re-running any
+where tooling adoption matters more than domain reach can weight
+`uses-method-from` above `applies-to-domain` without re-running any
 classification: edit config.yaml, then re-run `wake bake` (no LLM calls,
 no re-classification -- ranking is always recomputed from the stored
 relationship label, never from a persisted score).
 
 A citing work's relationship to the seed is sometimes genuinely more than
 one story -- e.g. a paper that uses the seed's tool as-is AND applies it
-to a new domain is both "uses-as-tool" and "applies-to-domain", and
+to a new domain is both "uses-method-from" and "applies-to-domain", and
 picking only one loses signal. classify-3 (see _SYSTEM_CLASSIFY_3) asks
 for a short, confidence-ordered list of facets ("relationships": [...])
 instead of one label; classify-2 (the default, see `prompt_version` in
@@ -77,24 +98,27 @@ _STAGE = "classify"
 
 # Default strengths, used when config.yaml has no
 # classify.relationship_strength override (or a local wake.config.yaml
-# predates this feature and doesn't set one). Ordered strongest-first,
-# matching CANONICAL_RELATIONSHIPS.
+# predates this feature and doesn't set one). Not ordered by
+# CANONICAL_RELATIONSHIPS' strongest-first order above -- see the module
+# docstring's `applies-to-domain` note: domain transfer is weighted
+# highest by design here, not by strongest-first document order.
 _DEFAULT_RELATIONSHIP_STRENGTH: dict[str, int] = {
-    "extends": 7,
-    "builds-on": 6,
-    "uses-as-tool": 5,
-    "benchmarks": 4,
-    "applies-to-domain": 3,
-    "related-infrastructure": 2,
-    "background-mention": 1,
+    "applies-to-domain": 7,
+    "uses-method-from": 6,
+    "uses-data-from": 6,
+    "extends": 5,
+    "benchmarks": 3,
+    "related": 2,
+    "cites": 1,
 }
 
 
 def _closest_match(label: str, candidates: tuple[str, ...]) -> str | None:
     """Return the candidate label within edit distance 2 of *label*, or
     None -- a cheap typo hint for config validation error messages (e.g.
-    'uses_as_tool' -> suggest 'uses-as-tool'). Not a general spellchecker;
-    just enough to catch the common hyphen/underscore/dropped-letter slip."""
+    'uses_method_from' -> suggest 'uses-method-from'). Not a general
+    spellchecker; just enough to catch the common hyphen/underscore/
+    dropped-letter slip."""
     best = None
     best_dist = 3
     for cand in candidates:
@@ -201,21 +225,29 @@ You are a bibliometric analyst classifying how a citing paper uses a seed paper.
 
 You MUST choose exactly one of these seven relationship class strings —
 copy one verbatim into the "relationship" field, do not invent a new label:
-- "extends": The citing paper directly extends the method, framework, or theory of the seed.
-- "builds-on": The citing paper builds a new system, algorithm, or tool that depends on the seed.
-- "uses-as-tool": The citing paper uses the seed's software, tool, or dataset as-is without modification.
+- "extends": The citing paper directly extends or modifies the seed's OWN
+  method, framework, or theory. Contrast with "uses-method-from": extends
+  changes the seed's method itself, uses-method-from uses it unchanged.
+- "uses-method-from": The citing paper uses the seed's method, algorithm,
+  or software tool — either applying it as-is, or incorporating it as a
+  component/dependency of a new system the citing paper builds. Either
+  way, the seed's method is used unchanged, not modified.
+- "uses-data-from": The citing paper uses the seed's dataset or data.
+- "applies-to-domain": The citing paper applies the seed's method to a
+  new domain or problem — a special case of "uses-method-from" where the
+  key story is the domain transfer itself, not just the reuse.
 - "benchmarks": The citing paper benchmarks against or compares performance with the seed.
-- "applies-to-domain": The citing paper applies the seed's approach to a new domain or problem.
-- "related-infrastructure": The citing paper is complementary tooling in the same
-  technical ecosystem or stack (e.g. another library solving an adjacent problem
-  in the same domain) but does not directly depend on, extend, or benchmark the
-  seed — it operates alongside it rather than using it.
-- "background-mention": The citing paper cites the seed only as background or
-  related work, with no specific technical relationship (including cases where
-  the relationship is unclear, indirect, or merely contextual).
+- "related": The citing paper is complementary work or infrastructure in
+  the same ecosystem (e.g. another library solving an adjacent problem in
+  the same domain) — an affirmative "these are related" judgment, but
+  without directly depending on, extending, or benchmarking the seed.
+- "cites": The citing paper cites the seed but no more specific
+  relationship can be determined from the text — the fallback for
+  unclear, indirect, or merely contextual mentions, and for cases that
+  don't fit any of the other six.
 
-If none of the first six clearly apply, use "background-mention" — never
-invent an eighth category or a variation on these names.
+If none of the first six clearly apply, use "cites" — never invent an
+eighth category or a variation on these names.
 
 Respond with ONLY a single JSON object, no markdown fence, matching this schema:
 {
@@ -231,40 +263,49 @@ If the abstract is missing, base your decision on title and venue; set confidenc
 # e.g. a paper that both uses the seed's tool as-is AND applies it to a
 # new domain is telling two independent stories, and reducing that to one
 # label loses signal (see the PnetCDF/flood-modeling case that motivated
-# this: uses-as-tool + applies-to-domain, both well-supported by distinct
-# passages). This prompt asks for a short, confidence-ordered list of
-# facets instead of a single label. MAX_FACETS/MIN_FACET_CONFIDENCE above
-# enforce the same discipline in code as a backstop.
+# this: uses-method-from + applies-to-domain, both well-supported by
+# distinct passages). This prompt asks for a short, confidence-ordered
+# list of facets instead of a single label. MAX_FACETS/MIN_FACET_CONFIDENCE
+# above enforce the same discipline in code as a backstop.
 _SYSTEM_CLASSIFY_3 = """\
 You are a bibliometric analyst classifying how a citing paper uses a seed paper.
 
 Choose from these seven relationship class strings — copy verbatim into
 the "label" field, do not invent a new one:
-- "extends": The citing paper directly extends the method, framework, or theory of the seed.
-- "builds-on": The citing paper builds a new system, algorithm, or tool that depends on the seed.
-- "uses-as-tool": The citing paper uses the seed's software, tool, or dataset as-is without modification.
+- "extends": The citing paper directly extends or modifies the seed's OWN
+  method, framework, or theory. Contrast with "uses-method-from": extends
+  changes the seed's method itself, uses-method-from uses it unchanged.
+- "uses-method-from": The citing paper uses the seed's method, algorithm,
+  or software tool — either applying it as-is, or incorporating it as a
+  component/dependency of a new system the citing paper builds. Either
+  way, the seed's method is used unchanged, not modified.
+- "uses-data-from": The citing paper uses the seed's dataset or data.
+- "applies-to-domain": The citing paper applies the seed's method to a
+  new domain or problem — a special case of "uses-method-from" where the
+  key story is the domain transfer itself, not just the reuse.
 - "benchmarks": The citing paper benchmarks against or compares performance with the seed.
-- "applies-to-domain": The citing paper applies the seed's approach to a new domain or problem.
-- "related-infrastructure": The citing paper is complementary tooling in the same
-  technical ecosystem or stack (e.g. another library solving an adjacent problem
-  in the same domain) but does not directly depend on, extend, or benchmark the
-  seed — it operates alongside it rather than using it.
-- "background-mention": The citing paper cites the seed only as background or
-  related work, with no specific technical relationship (including cases where
-  the relationship is unclear, indirect, or merely contextual).
+- "related": The citing paper is complementary work or infrastructure in
+  the same ecosystem (e.g. another library solving an adjacent problem in
+  the same domain) — an affirmative "these are related" judgment, but
+  without directly depending on, extending, or benchmarking the seed.
+- "cites": The citing paper cites the seed but no more specific
+  relationship can be determined from the text — the fallback for
+  unclear, indirect, or merely contextual mentions, and for cases that
+  don't fit any of the other six.
 
 Most citing papers have exactly ONE clear relationship to the seed. Some
 genuinely have TWO — for example, a paper that both uses the seed's tool
-as-is ("uses-as-tool") AND applies it to a new domain ("applies-to-domain")
-is telling two independent stories. Very rarely does a paper have THREE.
+as-is ("uses-method-from") AND applies it to a new domain
+("applies-to-domain") is telling two independent stories. Very rarely
+does a paper have THREE.
 
 Return one facet by default. Return two only when both are independently
 well-supported (each has its own justification and would be a defensible
 standalone reading on its own — not the same story described two ways).
 Return three only in the exceptional case where the paper genuinely does
 three distinct things. Do not hedge: e.g. a paper that clearly "extends"
-the seed should NOT also list "builds-on" just because extending could be
-described as a kind of building-on -- that is one story, not two.
+the seed should NOT also list "uses-method-from" just because extending
+requires using the method first — that is one story, not two.
 
 Every facet you return must have confidence >= 0.5. If a possible second
 or third reading is weaker than that, leave it out.
@@ -305,13 +346,13 @@ def _parse_relationships_response(result: dict[str, Any]) -> list[dict[str, Any]
     _SYSTEM_CLASSIFY_3 ("relationships" list) into a canonical facets
     list: valid labels only, confidence >= MIN_FACET_CONFIDENCE, sorted
     confidence-descending, capped at MAX_FACETS. Always returns at least
-    one facet -- falls back to a single background-mention facet if
+    one facet -- falls back to a single `cites` facet if
     parsing/filtering leaves nothing usable (garbled response, or every
     facet failed validation)."""
     raw_facets = result.get("relationships")
     if not isinstance(raw_facets, list) or not raw_facets:
         raw_facets = [{
-            "label": result.get("relationship", "background-mention"),
+            "label": result.get("relationship", "cites"),
             "confidence": result.get("confidence", 0.5),
             "justification": result.get("justification", ""),
         }]
@@ -339,7 +380,7 @@ def _parse_relationships_response(result: dict[str, Any]) -> list[dict[str, Any]
     facets = facets[:MAX_FACETS]
 
     if not facets:
-        facets = [{"label": "background-mention", "confidence": 0.5, "justification": ""}]
+        facets = [{"label": "cites", "confidence": 0.5, "justification": ""}]
 
     return facets
 
@@ -362,7 +403,7 @@ def _normalize_relationships(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if isinstance(facets, list) and facets:
         return facets
     return [{
-        "label": payload.get("relationship", "background-mention"),
+        "label": payload.get("relationship", "cites"),
         "confidence": payload.get("confidence", 0.5),
         "justification": payload.get("justification", ""),
     }]

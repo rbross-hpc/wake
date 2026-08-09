@@ -290,8 +290,8 @@ def assert_frontmatter_relative_paths_resolve(
 # internals, consistent with the rest of this file's "encode the
 # properties, don't import the implementation" approach.
 _CANONICAL_RELATIONSHIPS = frozenset({
-    "extends", "builds-on", "uses-as-tool", "benchmarks",
-    "applies-to-domain", "related-infrastructure", "background-mention",
+    "extends", "uses-method-from", "uses-data-from", "applies-to-domain",
+    "benchmarks", "related", "cites",
 })
 _MAX_FACETS = 3
 _MIN_FACET_CONFIDENCE = 0.5
@@ -338,7 +338,7 @@ def assert_facet_list_valid(facets: list[dict[str, Any]], source: str | Path = "
     """Validate a multi-facet "relationships" list (see classify.py's
     module docstring for the schema: a citing work's relationship to the
     seed is sometimes genuinely more than one story, e.g. both
-    "uses-as-tool" and "applies-to-domain").
+    "uses-method-from" and "applies-to-domain").
 
     Asserts: the list is non-empty, has at most _MAX_FACETS entries, every
     facet has a label drawn from _CANONICAL_RELATIONSHIPS, every facet's

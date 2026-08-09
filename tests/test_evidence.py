@@ -38,7 +38,7 @@ def _copy_fixture_pdf(tmp_path: Path) -> Path:
 
 CLASSIFIED_CITING_WORK = {
     **SAMPLE_CITING_WORKS[0],
-    "relationship": "uses-as-tool",
+    "relationship": "uses-method-from",
     "confidence": 0.4,
     "justification": "Likely uses PnetCDF for I/O, based on the abstract alone.",
     "has_abstract": True,
@@ -74,7 +74,7 @@ def test_verify_full_text_returns_structured_finding():
             PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, "some full text here",
             record_cost=False,
         )
-    assert finding["provisional"]["relationship"] == "uses-as-tool"
+    assert finding["provisional"]["relationship"] == "uses-method-from"
     assert finding["proposed"]["relationship"] == "extends"
     assert finding["proposed"]["agrees_with_provisional"] is False
     assert len(finding["quotes"]) == 1
@@ -107,7 +107,7 @@ def test_verify_full_text_rejects_invalid_relationship_label():
             PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, "text",
             record_cost=False,
         )
-    assert finding["proposed"]["relationship"] == "background-mention"
+    assert finding["proposed"]["relationship"] == "cites"
 
 
 def test_verify_full_text_filters_empty_quotes():
@@ -124,14 +124,14 @@ def test_verify_full_text_filters_empty_quotes():
 
 def test_verify_full_text_no_quotes_when_seed_barely_mentioned():
     with patch("wake.evidence.chat_json", return_value=_fake_verification_response(
-        relationship="background-mention", quotes=[],
+        relationship="cites", quotes=[],
     )):
         finding = evidence.verify_full_text(
             PARALLEL_NETCDF_WORK, CLASSIFIED_CITING_WORK, "text",
             record_cost=False,
         )
     assert finding["quotes"] == []
-    assert finding["proposed"]["relationship"] == "background-mention"
+    assert finding["proposed"]["relationship"] == "cites"
 
 
 # --- Theme K Pass 2: seed excerpt in verify_full_text -----------------------

@@ -2448,3 +2448,110 @@ check for `[ref:...]`-marked sentences). No further follow-on identified specifi
 a second phase (e.g. an outline-equivalent step for planning periods up front, or folding in
 `--with-doe-signals`-style domain enrichment) could be revisited once the first cut has been used on
 a real seed.
+
+## v0.4.21 — CiTO-alignment relationship taxonomy refactor (`refactor/predicate-taxonomy`)
+
+Prompted by the user reviewing wake's seven relationship classes against
+[CiTO](https://sparontologies.github.io/cito/current/cito.html) (the Citation Typing Ontology) with an
+eye toward aligning wake's predicate naming/semantics with CiTO's where a real correspondence exists
+-- not adopting CiTO wholesale (most of CiTO's ~40 citation sub-properties have no bibliometric-impact
+use case wake needs, and most of wake's classes have no CiTO equivalent: domain transfer and baseline
+benchmarking aren't citation types CiTO models). Mid-discussion the user also caught a genuine
+pre-existing ambiguity: `builds-on` ("builds a new system that depends on the seed") and `uses-as-tool`
+("uses the seed's software/tool/dataset as-is") overlapped in practice -- a paper building something
+new on top of the seed's method both "uses" it and "depends on" it. Resolved by merging `builds-on`
+into an expanded `uses-method-from` rather than trying to sharpen an already-blurry boundary with more
+prompt prose (the user's explicit call).
+
+### What changed
+
+Net effect: **seven labels, same count, four renamed/merged, three now with exact CiTO matches** (up
+from one, `extends`, before this refactor):
+
+| Old | New | Nearest CiTO |
+|---|---|---|
+| `extends` | `extends` (unchanged) | `cito:extends` (exact) |
+| `uses-as-tool` **+** `builds-on` | `uses-method-from` | `cito:usesMethodIn` (exact) |
+| *(new split from `uses-as-tool`)* | `uses-data-from` | `cito:usesDataFrom` (exact) |
+| `applies-to-domain` | `applies-to-domain` (unchanged) | `cito:usesMethodIn` (domain-transfer sub-case) |
+| `benchmarks` | `benchmarks` (unchanged) | `cito:citesAsPotentialSolution` (weak -- CiTO has no dedicated baseline-comparison property) |
+| `related-infrastructure` | `related` | `cito:citesAsRelated` |
+| `background-mention` | `cites` | `cito:cites` (exact -- CiTO's own root "cites, unspecified" property) |
+
+`extends` vs. `uses-method-from` is now stated explicitly as a boundary in every prompt: `extends`
+changes the seed's own method; `uses-method-from` uses it unchanged, whether applied as-is or
+incorporated as a dependency of something new. `related` vs. `cites` is likewise explicit: `related` is
+an affirmative "these are adjacent" judgment; `cites` is the true fallback for when nothing more
+specific is determinable -- mirroring CiTO's own `citesAsRelated`/`cites` split. `author_overlap`
+(orthogonal boolean tag, not a relationship class) is unchanged; its CiTO analogue
+(`cito:AuthorSelfCitation`/`sharesAuthorWith`) was already noted in docs and needed no code change.
+
+Default strengths were reset by the user directly (not derived from the old scale), reflecting a
+deliberate editorial choice to weight domain transfer above even `extends`:
+`applies-to-domain` (7) > `uses-method-from` (6) = `uses-data-from` (6) > `extends` (5) >
+`benchmarks` (3) > `related` (2) > `cites` (1). Still fully overridable per-project via
+`classify.relationship_strength` in `wake.config.yaml`, unchanged mechanism.
+
+No `cito:` IRI is emitted anywhere in code or output artifacts -- the correspondence is documentation
+only (a table in `references/classify.md`/`docs/workflow.md`), a deliberate scope-narrowing the user
+made explicit after initially considering a machine-readable mapping: with no external consumer of
+such a mapping, it would be dead code carried for its own sake.
+
+### What was built
+
+**`wake/vocabulary.py`** (single source of truth): `CANONICAL_RELATIONSHIPS`/`RelationshipLabel`
+updated to the new seven; added `RETIRED_RELATIONSHIPS` (`uses-as-tool`/`builds-on` ->
+`uses-method-from`, `related-infrastructure` -> `related`, `background-mention` -> `cites`), consumed
+only by migration, never by classify/evidence/scoring.
+
+**Migrations** (`wake/models.py`): every retired label is rewritten forward on read, with no
+re-classification required. `migrate_classification_result`/`migrate_classified` remap the
+`relationship` scalar and every `relationships[]` facet's `label` (`CLASSIFICATION_VERSION`/
+`CLASSIFIED_FILE_VERSION` 1 -> 2); `migrate_dossier` remaps `provisional`/`proposed` the same way
+(`EVIDENCE_DOSSIER_VERSION` 2 -> 3); `migrate_override` remaps a retired `relationship`
+(`OVERRIDE_VERSION` 1 -> 2). All four migrations are idempotent and covered by new tests. Also fixed a
+latent bug surfaced by the version bump: `evidence.py`'s dossier writer hardcoded
+`"schema_version": 2` instead of importing `EVIDENCE_DOSSIER_VERSION` -- newly written dossiers would
+have silently stayed one version behind every future bump.
+
+**Prompts** (`wake/classify.py`'s `classify-2`/`classify-3`, `wake/evidence.py`'s
+`evidence-1`/`evidence-2`/`evidence-3`): all five system prompts rewritten to the new seven labels with
+the `extends`/`uses-method-from` and `related`/`cites` boundary notes spelled out verbatim, since the
+label set is fixed in code precisely because these prompts must spell out every label as prose (not
+config-driven). Every hardcoded fallback site (`background-mention` used when nothing else applies)
+changed to `cites` across `classify.py`, `evidence.py`, `report.py`, `evidence_wiki.py`, `timeline.py`.
+
+**Config** (`wake/config.yaml`): `classify.relationship_strength` default block and its documentation
+comment updated to the new seven keys and values.
+
+**Docs**: `references/classify.md` (full taxonomy table with CiTO column, `extends`/`related`
+boundary notes, new "CiTO Correspondence" section explaining the scope decision), `references/
+evidence.md`, `references/timeline.md`, `references/exclude.md`, `SKILL.md`, `docs/workflow.md`
+(taxonomy table + CiTO column), `README.md`, `PLAN.md` (also fixed a pre-existing staleness: the
+ranking section listed only six labels with weights that didn't match `config.yaml`'s actual seven).
+
+### Verification
+
+Golden-packet fixture (`tests/fixtures/golden-packet/`) predates this refactor and was **not**
+hand-edited, consistent with how it already predates every prior schema-version bump (Phase 6/9/10/11/
+12's dossier/theme/narrative/classification/override versioning) -- `test_golden_packet.py`'s two
+label-validating tests (`test_all_classify_sidecars_validate_as_classification_result`,
+`test_classified_json_works_validate`) now migrate the raw fixture JSON forward before validating
+against the current `RelationshipLabel` Literal, and `test_dossier_schema_version_persisted_on_disk`
+now documents and asserts the fixture is frozen at the pre-refactor `EVIDENCE_DOSSIER_VERSION=2` rather
+than asserting the current version, mirroring the existing `..._is_unversioned_pre_phase_N_and_migrates_
+on_read` acceptance-test pattern used for every earlier schema bump. New coverage: retired-label remap
+in all four migrations (`test_models.py`), the new label set's strength defaults and ordering, the
+`extends`/`uses-method-from` and `related`/`cites` boundaries via updated prompt-adjacent tests, and a
+mechanical relabel of every fixture/assertion across ~20 other test files that used a retired label
+name without testing the taxonomy itself.
+
+`rtk ruff check wake/ tests/` clean, `rtk mypy` clean. Full offline suite under CI-parity conditions:
+862 passed, 14 deselected (no count change -- a taxonomy rename/merge, not new functionality).
+
+### Next phase
+
+No functional change to wake's behavior beyond the label rename/merge and default-strength reset --
+purely a naming/taxonomy clarity refactor made possible by wake having exactly one user at the time.
+Open roadmap items unchanged: Theme B (DOE-relevance signals), Theme H (non-publication evidence
+search), `wake narrative section audit`, full `WakeContext` threading (still deliberately deferred).

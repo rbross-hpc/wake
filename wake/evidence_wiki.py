@@ -65,7 +65,7 @@ def _score(entry: dict[str, Any]) -> float:
     from .report import relationship_score
 
     proposed = entry.get("proposed", {})
-    relationships = proposed.get("relationships") or proposed.get("relationship", "background-mention")
+    relationships = proposed.get("relationships") or proposed.get("relationship", "cites")
     return relationship_score(relationships, entry.get("citing_cited_by_count", 0))
 
 
@@ -229,7 +229,7 @@ def mark_verified(
       - If it matches an existing facet's label, that facet is flagged
         `"verified": true` -- the model's *other* facets are left in
         place, untouched, as unaffirmed-but-still-evidenced alternative
-        readings (a paper can genuinely be both `uses-as-tool` and
+        readings (a paper can genuinely be both `uses-method-from` and
         `applies-to-domain`; the human affirming one doesn't make the
         other one wrong, just unconfirmed).
       - If it matches no existing facet (the human corrected the model
@@ -612,9 +612,9 @@ def _build_readme_lines(seed_id: str, seed_work: dict[str, Any] | None, counts: 
     if counts["classified_count"]:
         what_was_done.append(
             f"**{counts['classified_count']}** classified by an LLM from title/abstract "
-            "into one of seven relationship types (extends, builds-on, "
-            "uses-as-tool, benchmarks, applies-to-domain, "
-            "related-infrastructure, background-mention)"
+            "into one of seven relationship types (extends, uses-method-from, "
+            "uses-data-from, applies-to-domain, benchmarks, "
+            "related, cites)"
         )
     if counts["dossier_count"]:
         what_was_done.append(
@@ -891,10 +891,10 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
         "`extracted_text_path`, `author_overlap`."
     )
     lines.append(
-        "Relationship labels (fixed set of 7): `extends`, `builds-on`, "
-        "`uses-as-tool`, `benchmarks`, `applies-to-domain`, "
-        "`related-infrastructure`, `background-mention`. A citing work "
-        "can have more than one facet (e.g. both `uses-as-tool` and "
+        "Relationship labels (fixed set of 7): `extends`, `uses-method-from`, "
+        "`uses-data-from`, `applies-to-domain`, `benchmarks`, "
+        "`related`, `cites`. A citing work "
+        "can have more than one facet (e.g. both `uses-method-from` and "
         "`applies-to-domain`); ranking uses the strongest facet, not a sum."
     )
     lines.append(
@@ -1040,9 +1040,9 @@ def _build_agents_md_lines(seed_id: str, seed_work: dict[str, Any] | None, count
     lines.append("## Query patterns")
     lines.append("")
     lines.append(
-        "- **Which works cite the seed as `uses-as-tool`?** Read "
+        "- **Which works cite the seed as `uses-method-from`?** Read "
         "`classified.json`, filter `relationships[].label == "
-        "\"uses-as-tool\"` (or the legacy `relationship` scalar)."
+        "\"uses-method-from\"` (or the legacy `relationship` scalar)."
     )
     lines.append(
         "- **Show me all verified findings.** Read `evidence/<id>.json` "

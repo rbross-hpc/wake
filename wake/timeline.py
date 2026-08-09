@@ -232,7 +232,7 @@ def build_candidates(
                 ]
                 best_strength = max((strengths.get(label, 1) for label in labels), default=1)
             else:
-                best_strength = strengths.get(w.get("relationship", "background-mention"), 1)
+                best_strength = strengths.get(w.get("relationship", "cites"), 1)
             if best_strength < min_strength:
                 continue
 

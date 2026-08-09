@@ -30,7 +30,7 @@ def _copy_fixture_pdf(tmp_path: Path, name: str = "citing.pdf") -> Path:
 def _classified_work(idx: int = 0, **overrides) -> dict:
     return {
         **SAMPLE_CITING_WORKS[idx],
-        "relationship": "uses-as-tool",
+        "relationship": "uses-method-from",
         "confidence": 0.4,
         "justification": "Likely uses PnetCDF for I/O, based on the abstract alone.",
         "has_abstract": True,
@@ -242,7 +242,7 @@ def test_mark_verified_relationship_correction_updates_proposed_and_index(tmp_pa
     brief actually uses. Per the multi-facet append-not-replace design
     (see evidence_wiki.mark_verified's docstring), the model's original
     facet is preserved as an unaffirmed alternative rather than deleted --
-    both extends and uses-as-tool legitimately appear in the dossier's
+    both extends and uses-method-from legitimately appear in the dossier's
     proposed_relationships, but only the human-affirmed facet is flagged
     verified."""
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
@@ -252,33 +252,33 @@ def test_mark_verified_relationship_correction_updates_proposed_and_index(tmp_pa
     ok = evidence_wiki.mark_verified(
         seed_id, citing_id,
         justification="Full text actually shows plain adoption, not an extension.",
-        relationship="uses-as-tool",
+        relationship="uses-method-from",
         base=tmp_path,
     )
     assert ok is True
 
     loaded = evidence.load_dossier(seed_id, citing_id, base=tmp_path)
-    assert loaded["proposed"]["relationship"] == "uses-as-tool"
+    assert loaded["proposed"]["relationship"] == "uses-method-from"
     assert loaded["proposed"]["model_relationship"] == "extends"
     assert loaded["proposed"]["model_justification"]
     assert loaded["human_verification"]["corrected_from"] == "extends"
 
     facets_by_label = {f["label"]: f for f in loaded["proposed"]["relationships"]}
-    assert facets_by_label["uses-as-tool"]["verified"] is True
+    assert facets_by_label["uses-method-from"]["verified"] is True
     assert facets_by_label["extends"]["verified"] is False
 
     evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, citing_id, base=tmp_path)
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
     proposed_line = next(line for line in md_text.splitlines() if line.startswith("proposed_relationships:"))
-    assert "uses-as-tool" in proposed_line
+    assert "uses-method-from" in proposed_line
     assert "extends" in proposed_line  # preserved as an unaffirmed alternative, not deleted
-    assert "corrected the model's reading from *extends* to *uses-as-tool*" in md_text
+    assert "corrected the model's reading from *extends* to *uses-method-from*" in md_text
 
     # index.md lists every facet the dossier has (not just the
     # human-affirmed one) -- both labels legitimately appear.
     index_p = evidence_wiki.rebuild_index(seed_id, base=tmp_path)
     index_text = index_p.read_text()
-    assert "*extends, uses-as-tool*" in index_text
+    assert "*extends, uses-method-from*" in index_text
 
 
 # --- add_override wiring --------------------------------------------------

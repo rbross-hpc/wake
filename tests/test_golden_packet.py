@@ -107,21 +107,32 @@ def test_all_citing_works_validate_as_work():
 
 
 def test_all_classify_sidecars_validate_as_classification_result():
+    """The golden packet predates the v0.4.21 CiTO-alignment taxonomy
+    refactor (its "background-mention"/"builds-on" labels were retired
+    and renamed -- see vocabulary.py's RETIRED_RELATIONSHIPS), so raw
+    sidecars are migrated forward before validating against the current
+    RelationshipLabel Literal, mirroring the schema_version migration
+    tests below."""
+    from wake.models import migrate_classification_result
+
     for p in sorted((_PACKET_ROOT / "classify").glob("*.json")):
         raw = json.loads(p.read_text())
-        result = ClassificationResult.model_validate(raw)
+        migrated = migrate_classification_result(raw)
+        result = ClassificationResult.model_validate(migrated)
         assert result.relationship in (
-            "extends", "builds-on", "uses-as-tool", "benchmarks",
-            "applies-to-domain", "related-infrastructure", "background-mention",
+            "extends", "uses-method-from", "uses-data-from", "applies-to-domain",
+            "benchmarks", "related", "cites",
         )
 
 
 def test_classified_json_works_validate():
+    from wake.models import migrate_classification_result
+
     raw = json.loads(_CLASSIFIED_JSON.read_text())
     works = raw if isinstance(raw, list) else raw.get("works", [])
     assert len(works) == 4
     for w in works:
-        ClassificationResult.model_validate(w)
+        ClassificationResult.model_validate(migrate_classification_result(w))
 
 
 def test_classify_sidecars_and_classified_json_are_unversioned_pre_phase_11(tmp_path):
@@ -265,14 +276,23 @@ def test_overrides_jsonl_is_unversioned_pre_phase_12_and_migrates_on_read():
 # ---------------------------------------------------------------------------
 
 def test_dossier_schema_version_persisted_on_disk():
-    """The real dossiers on disk have schema_version=2 -- verifies that
-    build_dossier's write site correctly persisted the validated model."""
+    """The real dossiers on disk have schema_version=2 -- this fixture
+    predates EVIDENCE_DOSSIER_VERSION=3 (the v0.4.21 CiTO-alignment
+    taxonomy refactor's relationship-label remap), so it's frozen at the
+    version current when it was generated. Verifies that build_dossier's
+    write site correctly persisted the validated model *as of that
+    version*, and that migrate_dossier() (exercised directly in
+    test_migrate_dossier_upgrades_real_stripped_dossier, and via
+    load_dossier() in test_load_dossier_returns_current_schema_version)
+    carries it forward to the current version on read."""
     for citing_id in _DOSSIER_IDS:
         raw = json.loads((_EVIDENCE_DIR / f"{citing_id}.json").read_text())
-        assert raw.get("schema_version") == EVIDENCE_DOSSIER_VERSION, (
-            f"{citing_id}: expected schema_version={EVIDENCE_DOSSIER_VERSION} on disk, "
-            f"got {raw.get('schema_version')!r}"
+        assert raw.get("schema_version") == 2, (
+            f"{citing_id}: fixture expected to be frozen at schema_version=2; "
+            f"got {raw.get('schema_version')!r} -- update this test if the "
+            "fixture is regenerated post-v0.4.21"
         )
+        assert raw.get("schema_version") < EVIDENCE_DOSSIER_VERSION
 
 
 def test_dossier_pdf_paths_are_relative_on_disk():
@@ -285,10 +305,10 @@ def test_dossier_pdf_paths_are_relative_on_disk():
         assert not Path(raw["extracted_text_path"]).is_absolute()
 
 
-def test_load_dossier_returns_schema_version_2(tmp_path):
-    """load_dossier() runs migrate_dossier() and returns schema_version=2,
-    even when called on the fixture (which already has schema_version=2 --
-    confirms idempotency on the real packet)."""
+def test_load_dossier_returns_current_schema_version(tmp_path):
+    """load_dossier() runs migrate_dossier() and returns the current
+    EVIDENCE_DOSSIER_VERSION, upgrading the fixture's frozen
+    schema_version=2 dossiers forward on read."""
     _copy_packet(tmp_path)
     for citing_id in _DOSSIER_IDS:
         result = load_dossier(_SEED_ID, citing_id, base=tmp_path)

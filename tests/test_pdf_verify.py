@@ -43,7 +43,7 @@ def _run_cli(argv, tmp_path, capsys):
 def _classified_work(idx: int = 0, **overrides) -> dict:
     return {
         **SAMPLE_CITING_WORKS[idx],
-        "relationship": "uses-as-tool",
+        "relationship": "uses-method-from",
         "confidence": 0.4,
         "justification": "Likely uses PnetCDF for I/O.",
         "has_abstract": True,
@@ -183,7 +183,7 @@ def test_from_pdf_cli_passes_on_matching_fixture(tmp_path, capsys):
         "extracted_text_path": str(extracted_text_path(pdf_copy)),
         "citing_title": work["title"],
         "citing_authors": work["authors"],
-        "provisional": {"relationship": "uses-as-tool", "confidence": 0.4, "justification": "x"},
+        "provisional": {"relationship": "uses-method-from", "confidence": 0.4, "justification": "x"},
         "proposed": {"relationship": "extends", "confidence": 0.9, "justification": "y", "agrees_with_provisional": False},
         "quotes": [],
     }
@@ -244,7 +244,7 @@ def test_from_pdf_cli_force_overrides_mismatch(tmp_path, capsys):
         "pdf_path": str(pdf_copy), "pdf_source": "supplied",
         "extracted_text_path": str(extracted_text_path(pdf_copy)),
         "citing_title": work["title"], "citing_authors": work["authors"],
-        "provisional": {"relationship": "uses-as-tool", "confidence": 0.4, "justification": "x"},
+        "provisional": {"relationship": "uses-method-from", "confidence": 0.4, "justification": "x"},
         "proposed": {"relationship": "extends", "confidence": 0.9, "justification": "y", "agrees_with_provisional": False},
         "quotes": [],
     }
@@ -280,7 +280,7 @@ def test_from_pdf_cli_logs_mismatch_even_with_force(tmp_path, capsys):
         "pdf_path": str(pdf_copy), "pdf_source": "supplied",
         "extracted_text_path": str(extracted_text_path(pdf_copy)),
         "citing_title": work["title"], "citing_authors": work["authors"],
-        "provisional": {"relationship": "uses-as-tool", "confidence": 0.4, "justification": "x"},
+        "provisional": {"relationship": "uses-method-from", "confidence": 0.4, "justification": "x"},
         "proposed": {"relationship": "extends", "confidence": 0.9, "justification": "y", "agrees_with_provisional": False},
         "quotes": [],
     }

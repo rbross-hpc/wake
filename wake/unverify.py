@@ -30,7 +30,7 @@ module docstring). Run `wake rebuild` after unverifying to move the work
 back to Pending Review in the rendered wiki.
 
 After unverifying, the work is back to whatever it was before: a
-`background-mention`-tier provisional guess if no evidence dossier ever
+`cites`-tier provisional guess if no evidence dossier ever
 existed, or a `pending-human-review` proposed finding if one does --
 either way, no longer usable in a theme/narrative section requiring
 verification, and `wake bake` no longer marks it `[VERIFIED via ...]`.

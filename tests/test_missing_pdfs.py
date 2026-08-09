@@ -40,7 +40,7 @@ def _run_cli(argv, tmp_path, capsys):
 def _classified_work(idx: int = 0, **overrides) -> dict:
     return {
         **SAMPLE_CITING_WORKS[idx],
-        "relationship": "uses-as-tool",
+        "relationship": "uses-method-from",
         "confidence": 0.4,
         "justification": "Likely uses PnetCDF for I/O.",
         "has_abstract": True,

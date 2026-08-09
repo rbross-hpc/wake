@@ -145,7 +145,7 @@ def test_work_tolerates_extra_enrichment_fields():
 # --- ClassificationResult -------------------------------------------------
 
 def _fake_chat_json(system, user, model_role="classify", model=None, temperature=0, cost_sink=None):
-    return {"relationship": "uses-as-tool", "confidence": 0.8, "justification": "fake"}
+    return {"relationship": "uses-method-from", "confidence": 0.8, "justification": "fake"}
 
 
 def test_classification_result_validates_real_classify_one_output():
@@ -153,7 +153,7 @@ def test_classification_result_validates_real_classify_one_output():
         result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
 
     parsed = ClassificationResult.model_validate(result)
-    assert parsed.relationship == "uses-as-tool"
+    assert parsed.relationship == "uses-method-from"
     assert parsed.verification_status == "provisional"
     assert len(parsed.relationships) >= 1
     assert "strength" not in result  # still true of the raw dict; model doesn't add it either
@@ -219,7 +219,9 @@ def test_migrate_classification_result_stamps_schema_version():
 
 
 def test_migrate_classified_bare_list_wraps_and_stamps():
-    """Formalizes the pre-wrapper bare-list classified.json shape."""
+    """Formalizes the pre-wrapper bare-list classified.json shape. Also
+    exercises the v0.4.21 retired-label remap (background-mention ->
+    cites) on the way through."""
     bare = [
         {"openalex_id": "W1", "relationship": "extends", "confidence": 0.9},
         {"openalex_id": "W2", "relationship": "background-mention", "confidence": 0.5},
@@ -229,6 +231,7 @@ def test_migrate_classified_bare_list_wraps_and_stamps():
     assert migrated["count"] == 2
     assert len(migrated["works"]) == 2
     assert migrated["works"][0]["schema_version"] == CLASSIFICATION_VERSION
+    assert migrated["works"][1]["relationship"] == "cites"
 
 
 def test_migrate_classified_wrapper_stamps_schema_version_and_each_work():
@@ -359,7 +362,7 @@ def _build_dossier(tmp_path):
     dest = _copy_fixture_pdf(tmp_path)
     classified_work = {
         **SAMPLE_CITING_WORKS[0],
-        "relationship": "uses-as-tool",
+        "relationship": "uses-method-from",
         "confidence": 0.4,
         "justification": "Likely uses PnetCDF for I/O.",
         "has_abstract": True,
@@ -493,7 +496,7 @@ def test_evidence_dossier_read_model_accepts_unknown_field():
 def _classified_work(idx: int, **overrides) -> dict:
     return {
         **SAMPLE_CITING_WORKS[idx],
-        "relationship": "uses-as-tool",
+        "relationship": "uses-method-from",
         "confidence": 0.4,
         "justification": "Likely uses PnetCDF for I/O.",
         "has_abstract": True,

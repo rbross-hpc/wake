@@ -91,9 +91,10 @@ LICENSE
 
 Score = relationship_strength × log(1 + downstream_cited_by_count)
 
-Relationship strengths (highest to lowest):
-  extends (6) > builds-on (5) > uses-as-tool (4) > benchmarks (3) >
-  applies-to-domain (2) > background-mention (1)
+Relationship strengths (default, highest to lowest — configurable via
+`classify.relationship_strength` in `wake.config.yaml`):
+  applies-to-domain (7) > uses-method-from (6) = uses-data-from (6) >
+  extends (5) > benchmarks (3) > related (2) > cites (1)
 
 ---
 

@@ -20,8 +20,8 @@
     "pdf_source": "semanticscholar",
     "extracted_text_path": "/abs/path/to/wake-out/<seed>/pdfs/<citing-id>.pdf.json",
     "provisional": {
-      "relationship": "uses-as-tool", "confidence": 0.4, "justification": "...",
-      "relationships": [{"label": "uses-as-tool", "confidence": 0.4, "justification": "..."}]
+      "relationship": "uses-method-from", "confidence": 0.4, "justification": "...",
+      "relationships": [{"label": "uses-method-from", "confidence": 0.4, "justification": "..."}]
     },
     "proposed": {
       "relationship": "extends",
@@ -78,7 +78,7 @@ For a multi-facet dossier, `--relationship` affirms exactly one facet at
 a time: if it matches one of the dossier's existing facets, that facet
 is flagged verified and the model's *other* facets are left in place,
 untouched, as unaffirmed-but-still-evidenced alternative readings (a
-paper can genuinely be both `uses-as-tool` and `applies-to-domain`; the
+paper can genuinely be both `uses-method-from` and `applies-to-domain`; the
 human affirming one doesn't make the other one wrong, just unconfirmed).
 If `--relationship` names a facet the model never proposed (a genuine
 correction), it's appended as a new verified facet, again without
@@ -177,7 +177,7 @@ byline naming every theme and narrative section that currently cites
 this work, e.g. `theme [PnetCDF's own evolution](themes/pnetcdf-
 evolution.md); narrative section [...](../narrative/sections/....md)`.
 It's omitted entirely for a work not (yet) pulled into any theme or
-narrative section — most `background-mention` dossiers stay this way.
+narrative section — most `cites` dossiers stay this way.
 
 This is a derived view, recomputed at render time from the theme/section
 JSON sidecars — nothing new to maintain by hand, but it is only
