@@ -1,6 +1,6 @@
 ---
 name: wake
-description: Use when analyzing the citation impact of a research paper with the wake CLI. Covers the full explore-first workflow — resolve, citing, sample, classify, gaps, fetch-pdf, evidence, themes, narrative, bake — and the provisional → proposed → verified evidence lifecycle. Do not use for general literature search or unrelated citation queries.
+description: Use when analyzing the citation impact of a research paper with the wake CLI. Covers the full explore-first workflow — resolve, citing, sample, classify, gaps, fetch-pdf, evidence, themes, narrative, timeline, bake — and the provisional → proposed → verified evidence lifecycle. Do not use for general literature search or unrelated citation queries.
 ---
 
 # Agent Skill: wake — Impact Analysis
@@ -345,10 +345,11 @@ writes JSON only.
 
 ## Rendering the Wiki
 
-Every command in this workflow beyond `wake bake` and `wake narrative
-stitch` — `wake evidence`, `wake override`, `wake unverify`, `wake theme
-create`/`confirm`, `wake narrative outline create`, `wake narrative
-section create`/`confirm` — writes only the artifact's JSON sidecar. It
+Every command in this workflow beyond `wake bake`, `wake narrative
+stitch`, and `wake timeline stitch` — `wake evidence`, `wake override`,
+`wake unverify`, `wake theme create`/`confirm`, `wake narrative outline
+create`, `wake narrative section create`/`confirm`, `wake timeline
+period create`/`confirm` — writes only the artifact's JSON sidecar. It
 never touches that artifact's rendered `.md`, `evidence/index.md`,
 `evidence/themes/index.md`, or `README.md`/`AGENTS.md`. You don't need
 the rendered `.md` to keep working — every one of those commands already
@@ -360,10 +361,11 @@ Rendering is one single, separate, explicit step:
 ```bash
 wake --json rebuild "<seed>"
 ```
-This re-derives every dossier/theme/section `.md`, both indexes,
-`narrative.md`, `impact.md`, and `README.md`/`AGENTS.md` from whatever
-JSON is currently on disk, in the right dependency order. No LLM or
-network call — pure re-render, safe to run any time. Run it:
+This re-derives every dossier/theme/section/period `.md`, both indexes,
+`narrative.md`, `timeline.md`/`timeline.json`, `impact.md`, and
+`README.md`/`AGENTS.md` from whatever JSON is currently on disk, in the
+right dependency order. No LLM or network call — pure re-render, safe to
+run any time. Run it:
 - Whenever you're about to hand the human a link into the wiki (a
   dossier, a theme, `README.md`) and want it to reflect what you've
   built up so far.
@@ -373,8 +375,8 @@ network call — pure re-render, safe to run any time. Run it:
   fully rendered, not just fully recorded.
 
 Every `wake rebuild` call also reports a `changes` block: which JSON
-sources (dossiers, themes, sections, outline, overrides, seed/citing/
-classified) were added, changed, or removed since the *previous*
+sources (dossiers, themes, sections, outline, timeline periods, overrides,
+seed/citing/classified) were added, changed, or removed since the *previous*
 `wake rebuild` call for this seed (persisted in
 `rebuild-manifest.json`). This is purely informational — it never skips
 a render step, every artifact type is always re-rendered — but it's a
@@ -701,7 +703,72 @@ or even an `OK` match carrying a year-mismatch or dead-URL note — and
 let them decide whether to fix the citing work's metadata or accept it
 as a known limitation.
 
-### 16. Refine
+### 16. (Optional) Curate a timeline of key developments
+
+Once you have some verified works, you and the human may want a
+timeline showing how the seed's story unfolded over time — for a "See
+also" link in the wiki, or as structured input to a separate
+Tufte-style graphic-rendering tool. This is a selection exercise, like
+narrative sections, not something `wake` computes for you: `wake`
+provides the scored, dated material; you and the human choose what
+counts as a highlight and how to group it into periods.
+
+Start by reading the candidate material — every dated, classified work,
+scored the same way `impact.md`'s "Strongest Evidence" table is:
+
+```bash
+wake --json timeline candidates "<seed>" [--bucket-years N] [--min-strength S]
+```
+
+This never pre-selects "the milestones" — every classified work with a
+year is included, weakest relationships too, so the threshold for
+what's worth highlighting stays a conversation with the human, not a
+config default. `--bucket-years` groups the view into coarser windows
+(e.g. `--bucket-years 5`) if the year-by-year shape is too granular to
+reason about; this is purely a way of looking at the data, not a
+decision that affects anything you create afterward.
+
+Then curate one period at a time — a bare year (an emergent
+single-year period) or a named span you and the human define up front:
+
+```bash
+wake --json timeline period create "<seed>" early-adoption \
+  --label "Early adoption in Earth system modeling" --from 2003 --to 2007 \
+  --highlights W111,W222 \
+  --note "<why this span matters to the story>" \
+  --highlight-note W111='<why this specific work matters here>'
+```
+
+Present the period to the human, then confirm it on their behalf —
+**confirmation refuses unless every highlighted work is currently
+human-verified** (re-checked fresh, same bar `wake theme confirm`
+enforces), since a confirmed period is an evidentiary claim about what
+mattered at that point in the story, not just your classification guess:
+
+```bash
+wake --json timeline period confirm "<seed>" early-adoption
+```
+
+Once satisfied with the periods drafted so far, assemble them:
+
+```bash
+wake --json timeline stitch "<seed>"
+```
+
+This writes two files with different audiences: `timeline.md` is the
+working artifact (every period, confirmed or draft, clearly labeled —
+same "works on partial data" philosophy as `narrative.md`), and
+`timeline.json` carries the **confirmed periods only** — the handoff to
+a graphic-rendering tool, so nothing still-being-decided leaks into
+what gets drawn. Periods with overlapping year ranges are reported (a
+callout in `timeline.md`, `data.overlaps` in the JSON) but never
+blocked — periodization is the team's editorial call.
+
+This step is optional, and independent of narrative/themes — a timeline
+can highlight works that aren't part of any confirmed theme, and vice
+versa.
+
+### 17. Refine
 
 If the human disagrees with a specific classification (with or without a
 `wake evidence` dossier backing it up):

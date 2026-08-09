@@ -52,6 +52,12 @@ wake --json narrative stitch "<seed>"
 wake --json narrative show "<seed>"
 wake --json narrative refs-check export "<seed>"
 wake --json narrative refs-check summarize "<seed>" <results.json>
+wake --json timeline candidates "<seed>" [--bucket-years N] [--min-strength S] [--since Y] [--until Y]
+wake --json timeline period create "<seed>" <slug> --highlights ID,ID,... [--label "..."] [--from Y] [--to Y] [--note "..."] [--highlight-note ID='...']
+wake --json timeline period confirm "<seed>" <slug>
+wake --json timeline period show "<seed>" <slug>
+wake --json timeline stitch "<seed>"
+wake --json timeline show "<seed>"
 wake --json bake "<seed>"
 wake --json rebuild "<seed>"
 wake --json override "<seed>" <citing-id> --relationship <class> --justification "..." [--verification-source human-judgment|evidence-dossier]
@@ -90,5 +96,6 @@ back to cwd), `--verbose` (keep progress banners on stderr even under `--json`).
 | [`evidence.md`](evidence.md) | `wake evidence`/`wake override`/`wake unverify`, the provisional → proposed → verified lifecycle, diagnosing a surprising finding |
 | [`themes.md`](themes.md) | `wake theme create`/`confirm`/`queue`, draft → confirmed lifecycle |
 | [`narrative.md`](narrative.md) | `wake narrative outline`/`section`/`stitch`, inline `[ref:...]` source references, stitch-time renumbering |
+| [`timeline.md`](timeline.md) | `wake timeline candidates`/`period create`/`confirm`/`stitch`, the confirmed-only timeline.json handoff |
 | [`output-layout.md`](output-layout.md) | Full `wake-out/<seed>/` directory tree |
 | [`environment.md`](environment.md) | Environment variable tiers, `wake config validate` |

@@ -260,7 +260,8 @@ def test_cli_rebuild_json_output(tmp_path, capsys):
     step_names = {s["step"] for s in envelope["data"]["steps"]}
     assert step_names == {
         "dossiers", "evidence_index", "themes", "themes_index",
-        "outline", "sections", "narrative", "impact", "wiki_orientation",
+        "outline", "sections", "narrative", "timeline_periods", "timeline",
+        "impact", "wiki_orientation",
     }
 
 

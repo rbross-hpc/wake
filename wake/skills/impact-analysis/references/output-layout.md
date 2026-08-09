@@ -130,6 +130,27 @@ wake-out/<OpenAlex-ID>/
                               section counts, reference_count) + the R-numbered
                               stitched prose; notes coverage if partial, same as
                               impact.md
+  timeline/                — curated timeline periods (wake timeline)
+    periods/
+      <slug>.md               — one period's highlighted works; draft or confirmed;
+                                 rendered only by `wake rebuild` -- `period create`/
+                                 `confirm` write only <slug>.json. slug is either a
+                                 bare year (an emergent single-year period) or a
+                                 kebab-case named span (e.g. "early-adoption")
+      <slug>.json              — same period, structured (label, from_year, to_year,
+                                 note, highlights: [{citing_id, note, status,
+                                 has_dossier, title}], period_status)
+  timeline.md              — stitched working artifact (wake timeline stitch): every
+                              period, chronological by from_year, confirmed or
+                              draft (both shown, clearly labeled -- same "works on
+                              partial data" philosophy as narrative.md/impact.md);
+                              a callout if any period ranges overlap (reported,
+                              never auto-corrected)
+  timeline.json             — the CONFIRMED periods only (draft periods never
+                              appear here) -- the handoff to a separate
+                              Tufte-style graphic-rendering tool, not the full
+                              candidate pool (see `wake timeline candidates` for
+                              that -- a read-only query, not persisted to disk)
 ```
 
 Use `--work-dir DIR` (or `WAKE_WORK_DIR` env var) to control where

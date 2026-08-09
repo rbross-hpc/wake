@@ -176,13 +176,27 @@ the highest-leverage remaining carried-forward item — previously an
 agent had to read `classified.json` directly, stat `evidence/`, and
 re-derive the ranking formula from config by hand.
 
+v0.4.20 built Theme G (`wake timeline`): re-scoped mid-design from a
+one-shot `report.py`-style metrics renderer to the same "candidate
+material -> curated units -> stitch" pattern as `wake theme`/`wake
+narrative`, once framed around who actually uses it -- an agent and
+human choosing together what belongs on the timeline and how to
+periodize it, not wake computing a timeline on its own. `wake timeline
+candidates` is a read-only, complete, scored/dated/bucketed feed (never
+pre-selecting a "top N"); `period create`/`confirm` curate one period
+(bare-year or named span) at a time, confirming only once every
+highlighted work is human-verified; `stitch` produces `timeline.md` (the
+working artifact, all periods) and `timeline.json` (confirmed periods
+only -- the handoff to a separate graphic-rendering tool). Wired into
+`wake rebuild` and the rebuild manifest.
+
 **Next phase:** product features — Theme B (DOE-relevance signals), Theme
-G (timeline generation), Theme H (non-publication evidence search). See
-`BACKLOG.md`'s "Open / Not Yet Built" section for current sequencing.
+H (non-publication evidence search). See `BACKLOG.md`'s "Open / Not Yet
+Built" section for current sequencing.
 
 **Deferred, real, not forgotten:**
-- Product features: Theme B (DOE-relevance signals), Theme G (timeline
-  generation), Theme H (non-publication evidence search).
+- Product features: Theme B (DOE-relevance signals), Theme H
+  (non-publication evidence search).
 
 Explicitly **not** planned: replacing the filesystem-artifact model with
 a database. Both the original external assessment and independent

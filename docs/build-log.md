@@ -2349,3 +2349,102 @@ roadmap items remain: full `WakeContext` threading (deliberately deferred, no re
 Theme B (DOE-relevance signals, explicitly wanted by the user for their own use case), Theme G
 (timeline generation), Theme H (non-publication evidence search), and `wake narrative section
 audit` (claim-vs-dossier semantic check for `[ref:...]`-marked sentences).
+
+## v0.4.20 — Theme G: Timeline curation (`feature/timeline`)
+
+Originally scoped in BACKLOG.md as a lower-complexity, `report.py`-adjacent renderer: a Markdown
+timeline of key developments derived non-interactively from classified works' years + relationship
+strength. Mid-design, the user reframed the goal directly: the consumer of this feature is an agent
+and human iterating together in conversation, not a batch report -- wake's job is to hand over the
+material for that iteration, not to pre-decide what's a "key development." A further reframing
+during the same discussion mapped the unit of iteration onto periods of time with curated
+highlights, exactly like narrative sections: "the user/agent team are selecting from the material we
+have what should belong. timeline.md would be the working artifact of that, like narrative.md is."
+The shipped design follows from that framing, not the original BACKLOG scope.
+
+### What was built
+
+Rebuilt on the same "candidate material -> curated units -> stitch" pattern as `wake theme`/`wake
+narrative`, not a one-shot metrics aggregate:
+
+**Candidates** (`wake timeline candidates`, `timeline.build_candidates()`) -- read-only, complete,
+scored/dated view of every classified work, bucketed by year (default) or an N-year window
+(`--bucket-years`). Reuses `report._score()`/`report.relationship_score()` directly for scoring --
+never a second, drifted ranking formula. Same full resolution `wake assess`/`wake bake` use
+(overrides applied for verification status, confirmed duplicates flagged, exclusions flagged, never
+silently hidden). Deliberately never pre-selects "the milestones" or filters weak relationships by
+default -- `--min-strength`/`--since`/`--until` are query-time conveniences the agent varies in
+conversation, not a persisted decision; the editorial threshold for what counts as a "key
+development" stays between the agent and the human, not baked into a config default.
+
+**Periods** (`wake timeline period create`/`confirm`, new `wake/timeline.py`) -- a period is either
+an emergent single-year bucket (a bare year slug, e.g. `2012`, with `from_year`/`to_year` defaulted
+to that year) or a named span the team defines up front (e.g. `early-adoption` with explicit
+`--from`/`--to`) -- both are the same `TimelinePeriod` JSON shape (new models: `TimelinePeriod`,
+`TimelineHighlight`, `TimelinePeriodWrite`, `TIMELINE_PERIOD_VERSION`, `migrate_period()`), so
+neither mode needed a separate outline step (the user's explicit scope call: "First cut: candidates
+feed + period create/confirm + stitch, no separate outline"). Each highlight carries both a
+per-highlight note and the period carries its own framing note (the user's choice: "Both: a
+per-highlight note + a period-level note"). `create_period()` validates every highlight is
+classified and not excluded/a confirmed duplicate (same bar `wake theme create` enforces) and always
+writes `draft`. `confirm_period()` refuses unless every highlighted work is *currently*
+human-verified, re-resolved fresh at confirm time (not from the period's own possibly-stale JSON) --
+the user's explicit choice: "Require highlighted works be verified (like theme confirm)" -- a
+confirmed period is an evidentiary claim about what mattered at that point in the story, not merely
+an agent's classification guess. Periods may overlap or leave year gaps; that's the team's editorial
+call, reported (`stitch()`'s `overlaps`) but never enforced or auto-corrected.
+
+**Stitch** (`wake timeline stitch`) -- assembles every period (chronological by `from_year`) into
+two files with different audiences: `timeline.md` (the working, human-readable artifact showing
+every period confirmed-or-draft, clearly labeled -- like `narrative.md`) and `timeline.json` (the
+**CONFIRMED periods only** -- the handoff to a separate Tufte-style graphic-rendering tool, per the
+user's explicit choice: "The confirmed selection... not the full candidate pool"). Works on partial
+data, same philosophy as `wake bake`/`narrative.stitch`.
+
+**Wiring:** new `wake/cli/commands/timeline.py` (`candidates`/`period create`/`period confirm`/
+`period show`/`stitch`/`show`, nested like `wake narrative`), registered in `cli/main.py`.
+`build.py::rebuild_seed()` gained a `timeline_periods`/`timeline` step (re-renders period `.md`s,
+re-stitches) between `narrative` and `impact`; `_collect_source_hashes()` tracks
+`timeline/periods/*.json` as new render-input sources (rendered outputs `timeline.md`/`.json` are
+never hashed, consistent with the manifest's input-only design). `evidence_wiki.py`'s
+README/AGENTS.md orientation and `report.bake_markdown()`'s impact.md "See also" nav both gained a
+`[timeline](timeline.md)` link, conditional on `timeline.md` existing.
+
+### Documentation
+
+New `wake/skills/impact-analysis/references/timeline.md` (mirrors `themes.md`/`narrative.md`'s
+structure). SKILL.md gained Step 16 ("Curate a timeline of key developments," between narrative and
+Refine, which renumbered to Step 17) plus updates to "Rendering the Wiki"'s command/source lists and
+the frontmatter description. `references/reference.md`'s Full Command List and reference-file index,
+`references/output-layout.md`'s directory tree, `docs/workflow.md`'s command table, `BACKLOG.md`
+(Theme G moved from Deferred to Built, index table row), `PLAN.md`.
+
+### Verification
+
+New `tests/test_timeline.py` (35): `build_candidates` bucketing (per-year and N-year windows),
+no-pre-selection/`min_strength`-filtering/`since`-`until` behavior, undated/errored-work exclusion,
+override/exclusion/duplicate flag reporting, score-descending ordering within a bucket;
+`create_period` validation (empty/invalid-slug/unclassified/excluded/confirmed-duplicate
+highlights), bare-year vs. named-span defaulting, highlight status/notes, overwrite-preserves-
+created_at; `confirm_period` blocking on unverified highlights and re-resolving fresh after a later
+override; `stitch` chronological ordering, confirmed-vs-draft counts, confirmed-only `timeline.json`,
+overlap reporting, frontmatter; `rerender_all_periods`; CLI `--json`/human paths for every verb.
+Extended `tests/test_wiki_invariants.py`'s shared `_build_full_wiki` fixture with one confirmed
+timeline period and asserted the rendered wiki's README/AGENTS/impact.md timeline links and
+`timeline.json`'s confirmed-only shape; registered `timeline`/`timeline-period` frontmatter types in
+`tests/wiki_invariants.py`'s `KNOWN_TYPES`/`REQUIRED_KEYS_BY_TYPE`. Updated
+`tests/test_build.py::test_cli_rebuild_json_output`'s expected step-name set to include
+`timeline_periods`/`timeline`.
+
+`rtk ruff check wake/ tests/` clean, `rtk mypy` clean. Full offline suite under CI-parity
+conditions: 862 passed, 14 deselected (827 prior baseline + 35 new, no regressions).
+
+### Next phase
+
+Open roadmap items: full `WakeContext` threading (deliberately deferred, no realized payoff),
+Theme B (DOE-relevance signals, explicitly wanted by the user for their own use case), Theme H
+(non-publication evidence search), and `wake narrative section audit` (claim-vs-dossier semantic
+check for `[ref:...]`-marked sentences). No further follow-on identified specifically for Theme G --
+a second phase (e.g. an outline-equivalent step for planning periods up front, or folding in
+`--with-doe-signals`-style domain enrichment) could be revisited once the first cut has been used on
+a real seed.

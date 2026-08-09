@@ -665,6 +665,7 @@ def bake_markdown(
     themes_confirmed = themes_draft = 0
     narrative_status = "none"
     narrative_exists = False
+    timeline_exists = False
     themes_exist = False
     evidence_exists = False
     seed_pdf_status_value = "not-attempted"
@@ -672,9 +673,11 @@ def bake_markdown(
         from .evidence_wiki import seed_pdf_status
         from .narrative import narrative_md_path
         from .themes import themes_dir
+        from .timeline import timeline_md_path
 
         narrative_exists = narrative_md_path(oid, base).exists()
         narrative_status = "assembled" if narrative_exists else "none"
+        timeline_exists = timeline_md_path(oid, base).exists()
 
         td = themes_dir(oid, base)
         if td.exists():
@@ -734,6 +737,8 @@ def bake_markdown(
         nav_links.append("[themes](evidence/themes/index.md)")
     if narrative_exists:
         nav_links.append("[narrative](narrative.md)")
+    if timeline_exists:
+        nav_links.append("[timeline](timeline.md)")
     if nav_links:
         lines.append("")
         lines.append("See also: " + " · ".join(nav_links))

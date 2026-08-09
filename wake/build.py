@@ -99,6 +99,7 @@ def _collect_source_hashes(seed_id: str, base: Path | None = None) -> dict[str, 
     from .narrative import narrative_dir, outline_json_path, sections_dir
     from .seed import work_dir
     from .themes import themes_dir
+    from .timeline import periods_dir as timeline_periods_dir
 
     wd = work_dir(seed_id, base)
     sources: dict[str, str] = {}
@@ -130,6 +131,11 @@ def _collect_source_hashes(seed_id: str, base: Path | None = None) -> dict[str, 
     if sd.exists():
         for p in sorted(sd.glob("*.json")):
             _hash_file(p, f"narrative/sections/{p.name}")
+
+    tpd = timeline_periods_dir(seed_id, base)
+    if tpd.exists():
+        for p in sorted(tpd.glob("*.json")):
+            _hash_file(p, f"timeline/periods/{p.name}")
 
     return sources
 
@@ -193,6 +199,8 @@ def rebuild_seed(
             {"step": "outline", "rebuilt": true|false},
             {"step": "sections", "rebuilt": [...slugs...]},
             {"step": "narrative", "rebuilt": true|false},
+            {"step": "timeline_periods", "rebuilt": [...slugs...]},
+            {"step": "timeline", "rebuilt": true|false},
             {"step": "impact", "rebuilt": true|false},
             {"step": "wiki_orientation", "rebuilt": true},
           ],
@@ -226,6 +234,8 @@ def rebuild_seed(
         stitch,
     )
     from .themes import rerender_all_themes, themes_dir
+    from .timeline import periods_dir, rerender_all_periods
+    from .timeline import stitch as timeline_stitch
 
     seed_id = seed_work["openalex_id"]
     seed_title = seed_work.get("title")
@@ -296,6 +306,24 @@ def rebuild_seed(
         steps.append({"step": "narrative", "rebuilt": True})
     else:
         steps.append({"step": "narrative", "rebuilt": False})
+
+    # 3.5. Timeline: periods before the stitched timeline.md/timeline.json
+    # (timeline.stitch() reads every period, chronologically ordered by
+    # from_year -- no separate outline to refresh first, unlike
+    # narrative, since a period's own slug/from_year/to_year fully
+    # determine its place; see timeline.py's module docstring).
+    pd = periods_dir(seed_id, base)
+    if pd.exists() and any(pd.glob("*.json")):
+        _log("re-rendering timeline periods...")
+        rebuilt_periods = rerender_all_periods(seed_id, seed_work, base=base)
+        steps.append({"step": "timeline_periods", "rebuilt": rebuilt_periods})
+
+        _log("re-stitching timeline.md...")
+        timeline_stitch(seed_work, base=base)
+        steps.append({"step": "timeline", "rebuilt": True})
+    else:
+        steps.append({"step": "timeline_periods", "rebuilt": []})
+        steps.append({"step": "timeline", "rebuilt": False})
 
     # 4. impact.md/impact.json -- rebuilt from classified.json (falling
     # back to citing.json if nothing has been classified yet), same
