@@ -3,7 +3,7 @@
 """Tests for wake.classify's multi-facet relationship parsing (see
 classify.py's module docstring for the design rationale: a citing paper's
 relationship to the seed is sometimes genuinely more than one story --
-e.g. both "uses-as-tool" and "applies-to-domain" -- and forcing a single
+e.g. both "uses-method-from" and "applies-to-domain" -- and forcing a single
 label loses that signal).
 
 Covers: classify-3 multi-facet response parsing, classify-2 legacy
@@ -50,12 +50,12 @@ def test_system_prompt_unknown_version_falls_back_to_classify_2():
 def test_parse_multi_facet_response_two_facets():
     result = {
         "relationships": [
-            {"label": "uses-as-tool", "confidence": 0.95, "justification": "Uses PnetCDF as-is."},
+            {"label": "uses-method-from", "confidence": 0.95, "justification": "Uses PnetCDF as-is."},
             {"label": "applies-to-domain", "confidence": 0.8, "justification": "Applies it to flood modeling."},
         ]
     }
     facets = _parse_relationships_response(result)
-    assert [f["label"] for f in facets] == ["uses-as-tool", "applies-to-domain"]
+    assert [f["label"] for f in facets] == ["uses-method-from", "applies-to-domain"]
     assert facets[0]["confidence"] == 0.95
 
 
@@ -84,7 +84,7 @@ def test_parse_response_drops_facets_below_min_confidence():
     result = {
         "relationships": [
             {"label": "extends", "confidence": 0.9, "justification": "x"},
-            {"label": "builds-on", "confidence": MIN_FACET_CONFIDENCE - 0.01, "justification": "weak"},
+            {"label": "uses-method-from", "confidence": MIN_FACET_CONFIDENCE - 0.01, "justification": "weak"},
         ]
     }
     facets = _parse_relationships_response(result)
@@ -115,29 +115,29 @@ def test_parse_response_caps_at_max_facets():
     result = {
         "relationships": [
             {"label": "extends", "confidence": 0.95, "justification": "a"},
-            {"label": "builds-on", "confidence": 0.9, "justification": "b"},
-            {"label": "uses-as-tool", "confidence": 0.85, "justification": "c"},
+            {"label": "uses-method-from", "confidence": 0.9, "justification": "b"},
+            {"label": "uses-method-from", "confidence": 0.85, "justification": "c"},
             {"label": "benchmarks", "confidence": 0.8, "justification": "d"},
         ]
     }
     facets = _parse_relationships_response(result)
     assert len(facets) == MAX_FACETS
-    assert [f["label"] for f in facets] == ["extends", "builds-on", "uses-as-tool"]
+    assert [f["label"] for f in facets] == ["extends", "uses-method-from", "uses-method-from"]
 
 
 def test_parse_response_falls_back_to_background_mention_when_nothing_usable():
     """Every facet failing validation (bad label, all below threshold, or
     a garbled/empty response) must never leave classify_one with zero
-    facets -- background-mention is always the safety-net fallback."""
+    facets -- cites is always the safety-net fallback."""
     result = {"relationships": [{"label": "not-a-real-label", "confidence": 0.9, "justification": "x"}]}
     facets = _parse_relationships_response(result)
-    assert facets == [{"label": "background-mention", "confidence": 0.5, "justification": ""}]
+    assert facets == [{"label": "cites", "confidence": 0.5, "justification": ""}]
 
 
 def test_parse_response_empty_relationships_list_falls_back():
     result = {"relationships": []}
     facets = _parse_relationships_response(result)
-    assert facets == [{"label": "background-mention", "confidence": 0.5, "justification": ""}]
+    assert facets == [{"label": "cites", "confidence": 0.5, "justification": ""}]
 
 
 def test_parse_response_non_dict_facets_are_skipped():
@@ -157,10 +157,10 @@ def test_parse_response_bad_confidence_type_defaults_to_half():
 def test_normalize_relationships_prefers_existing_list():
     payload = {
         "relationship": "extends",  # legacy scalar, should be ignored since list is present
-        "relationships": [{"label": "uses-as-tool", "confidence": 0.8, "justification": "x"}],
+        "relationships": [{"label": "uses-method-from", "confidence": 0.8, "justification": "x"}],
     }
     facets = _normalize_relationships(payload)
-    assert facets == [{"label": "uses-as-tool", "confidence": 0.8, "justification": "x"}]
+    assert facets == [{"label": "uses-method-from", "confidence": 0.8, "justification": "x"}]
 
 
 def test_normalize_relationships_synthesizes_from_legacy_scalars():
@@ -181,7 +181,7 @@ def test_normalize_relationships_empty_list_falls_back_to_scalars():
 
 def test_normalize_relationships_defaults_to_background_mention():
     facets = _normalize_relationships({})
-    assert facets[0]["label"] == "background-mention"
+    assert facets[0]["label"] == "cites"
 
 
 # --- classify_one end-to-end (multi-facet) --------------------------------
@@ -189,7 +189,7 @@ def test_normalize_relationships_defaults_to_background_mention():
 def _fake_multi_facet_response(*args, **kwargs):
     return {
         "relationships": [
-            {"label": "uses-as-tool", "confidence": 0.95, "justification": "Uses PnetCDF as-is for I/O."},
+            {"label": "uses-method-from", "confidence": 0.95, "justification": "Uses PnetCDF as-is for I/O."},
             {"label": "applies-to-domain", "confidence": 0.8, "justification": "Applies it to flood modeling."},
         ]
     }
@@ -201,11 +201,11 @@ def test_classify_one_with_classify_3_produces_multi_facet_sidecar():
         result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
 
     assert len(result["relationships"]) == 2
-    assert result["relationships"][0]["label"] == "uses-as-tool"
+    assert result["relationships"][0]["label"] == "uses-method-from"
     # Legacy scalars are set from the top (most-confident) facet, so
     # every existing consumer (themes, narrative, report metrics) keeps
     # working unchanged.
-    assert result["relationship"] == "uses-as-tool"
+    assert result["relationship"] == "uses-method-from"
     assert result["confidence"] == 0.95
     assert result["justification"] == "Uses PnetCDF as-is for I/O."
 

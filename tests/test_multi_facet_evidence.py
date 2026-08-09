@@ -32,7 +32,7 @@ def _copy_fixture_pdf(tmp_path: Path) -> Path:
 
 CLASSIFIED_CITING_WORK = {
     **SAMPLE_CITING_WORKS[0],
-    "relationship": "uses-as-tool",
+    "relationship": "uses-method-from",
     "confidence": 0.4,
     "justification": "Likely uses PnetCDF for I/O, based on the abstract alone.",
     "has_abstract": True,
@@ -46,7 +46,7 @@ def test_parse_proposed_multi_facet_response_with_per_facet_quotes():
     result = {
         "relationships": [
             {
-                "label": "uses-as-tool", "confidence": 0.95,
+                "label": "uses-method-from", "confidence": 0.95,
                 "justification": "Integrates PnetCDF for all I/O.",
                 "quotes": [{"page": 9, "text": "PnetCDF was integrated into IFM for all I/O.", "note": "Direct statement."}],
             },
@@ -59,7 +59,7 @@ def test_parse_proposed_multi_facet_response_with_per_facet_quotes():
         "agrees_with_provisional": True,
     }
     facets = evidence._parse_proposed_relationships(result)
-    assert [f["label"] for f in facets] == ["uses-as-tool", "applies-to-domain"]
+    assert [f["label"] for f in facets] == ["uses-method-from", "applies-to-domain"]
     assert facets[0]["quotes"] == [{"page": 9, "text": "PnetCDF was integrated into IFM for all I/O.", "note": "Direct statement."}]
     assert facets[1]["quotes"][0]["page"] == 2
 
@@ -91,7 +91,7 @@ def test_parse_proposed_drops_empty_quote_text():
 def test_parse_proposed_falls_back_to_background_mention_when_nothing_usable():
     result = {"relationships": [{"label": "bogus-label", "confidence": 0.9, "justification": "x"}]}
     facets = evidence._parse_proposed_relationships(result)
-    assert facets == [{"label": "background-mention", "confidence": 0.5, "justification": "", "quotes": []}]
+    assert facets == [{"label": "cites", "confidence": 0.5, "justification": "", "quotes": []}]
 
 
 # --- verify_full_text end-to-end -------------------------------------------
@@ -100,7 +100,7 @@ def _fake_multi_facet_evidence_response(*args, **kwargs):
     return {
         "relationships": [
             {
-                "label": "uses-as-tool", "confidence": 0.95,
+                "label": "uses-method-from", "confidence": 0.95,
                 "justification": "Integrates PnetCDF for all I/O.",
                 "quotes": [{"page": 9, "text": "PnetCDF was integrated for all I/O.", "note": "Direct statement."}],
             },
@@ -124,10 +124,10 @@ def test_verify_full_text_with_evidence_2_produces_multi_facet_proposed():
 
     proposed = finding["proposed"]
     assert len(proposed["relationships"]) == 2
-    assert proposed["relationships"][0]["label"] == "uses-as-tool"
+    assert proposed["relationships"][0]["label"] == "uses-method-from"
     assert proposed["relationships"][1]["label"] == "applies-to-domain"
     # Legacy scalars set from the top (most-confident) facet.
-    assert proposed["relationship"] == "uses-as-tool"
+    assert proposed["relationship"] == "uses-method-from"
     assert proposed["confidence"] == 0.95
     assert proposed["agrees_with_provisional"] is True
 
@@ -144,7 +144,7 @@ def test_verify_full_text_dedups_identical_quotes_across_facets():
         shared_quote = {"page": 5, "text": "Same passage cited by both facets.", "note": "shared"}
         return {
             "relationships": [
-                {"label": "uses-as-tool", "confidence": 0.9, "justification": "x", "quotes": [shared_quote]},
+                {"label": "uses-method-from", "confidence": 0.9, "justification": "x", "quotes": [shared_quote]},
                 {"label": "applies-to-domain", "confidence": 0.85, "justification": "y", "quotes": [shared_quote]},
             ],
         }
@@ -188,7 +188,7 @@ def test_verify_full_text_provisional_facets_from_classify_one_output():
     multi_facet_citing_work = {
         **CLASSIFIED_CITING_WORK,
         "relationships": [
-            {"label": "uses-as-tool", "confidence": 0.6, "justification": "a"},
+            {"label": "uses-method-from", "confidence": 0.6, "justification": "a"},
             {"label": "applies-to-domain", "confidence": 0.55, "justification": "b"},
         ],
     }
@@ -203,7 +203,7 @@ def test_verify_full_text_provisional_facets_from_classify_one_output():
         )
 
     assert len(finding["provisional"]["relationships"]) == 2
-    assert finding["provisional"]["relationship"] == "uses-as-tool"
+    assert finding["provisional"]["relationship"] == "uses-method-from"
 
 
 # --- build_dossier + dossier markdown rendering (multi-facet) ------------
@@ -227,7 +227,7 @@ def test_build_dossier_multi_facet_renders_per_facet_sections(tmp_path):
     assert result["ok"] is True
 
     md_text = Path(result["dossier_path"]).read_text()
-    assert "### uses-as-tool (confidence: 0.95)" in md_text
+    assert "### uses-method-from (confidence: 0.95)" in md_text
     assert "### applies-to-domain (confidence: 0.80)" in md_text
     assert "PnetCDF was integrated for all I/O." in md_text
     assert "IFM is a flood-modeling framework for petascale HPC." in md_text
@@ -237,10 +237,10 @@ def test_build_dossier_multi_facet_frontmatter_lists_one_entry_per_facet(tmp_pat
     result = _build_multi_facet_dossier(tmp_path)
     md_text = Path(result["dossier_path"]).read_text()
     proposed_line = next(line for line in md_text.splitlines() if line.startswith("proposed_relationships:"))
-    assert "uses-as-tool" in proposed_line
+    assert "uses-method-from" in proposed_line
     assert "applies-to-domain" in proposed_line
     # Facets are listed in ranking order within the array.
-    assert proposed_line.index("uses-as-tool") < proposed_line.index("applies-to-domain")
+    assert proposed_line.index("uses-method-from") < proposed_line.index("applies-to-domain")
 
 
 def test_build_dossier_multi_facet_json_sidecar_round_trips(tmp_path):
@@ -249,7 +249,7 @@ def test_build_dossier_multi_facet_json_sidecar_round_trips(tmp_path):
         PARALLEL_NETCDF_WORK["openalex_id"], CLASSIFIED_CITING_WORK["openalex_id"], base=tmp_path,
     )
     assert len(loaded["proposed"]["relationships"]) == 2
-    assert loaded["proposed"]["relationships"][0]["label"] == "uses-as-tool"
+    assert loaded["proposed"]["relationships"][0]["label"] == "uses-method-from"
 
 
 def test_rerender_dossier_md_preserves_multi_facet_shape(tmp_path):
@@ -261,7 +261,7 @@ def test_rerender_dossier_md_preserves_multi_facet_shape(tmp_path):
 
     md_path = evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, citing_id, base=tmp_path)
     md_text = md_path.read_text()
-    assert "### uses-as-tool (confidence: 0.95)" in md_text
+    assert "### uses-method-from (confidence: 0.95)" in md_text
     assert "### applies-to-domain (confidence: 0.80)" in md_text
 
 
@@ -273,7 +273,7 @@ def test_build_dossier_multi_facet_provisional_renders_per_facet_sections(tmp_pa
     multi_facet_citing_work = {
         **CLASSIFIED_CITING_WORK,
         "relationships": [
-            {"label": "uses-as-tool", "confidence": 0.6, "justification": "Abstract mentions PnetCDF adoption."},
+            {"label": "uses-method-from", "confidence": 0.6, "justification": "Abstract mentions PnetCDF adoption."},
             {"label": "applies-to-domain", "confidence": 0.55, "justification": "Abstract mentions flood modeling."},
         ],
     }
@@ -288,10 +288,10 @@ def test_build_dossier_multi_facet_provisional_renders_per_facet_sections(tmp_pa
 
     evidence.rerender_dossier_md(PARALLEL_NETCDF_WORK, multi_facet_citing_work["openalex_id"], base=tmp_path)
     md_text = Path(result["dossier_path"]).read_text()
-    assert "### uses-as-tool (confidence: 0.60)" in md_text
+    assert "### uses-method-from (confidence: 0.60)" in md_text
     assert "### applies-to-domain (confidence: 0.55)" in md_text
     provisional_line = next(line for line in md_text.splitlines() if line.startswith("provisional_relationships:"))
-    assert "uses-as-tool" in provisional_line
+    assert "uses-method-from" in provisional_line
     assert "applies-to-domain" in provisional_line
 
 

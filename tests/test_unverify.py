@@ -34,7 +34,7 @@ def _copy_fixture_pdf(tmp_path: Path, name: str = "citing.pdf") -> Path:
 def _classified_work(idx: int = 0, **overrides) -> dict:
     return {
         **SAMPLE_CITING_WORKS[idx],
-        "relationship": "uses-as-tool",
+        "relationship": "uses-method-from",
         "confidence": 0.4,
         "justification": "Likely uses PnetCDF for I/O, based on the abstract alone.",
         "has_abstract": True,
@@ -76,7 +76,7 @@ def test_remove_override_removes_entry(tmp_path):
 def test_remove_override_only_removes_matching_id(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     report.add_override(seed_id, "W1", relationship="extends", justification="x", base=tmp_path)
-    report.add_override(seed_id, "W2", relationship="uses-as-tool", justification="y", base=tmp_path)
+    report.add_override(seed_id, "W2", relationship="uses-method-from", justification="y", base=tmp_path)
     report.remove_override(seed_id, "W1", base=tmp_path)
 
     overrides = report.load_overrides(seed_id, base=tmp_path)
@@ -87,7 +87,7 @@ def test_remove_override_only_removes_matching_id(tmp_path):
 def test_remove_override_handles_multiple_prior_entries_for_same_id(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
     report.add_override(seed_id, "W1", relationship="extends", justification="first", base=tmp_path)
-    report.add_override(seed_id, "W1", relationship="uses-as-tool", justification="second", base=tmp_path)
+    report.add_override(seed_id, "W1", relationship="uses-method-from", justification="second", base=tmp_path)
     removed = report.remove_override(seed_id, "W1", base=tmp_path)
     assert removed is True
     assert "W1" not in report.load_overrides(seed_id, base=tmp_path)
@@ -129,10 +129,10 @@ def test_mark_pending_undoes_relationship_correction(tmp_path):
     citing_id = SAMPLE_CITING_WORKS[0]["openalex_id"]
     _build_dossier(tmp_path, citing_work=_classified_work(0), relationship="extends")
     evidence_wiki.mark_verified(
-        seed_id, citing_id, justification="corrected", relationship="uses-as-tool", base=tmp_path,
+        seed_id, citing_id, justification="corrected", relationship="uses-method-from", base=tmp_path,
     )
     loaded = evidence.load_dossier(seed_id, citing_id, base=tmp_path)
-    assert loaded["proposed"]["relationship"] == "uses-as-tool"
+    assert loaded["proposed"]["relationship"] == "uses-method-from"
 
     evidence_wiki.mark_pending(seed_id, citing_id, base=tmp_path)
 
@@ -145,7 +145,7 @@ def test_mark_pending_undoes_relationship_correction(tmp_path):
     md_text = evidence.dossier_path(seed_id, citing_id, base=tmp_path).read_text()
     proposed_line = next(line for line in md_text.splitlines() if line.startswith("proposed_relationships:"))
     assert "extends" in proposed_line
-    assert "uses-as-tool" not in proposed_line
+    assert "uses-method-from" not in proposed_line
 
 
 # --- unverify_work -----------------------------------------------------

@@ -45,9 +45,9 @@ N-year window with `--bucket-years`), each with its `score`
 ```
 
 **This never pre-selects "the milestones."** Every classified work with a
-year is included — background-mention and all — sorted by score within
+year is included — `cites` and all — sorted by score within
 its bucket. `--min-strength` is a query-time convenience (e.g. "hide
-background-mention for this pass"), not a persisted decision; omit it to
+`cites`-tier works for this pass"), not a persisted decision; omit it to
 see everything and decide the threshold in conversation with the human.
 An excluded or confirmed-duplicate work is still shown (flagged, not
 hidden) so nothing looks silently missing.

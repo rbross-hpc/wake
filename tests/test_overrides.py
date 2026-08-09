@@ -45,7 +45,7 @@ def test_add_override_migrates_legacy_dotfile_in_place(tmp_path):
     legacy_entry = {"citing_id": "W_old", "relationship": "extends"}
     legacy_path.write_text(json.dumps(legacy_entry) + "\n", encoding="utf-8")
 
-    add_override(seed_id, "W_new", relationship="uses-as-tool", base=tmp_path)
+    add_override(seed_id, "W_new", relationship="uses-method-from", base=tmp_path)
 
     assert not legacy_path.exists()
     overrides = load_overrides(seed_id, base=tmp_path)
@@ -87,13 +87,13 @@ def test_override_last_write_wins(tmp_path):
 
 
 def test_apply_overrides_no_overrides():
-    classified = [{**w, "relationship": "uses-as-tool"} for w in SAMPLE_CITING_WORKS]
+    classified = [{**w, "relationship": "uses-method-from"} for w in SAMPLE_CITING_WORKS]
     result = apply_overrides(classified, {})
     assert result == classified
 
 
 def test_apply_overrides_replaces_relationship():
-    classified = [{**w, "relationship": "background-mention"} for w in SAMPLE_CITING_WORKS]
+    classified = [{**w, "relationship": "cites"} for w in SAMPLE_CITING_WORKS]
     target_id = SAMPLE_CITING_WORKS[0]["openalex_id"]
     overrides = {target_id: {"relationship": "extends", "human_reviewed": True}}
 
@@ -103,4 +103,4 @@ def test_apply_overrides_replaces_relationship():
     assert target["human_reviewed"] is True
 
     others = [w for w in result if w["openalex_id"] != target_id]
-    assert all(w["relationship"] == "background-mention" for w in others)
+    assert all(w["relationship"] == "cites" for w in others)

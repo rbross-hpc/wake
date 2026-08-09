@@ -231,10 +231,10 @@ def test_bake_excludes_confirmed_duplicate_from_reach_metrics(tmp_path):
     from wake.report import bake_and_save
 
     works = [
-        {**_PREPRINT, "relationship": "uses-as-tool", "confidence": 0.9,
+        {**_PREPRINT, "relationship": "uses-method-from", "confidence": 0.9,
          "justification": "j", "has_abstract": True, "strength": 5,
          "verification_status": "provisional"},
-        {**_PUBLISHED, "relationship": "uses-as-tool", "confidence": 0.9,
+        {**_PUBLISHED, "relationship": "uses-method-from", "confidence": 0.9,
          "justification": "j", "has_abstract": True, "strength": 5,
          "verification_status": "provisional"},
     ]

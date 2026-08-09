@@ -222,7 +222,7 @@ def relationship_score(relationships: list[dict] | str, cited_by_count: int | No
     every existing call site and for a plain human-judgment override,
     which is always single-label) or a multi-facet list of
     {"label": ..., ...} dicts (see classify.py's multi-facet schema). A
-    citing work that's genuinely both "uses-as-tool" and
+    citing work that's genuinely both "uses-method-from" and
     "applies-to-domain" scores by whichever facet's strength is highest --
     MAX, not sum or average (see BACKLOG/PLAN discussion): the strongest
     single story a work tells is what should drive its rank, not an
@@ -261,7 +261,7 @@ def _score(work: dict) -> float:
     pre-existing sidecar/override might still carry (see
     relationship_score()'s docstring)."""
     return relationship_score(
-        work.get("relationships") or work.get("relationship", "background-mention"),
+        work.get("relationships") or work.get("relationship", "cites"),
         work.get("cited_by_count", 0),
     )
 
@@ -348,7 +348,7 @@ def build_metrics(
 
     # Counts each classified work under EVERY facet it has (see Q2 in the
     # multi-facet design discussion), not just its top/legacy facet -- a
-    # work that's genuinely both "uses-as-tool" and "applies-to-domain"
+    # work that's genuinely both "uses-method-from" and "applies-to-domain"
     # increments both rows. Rows can therefore sum to more than
     # classified_count; bake_markdown's rendered table footnotes this.
     # Almost every work has exactly one facet (see classify.py's
@@ -358,9 +358,9 @@ def build_metrics(
     verified_count = 0
     self_extension_count = 0
     for w in classified:
-        facets = w.get("relationships") or [{"label": w.get("relationship", "background-mention")}]
+        facets = w.get("relationships") or [{"label": w.get("relationship", "cites")}]
         for f in facets:
-            by_relationship[f.get("label", "background-mention")] += 1
+            by_relationship[f.get("label", "cites")] += 1
         if w.get("verification_status") == "verified":
             verified_count += 1
         if w.get("author_overlap"):
@@ -575,7 +575,7 @@ def build_assessment(seed_work: dict[str, Any], base: Path | None = None) -> dic
             ]
             best_strength = max((strengths.get(label, 1) for label in labels), default=1)
         else:
-            best_strength = strengths.get(w.get("relationship", "background-mention"), 1)
+            best_strength = strengths.get(w.get("relationship", "cites"), 1)
 
         score = _score(w)
         row = {
@@ -857,7 +857,7 @@ def bake_markdown(
         lines.append(
             "*Rows may sum to more than the total classified count: a "
             "citing work can legitimately show more than one relationship "
-            "to the seed (e.g. both `uses-as-tool` and `applies-to-domain`) "
+            "to the seed (e.g. both `uses-method-from` and `applies-to-domain`) "
             "-- each is counted in its own row.*"
         )
         lines.append("")

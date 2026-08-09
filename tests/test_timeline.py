@@ -50,8 +50,8 @@ def _run_cli(argv, tmp_path, capsys):
 def _classified_work(idx: int, **overrides) -> dict:
     return {
         **SAMPLE_CITING_WORKS[idx],
-        "relationship": "uses-as-tool",
-        "relationships": [{"label": "uses-as-tool", "confidence": 0.8,
+        "relationship": "uses-method-from",
+        "relationships": [{"label": "uses-method-from", "confidence": 0.8,
                             "justification": "x", "quotes": [], "verified": None}],
         "confidence": 0.8,
         "justification": "Uses PnetCDF for I/O.",
@@ -110,19 +110,19 @@ def test_build_candidates_bucket_years_groups_windows(tmp_path):
 
 def test_build_candidates_no_pre_selection_includes_all_relationships(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
-    weak = {**_classified_work(0), "relationship": "background-mention",
-            "relationships": [{"label": "background-mention", "confidence": 0.5,
+    weak = {**_classified_work(0), "relationship": "cites",
+            "relationships": [{"label": "cites", "confidence": 0.5,
                                 "justification": "x", "quotes": [], "verified": None}]}
     save_classified(seed_id, [weak], base=tmp_path)
 
     data = timeline.build_candidates(PARALLEL_NETCDF_WORK, base=tmp_path)
-    assert data["buckets"][0]["works"][0]["relationship"] == "background-mention"
+    assert data["buckets"][0]["works"][0]["relationship"] == "cites"
 
 
 def test_build_candidates_min_strength_filters(tmp_path):
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
-    weak = {**_classified_work(0), "relationship": "background-mention",
-            "relationships": [{"label": "background-mention", "confidence": 0.5,
+    weak = {**_classified_work(0), "relationship": "cites",
+            "relationships": [{"label": "cites", "confidence": 0.5,
                                 "justification": "x", "quotes": [], "verified": None}]}
     strong = {**_classified_work(1), "relationship": "extends",
               "relationships": [{"label": "extends", "confidence": 0.9,

@@ -173,14 +173,14 @@ def test_assert_facet_list_valid_passes_for_single_facet():
 
 def test_assert_facet_list_valid_passes_for_two_confidence_descending_facets():
     assert_facet_list_valid([
-        {"label": "uses-as-tool", "confidence": 0.95, "justification": "a"},
+        {"label": "uses-method-from", "confidence": 0.95, "justification": "a"},
         {"label": "applies-to-domain", "confidence": 0.8, "justification": "b"},
     ])
 
 
 def test_assert_facet_list_valid_passes_for_equal_confidence_facets():
     assert_facet_list_valid([
-        {"label": "uses-as-tool", "confidence": 0.8, "justification": "a"},
+        {"label": "uses-method-from", "confidence": 0.8, "justification": "a"},
         {"label": "applies-to-domain", "confidence": 0.8, "justification": "b"},
     ])
 
@@ -193,8 +193,8 @@ def test_assert_facet_list_valid_fails_on_empty_list():
 def test_assert_facet_list_valid_fails_when_exceeding_max_facets():
     facets = [
         {"label": "extends", "confidence": 0.95, "justification": "a"},
-        {"label": "builds-on", "confidence": 0.9, "justification": "b"},
-        {"label": "uses-as-tool", "confidence": 0.85, "justification": "c"},
+        {"label": "uses-method-from", "confidence": 0.9, "justification": "b"},
+        {"label": "uses-data-from", "confidence": 0.85, "justification": "c"},
         {"label": "benchmarks", "confidence": 0.8, "justification": "d"},
     ]
     with pytest.raises(AssertionError, match="MAX_FACETS"):
@@ -224,7 +224,7 @@ def test_assert_facet_list_valid_fails_on_non_numeric_confidence():
 def test_assert_facet_list_valid_fails_when_not_confidence_descending():
     with pytest.raises(AssertionError, match="not confidence-descending"):
         assert_facet_list_valid([
-            {"label": "uses-as-tool", "confidence": 0.6, "justification": "a"},
+            {"label": "uses-method-from", "confidence": 0.6, "justification": "a"},
             {"label": "applies-to-domain", "confidence": 0.9, "justification": "b"},
         ])
 
@@ -295,7 +295,7 @@ def test_assert_r_anchors_resolve_fails_on_unused_block_id():
 def _classified_work(idx: int, **overrides) -> dict:
     return {
         **SAMPLE_CITING_WORKS[idx],
-        "relationship": "uses-as-tool",
+        "relationship": "uses-method-from",
         "confidence": 0.4,
         "justification": "Likely uses PnetCDF for I/O.",
         "has_abstract": True,
@@ -319,7 +319,7 @@ def _fake_multi_facet_verification_response():
     return {
         "relationships": [
             {
-                "label": "uses-as-tool", "confidence": 0.95,
+                "label": "uses-method-from", "confidence": 0.95,
                 "justification": "Integrates PnetCDF for all I/O.",
                 "quotes": [{"page": 9, "text": "PnetCDF was integrated for all I/O.", "note": "Direct statement."}],
             },
@@ -375,7 +375,7 @@ def _build_full_wiki(tmp_path):
     verified-but-unreferenced dossier -- exercising the 'no back-link
     line' path), one classified-but-never-evidenced work (exercising the
     raw-[ref:...]-marker path), one multi-facet dossier (both
-    "uses-as-tool" and "applies-to-domain", exercising the per-facet
+    "uses-method-from" and "applies-to-domain", exercising the per-facet
     rendering path), a confirmed theme, a stitched narrative with one
     theme-grounded section, and a baked impact brief."""
     seed_id = PARALLEL_NETCDF_WORK["openalex_id"]
@@ -384,11 +384,11 @@ def _build_full_wiki(tmp_path):
     w2 = _classified_work(2, doi=None)  # never evidenced -- provisional only
     w3 = {
         **_MULTI_FACET_WORK,
-        "relationship": "uses-as-tool",
+        "relationship": "uses-method-from",
         "confidence": 0.6,
         "justification": "Likely uses PnetCDF and applies it to flood modeling.",
         "relationships": [
-            {"label": "uses-as-tool", "confidence": 0.6, "justification": "Likely uses PnetCDF."},
+            {"label": "uses-method-from", "confidence": 0.6, "justification": "Likely uses PnetCDF."},
             {"label": "applies-to-domain", "confidence": 0.55, "justification": "Applies it to flood modeling."},
         ],
         "has_abstract": True,
@@ -442,7 +442,7 @@ def _build_full_wiki(tmp_path):
          "verification_status": "verified", "verification_source": "evidence-dossier"},
         {**w1, "relationship": "extends", "confidence": 1.0, "justification": "accepted",
          "verification_status": "verified", "verification_source": "evidence-dossier"},
-        {**w2, "relationship": "background-mention", "confidence": 0.3, "justification": "Mentioned only."},
+        {**w2, "relationship": "cites", "confidence": 0.3, "justification": "Mentioned only."},
         w3,
     ]
     report.bake_and_save(PARALLEL_NETCDF_WORK, classified, base=tmp_path, verbose=False)
@@ -521,7 +521,7 @@ def test_full_wiki_output_satisfies_all_invariants(tmp_path):
     agents_text = (wiki_root / "AGENTS.md").read_text()
     assert_agents_md_declares_all_types(agents_text, md_files, source="AGENTS.md")
 
-    # w3's dossier has two facets (uses-as-tool + applies-to-domain) --
+    # w3's dossier has two facets (uses-method-from + applies-to-domain) --
     # its JSON sidecar's proposed.relationships must satisfy the facet
     # invariant, and its rendered .md must show both per-facet sections.
     w3_json = evidence.load_dossier(ctx["seed_id"], ctx["w3"]["openalex_id"], base=tmp_path)
@@ -529,7 +529,7 @@ def test_full_wiki_output_satisfies_all_invariants(tmp_path):
     assert_facet_list_valid(w3_json["provisional"]["relationships"], source="evidence/W1000000004.json (provisional)")
 
     w3_dossier = (wiki_root / "evidence" / f"{ctx['w3']['openalex_id']}.md").read_text()
-    assert "### uses-as-tool (confidence: 0.95)" in w3_dossier
+    assert "### uses-method-from (confidence: 0.95)" in w3_dossier
     assert "### applies-to-domain (confidence: 0.80)" in w3_dossier
 
     # impact.md's relationship table footnotes the over-count caused by

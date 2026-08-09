@@ -8,7 +8,7 @@ Phase 6 (v0.4.6) extended this module with genuine dossier versioning:
 format management for dossiers.  See PLAN.md v0.4.6 for the full account.
 
 ``SCHEMA_VERSION`` (= 1) is the baseline version all other artifact families
-default to.  ``EVIDENCE_DOSSIER_VERSION`` (= 2) is the current on-disk
+default to.  ``EVIDENCE_DOSSIER_VERSION`` (= 3) is the current on-disk
 version for newly written dossiers; old packets with no ``schema_version``
 key are treated as v0 and migrated forward through ``migrate_dossier()``.
 Nothing in this module talks to the filesystem or to an LLM.
@@ -22,11 +22,15 @@ from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from wake.vocabulary import CANONICAL_RELATIONSHIPS, RelationshipLabel  # noqa: F401
+from wake.vocabulary import (  # noqa: F401
+    CANONICAL_RELATIONSHIPS,
+    RETIRED_RELATIONSHIPS,
+    RelationshipLabel,
+)
 
 SCHEMA_VERSION = 1
 
-EVIDENCE_DOSSIER_VERSION = 2
+EVIDENCE_DOSSIER_VERSION = 3
 
 VerificationStatus = Literal["provisional", "pending-human-review", "verified"]
 VerificationSource = Literal["human-judgment", "evidence-dossier"]
@@ -159,7 +163,7 @@ class ClassificationResult(WakeModel):
         return v
 
 
-CLASSIFICATION_VERSION = 1
+CLASSIFICATION_VERSION = 2
 
 
 class ClassificationResultWrite(ClassificationResult):
@@ -177,7 +181,7 @@ class ClassificationResultWrite(ClassificationResult):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
-CLASSIFIED_FILE_VERSION = 1
+CLASSIFIED_FILE_VERSION = 2
 
 
 class ClassifiedFile(WakeModel):
@@ -212,12 +216,49 @@ class ClassifiedFileWrite(ClassifiedFile):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
+def _remap_retired_relationship(label: Any) -> Any:
+    """Rewrite *label* forward to its replacement if it's one of the four
+    labels retired by the v0.4.21 CiTO-alignment taxonomy refactor
+    (uses-as-tool/builds-on -> uses-method-from; related-infrastructure ->
+    related; background-mention -> cites -- see vocabulary.py's
+    RETIRED_RELATIONSHIPS). Passes through unchanged if *label* isn't a
+    retired string (already-current label, or not a string at all)."""
+    if isinstance(label, str) and label in RETIRED_RELATIONSHIPS:
+        return RETIRED_RELATIONSHIPS[label]
+    return label
+
+
+def _remap_retired_relationships_in_facets(facets: Any) -> Any:
+    """Apply _remap_retired_relationship to every facet's "label" in a
+    "relationships" list, leaving non-dict entries untouched."""
+    if not isinstance(facets, list):
+        return facets
+    return [
+        {**f, "label": _remap_retired_relationship(f.get("label"))} if isinstance(f, dict) else f
+        for f in facets
+    ]
+
+
 def migrate_classification_result(raw: dict[str, Any]) -> dict[str, Any]:
     """Migrate one raw classify/<id>.json sidecar dict forward to
-    CLASSIFICATION_VERSION.  Idempotent.  v0 (no key) -> v1: stamp
-    schema_version -- no shape change."""
+    CLASSIFICATION_VERSION.  Idempotent.
+
+    v0 (no key) -> v1: stamp schema_version -- no shape change.
+
+    v1 -> v2 (v0.4.21, CiTO-alignment taxonomy refactor): remap any
+    retired relationship label (see RETIRED_RELATIONSHIPS) forward in
+    both the legacy "relationship" scalar and every "relationships"[]
+    facet's "label" -- a pre-refactor sidecar upgrades to the new label
+    set with no re-classification required.
+    """
     result = dict(raw)
     if result.get("schema_version", 0) < 1:
+        result["schema_version"] = 1
+    if result.get("schema_version", 0) < CLASSIFICATION_VERSION:
+        if "relationship" in result:
+            result["relationship"] = _remap_retired_relationship(result["relationship"])
+        if "relationships" in result:
+            result["relationships"] = _remap_retired_relationships_in_facets(result["relationships"])
         result["schema_version"] = CLASSIFICATION_VERSION
     return result
 
@@ -226,8 +267,9 @@ def migrate_classified(raw: Any) -> dict[str, Any]:
     """Migrate a raw classified.json payload forward to
     CLASSIFIED_FILE_VERSION.
 
-    Idempotent.  Two migration steps, both formalizing normalization that
-    classify.py's load_classified() already did implicitly:
+    Idempotent.  Migration steps, formalizing normalization that
+    classify.py's load_classified() already did implicitly, plus the
+    v0.4.21 label remap:
 
     v0 (bare list, the pre-wrapper format) -> v1: wrap as
     ``{"works": raw, "count": len(raw), "schema_version": 1, ...}``.  No
@@ -241,9 +283,13 @@ def migrate_classified(raw: Any) -> dict[str, Any]:
     v1 (wrapper, no schema_version) -> v1 (stamped): add schema_version:
     1 -- no shape change otherwise.
 
+    v1 -> v2 (v0.4.21, CiTO-alignment taxonomy refactor): remap every
+    retired relationship label forward (see RETIRED_RELATIONSHIPS).
+
     Each entry in the resulting `works` list that carries a "relationship"
     key (i.e. is a real classification, not an error/unclassified entry)
-    also gets schema_version-stamped via migrate_classification_result().
+    also gets schema_version-stamped and label-remapped via
+    migrate_classification_result().
     """
     if isinstance(raw, list):
         migrated_works = [
@@ -264,7 +310,7 @@ def migrate_classified(raw: Any) -> dict[str, Any]:
         migrate_classification_result(w) if isinstance(w, dict) and "relationship" in w else w
         for w in works
     ]
-    if result.get("schema_version", 0) < 1:
+    if result.get("schema_version", 0) < CLASSIFIED_FILE_VERSION:
         result["schema_version"] = CLASSIFIED_FILE_VERSION
     return result
 
@@ -354,6 +400,12 @@ def migrate_dossier(
                         opportunistically at render time; the migration moves
                         it to read time so any load path benefits, not only
                         rerenders.  Bump ``schema_version`` to 2.
+
+    v2            →  v3  (v0.4.21, CiTO-alignment taxonomy refactor) Remap
+                        any retired relationship label (see
+                        RETIRED_RELATIONSHIPS) forward in both
+                        ``provisional``/``proposed``'s "relationship"
+                        scalar and their "relationships"[] facets.
     """
     result = dict(raw)
     version = result.get("schema_version", 0)
@@ -370,6 +422,19 @@ def migrate_dossier(
                     result[field_name] = os.path.relpath(value, sidecar_dir)
         result["schema_version"] = 2
         version = 2
+
+    if version < 3:
+        for block_name in ("provisional", "proposed"):
+            block = result.get(block_name)
+            if isinstance(block, dict):
+                block = dict(block)
+                if "relationship" in block:
+                    block["relationship"] = _remap_retired_relationship(block["relationship"])
+                if "relationships" in block:
+                    block["relationships"] = _remap_retired_relationships_in_facets(block["relationships"])
+                result[block_name] = block
+        result["schema_version"] = 3
+        version = 3
 
     return result
 
@@ -607,7 +672,7 @@ class Override(WakeModel):
     overridden_at: str
 
 
-OVERRIDE_VERSION = 1
+OVERRIDE_VERSION = 2
 
 
 class OverrideWrite(Override):
@@ -627,11 +692,21 @@ def migrate_override(raw: dict[str, Any]) -> dict[str, Any]:
     classify sidecars), overrides.jsonl is an append-only log with no
     single document to rewrite in place -- load_overrides() calls this
     per-record, in memory, on every parsed line; on-disk lines are never
-    rewritten by a read.  Idempotent.  v0 (no key) -> v1: stamp
-    schema_version -- no shape change.
+    rewritten by a read.  Idempotent.
+
+    v0 (no key) -> v1: stamp schema_version -- no shape change.
+
+    v1 -> v2 (v0.4.21, CiTO-alignment taxonomy refactor): remap a retired
+    "relationship" label forward (see RETIRED_RELATIONSHIPS).
     """
     result = dict(raw)
-    if result.get("schema_version", 0) < 1:
+    version = result.get("schema_version", 0)
+    if version < 1:
+        result["schema_version"] = 1
+        version = 1
+    if version < OVERRIDE_VERSION:
+        if "relationship" in result:
+            result["relationship"] = _remap_retired_relationship(result["relationship"])
         result["schema_version"] = OVERRIDE_VERSION
     return result
 

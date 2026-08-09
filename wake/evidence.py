@@ -34,7 +34,7 @@ from . import config
 from . import cost as cost_mod
 from .io import atomic_write_json, atomic_write_text, now_iso, read_json
 from .llm.openai_client import chat_json
-from .models import EvidenceDossierWrite, migrate_dossier
+from .models import EVIDENCE_DOSSIER_VERSION, EvidenceDossierWrite, migrate_dossier
 from .pdf_fetch import fetch_pdf
 from .seed import work_dir
 from .sources.pdf_fulltext import (
@@ -61,15 +61,24 @@ provisional guess — form your own judgment from the text.
 
 You MUST choose exactly one relationship label from this exact list (copy
 verbatim, do not invent a new one):
-- "extends": directly extends the method, framework, or theory of the seed.
-- "builds-on": builds a new system, algorithm, or tool that depends on the seed.
-- "uses-as-tool": uses the seed's software, tool, or dataset as-is.
+- "extends": directly extends or modifies the seed's OWN method, framework,
+  or theory. Contrast with "uses-method-from": extends changes the seed's
+  method itself, uses-method-from uses it unchanged.
+- "uses-method-from": uses the seed's method, algorithm, or software tool —
+  either applying it as-is, or incorporating it as a component/dependency
+  of a new system the citing paper builds. Either way, the seed's method
+  is used unchanged, not modified.
+- "uses-data-from": uses the seed's dataset or data.
+- "applies-to-domain": applies the seed's method to a new domain or
+  problem — a special case of "uses-method-from" where the key story is
+  the domain transfer itself, not just the reuse.
 - "benchmarks": benchmarks against or compares performance with the seed.
-- "applies-to-domain": applies the seed's approach to a new domain or problem.
-- "related-infrastructure": complementary tooling in the same ecosystem, no direct dependency.
-- "background-mention": cites only as background/related work, or the seed
-  is mentioned so briefly/indirectly that no specific technical relationship
-  can be determined from the text.
+- "related": complementary work or infrastructure in the same ecosystem —
+  an affirmative "these are related" judgment, but without directly
+  depending on, extending, or benchmarking the seed.
+- "cites": cites the seed but no more specific relationship can be
+  determined from the text, or the seed is mentioned so briefly/
+  indirectly that no specific technical relationship can be determined.
 
 For EVERY passage you rely on, quote the FULL PARAGRAPH containing it (not
 a bare sentence fragment) exactly as it appears in the source text, along
@@ -80,8 +89,8 @@ in context, without needing to see the original document.
 If the seed paper is not clearly discussed anywhere in the text (e.g. it
 only appears in a bare reference-list entry with no in-text discussion),
 say so honestly — do not fabricate a passage that doesn't exist. In that
-case use "background-mention" with an empty quotes list and explain why
-in the justification.
+case use "cites" with an empty quotes list and explain why in the
+justification.
 
 Respond with ONLY a single JSON object and NOTHING else — no markdown
 fence, no preamble, no reasoning or commentary before or after the JSON.
@@ -119,30 +128,39 @@ provisional guess — form your own judgment from the text.
 
 Choose from these seven relationship class strings — copy verbatim into
 the "label" field, do not invent a new one:
-- "extends": directly extends the method, framework, or theory of the seed.
-- "builds-on": builds a new system, algorithm, or tool that depends on the seed.
-- "uses-as-tool": uses the seed's software, tool, or dataset as-is.
+- "extends": directly extends or modifies the seed's OWN method, framework,
+  or theory. Contrast with "uses-method-from": extends changes the seed's
+  method itself, uses-method-from uses it unchanged.
+- "uses-method-from": uses the seed's method, algorithm, or software tool —
+  either applying it as-is, or incorporating it as a component/dependency
+  of a new system the citing paper builds. Either way, the seed's method
+  is used unchanged, not modified.
+- "uses-data-from": uses the seed's dataset or data.
+- "applies-to-domain": applies the seed's method to a new domain or
+  problem — a special case of "uses-method-from" where the key story is
+  the domain transfer itself, not just the reuse.
 - "benchmarks": benchmarks against or compares performance with the seed.
-- "applies-to-domain": applies the seed's approach to a new domain or problem.
-- "related-infrastructure": complementary tooling in the same ecosystem, no direct dependency.
-- "background-mention": cites only as background/related work, or the seed
-  is mentioned so briefly/indirectly that no specific technical relationship
-  can be determined from the text.
+- "related": complementary work or infrastructure in the same ecosystem —
+  an affirmative "these are related" judgment, but without directly
+  depending on, extending, or benchmarking the seed.
+- "cites": cites the seed but no more specific relationship can be
+  determined from the text, or the seed is mentioned so briefly/
+  indirectly that no specific technical relationship can be determined.
 
 Most citing papers have exactly ONE clear relationship to the seed, once
 you've read the full text. Some genuinely have TWO -- for example, a
-paper that both uses the seed's tool as-is ("uses-as-tool") AND applies
-it to a new domain ("applies-to-domain") is telling two independent
-stories, each with its own supporting passages. Very rarely does a paper
-have THREE.
+paper that both uses the seed's tool as-is ("uses-method-from") AND
+applies it to a new domain ("applies-to-domain") is telling two
+independent stories, each with its own supporting passages. Very rarely
+does a paper have THREE.
 
 Return one facet by default. Return two only when both are independently
 well-supported by distinct passages (each a defensible standalone
 reading on its own — not the same story described two ways). Return
 three only in the exceptional case where the paper genuinely does three
 distinct things. Do not hedge: e.g. a paper that clearly "extends" the
-seed should NOT also list "builds-on" just because extending could be
-described as a kind of building-on -- that is one story, not two.
+seed should NOT also list "uses-method-from" just because extending
+requires using the method first -- that is one story, not two.
 
 Every facet you return must have confidence >= 0.5.
 
@@ -156,8 +174,8 @@ to the specific facet it supports.
 If the seed paper is not clearly discussed anywhere in the text (e.g. it
 only appears in a bare reference-list entry with no in-text discussion),
 say so honestly — do not fabricate a passage that doesn't exist. In that
-case return a single "background-mention" facet with an empty quotes
-list and explain why in its justification.
+case return a single "cites" facet with an empty quotes list and explain
+why in its justification.
 
 Respond with ONLY a single JSON object and NOTHING else — no markdown
 fence, no preamble, no reasoning or commentary before or after the JSON.
@@ -181,20 +199,20 @@ if any facet you return matches the provisional label.\
 
 # evidence-3: Theme K Pass 2 -- adds the seed paper's own extracted-text
 # excerpt (when the seed PDF has been acquired) as ground truth for what
-# the seed actually contributes, so a claimed "extends"/"builds-on" can be
-# checked against the seed's real content, not just its title. Otherwise
-# identical to evidence-2 (same multi-facet output shape). When no seed
-# excerpt is available (the common case for a seed with no PDF yet), the
-# excerpt block is simply omitted from the user message -- this system
-# prompt still functions correctly without it.
+# the seed actually contributes, so a claimed "extends"/"uses-method-from"
+# can be checked against the seed's real content, not just its title.
+# Otherwise identical to evidence-2 (same multi-facet output shape). When
+# no seed excerpt is available (the common case for a seed with no PDF
+# yet), the excerpt block is simply omitted from the user message -- this
+# system prompt still functions correctly without it.
 _SYSTEM_EVIDENCE_3 = _SYSTEM_EVIDENCE_2.replace(
     "  1. The seed paper being cited (title, year).\n",
     "  1. The seed paper being cited (title, year, and -- when available --\n"
     "     an excerpt of its own extracted full text). When a seed excerpt is\n"
     "     present, use it as ground truth for what the seed paper actually\n"
-    "     contributes, so you can judge a claimed \"extends\"/\"builds-on\"/\n"
-    "     \"benchmarks\" relationship against what the seed really did, not\n"
-    "     just its title.\n",
+    "     contributes, so you can judge a claimed \"extends\"/\n"
+    "     \"uses-method-from\"/\"benchmarks\" relationship against what the\n"
+    "     seed really did, not just its title.\n",
 )
 assert _SYSTEM_EVIDENCE_3 != _SYSTEM_EVIDENCE_2, "evidence-3 patch target text not found in evidence-2"
 
@@ -327,7 +345,7 @@ def _parse_proposed_relationships(result: dict[str, Any]) -> list[dict[str, Any]
     raw_facets = result.get("relationships")
     if not isinstance(raw_facets, list) or not raw_facets:
         raw_facets = [{
-            "label": result.get("relationship", "background-mention"),
+            "label": result.get("relationship", "cites"),
             "confidence": result.get("confidence", 0.5),
             "justification": result.get("justification", ""),
             "quotes": result.get("quotes", []),
@@ -358,7 +376,7 @@ def _parse_proposed_relationships(result: dict[str, Any]) -> list[dict[str, Any]
     facets = facets[:MAX_FACETS]
 
     if not facets:
-        facets = [{"label": "background-mention", "confidence": 0.5, "justification": "", "quotes": []}]
+        facets = [{"label": "cites", "confidence": 0.5, "justification": "", "quotes": []}]
 
     return facets
 
@@ -506,7 +524,7 @@ def _sections_citing(seed_id: str, citing_id: str, base: Path | None = None) -> 
 def _referenced_by_line(seed_id: str, citing_id: str, base: Path | None = None) -> str | None:
     """One-line back-link summary naming every theme and narrative section
     that currently cites this work, or None if it appears in neither (a
-    plain background-mention dossier with no downstream synthesis yet).
+    plain `cites` dossier with no downstream synthesis yet).
     Purely a derived view over already-persisted theme/section sidecars --
     recomputed at render time, never itself persisted, so it can never go
     silently stale in a way that survives a re-render."""
@@ -547,7 +565,7 @@ def _normalize_proposed_relationships(proposed: dict[str, Any], top_level_quotes
     if isinstance(facets, list) and facets:
         return facets
     return [{
-        "label": proposed.get("relationship", "background-mention"),
+        "label": proposed.get("relationship", "cites"),
         "confidence": proposed.get("confidence", 0.5),
         "justification": proposed.get("justification", ""),
         "quotes": top_level_quotes,
@@ -905,7 +923,7 @@ def build_dossier(
     # for the read side, which resolves these back to absolute paths before
     # re-rendering the markdown.
     json_payload = {
-        "schema_version": 2,
+        "schema_version": EVIDENCE_DOSSIER_VERSION,
         "seed_openalex_id": seed_id,
         "citing_openalex_id": citing_id,
         "citing_title": citing_work.get("title"),

@@ -86,10 +86,10 @@ classify:
   # each label out as prose the model must copy verbatim -- you can only
   # reweight these seven, not add or remove one, here.
   #
-  # Example: if your analysis cares more about domain reach than tooling
-  # adoption, weight applies-to-domain above uses-as-tool:
-  #   applies-to-domain: 6
-  #   uses-as-tool: 3
+  # Example: if your analysis cares more about tooling adoption than
+  # domain reach, weight uses-method-from above applies-to-domain:
+  #   uses-method-from: 8
+  #   applies-to-domain: 4
   #
   # Editing this and re-running `wake bake` reranks the impact brief
   # immediately -- no LLM calls, no re-classification. Every one of these
@@ -97,13 +97,13 @@ classify:
   # adds an unknown label, drops one of the seven, or sets a
   # non-positive value).
   relationship_strength:
-    extends: 7
-    builds-on: 6
-    uses-as-tool: 5
-    benchmarks: 4
-    applies-to-domain: 3
-    related-infrastructure: 2
-    background-mention: 1
+    applies-to-domain: 7
+    uses-method-from: 6
+    uses-data-from: 6
+    extends: 5
+    benchmarks: 3
+    related: 2
+    cites: 1
 
 describe:
   prompt_version: "describe-2"

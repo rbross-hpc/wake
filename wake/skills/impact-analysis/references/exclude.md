@@ -1,10 +1,10 @@
 # Explicit Exclusion (`wake exclude` / `wake unexclude`)
 
 A citing work judged not actually about the seed — e.g. a
-`background-mention` where the seed appears only in a bibliography, a
+`cites` classification where the seed appears only in a bibliography, a
 poster/conference-abstract, or a work the human simply doesn't want
 counted — previously had no way to be marked "considered and
-deliberately out of scope" beyond an `override` to `background-mention`.
+deliberately out of scope" beyond an `override` to `cites`.
 That leaves the work still fully usable: nothing stops a later theme or
 narrative section from citing it, and nothing stops `wake gaps`/`wake
 theme queue` from surfacing it again.

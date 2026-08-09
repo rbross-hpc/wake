@@ -18,20 +18,41 @@ from typing import Literal
 
 CANONICAL_RELATIONSHIPS: tuple[str, ...] = (
     "extends",
-    "builds-on",
-    "uses-as-tool",
-    "benchmarks",
+    "uses-method-from",
+    "uses-data-from",
     "applies-to-domain",
-    "related-infrastructure",
-    "background-mention",
+    "benchmarks",
+    "related",
+    "cites",
 )
 
 RelationshipLabel = Literal[
     "extends",
-    "builds-on",
-    "uses-as-tool",
-    "benchmarks",
+    "uses-method-from",
+    "uses-data-from",
     "applies-to-domain",
-    "related-infrastructure",
-    "background-mention",
+    "benchmarks",
+    "related",
+    "cites",
 ]
+
+# Labels retired by the CiTO-alignment refactor (v0.4.21), mapped to their
+# replacement.  `uses-as-tool` split into two more specific labels;
+# `builds-on` folded into `uses-method-from` (a paper that builds a new
+# system depending on the seed's method IS using that method, just to
+# build something new rather than apply it directly -- one label, not
+# two, once "as-is use" and "component dependency" are both read as
+# uses-method-from).  `related-infrastructure` and `background-mention`
+# were renamed for closer alignment with CiTO's `citesAsRelated` and
+# `cites` respectively, with no change in meaning.
+#
+# Consumed by models.py's migrate_* functions to rewrite a persisted
+# label forward -- never consulted by classify/evidence (which only ever
+# emit CANONICAL_RELATIONSHIPS) or by scoring (which only ever reads
+# CANONICAL_RELATIONSHIPS via relationship_strength()).
+RETIRED_RELATIONSHIPS: dict[str, str] = {
+    "uses-as-tool": "uses-method-from",
+    "builds-on": "uses-method-from",
+    "related-infrastructure": "related",
+    "background-mention": "cites",
+}

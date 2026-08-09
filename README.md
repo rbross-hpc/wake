@@ -15,9 +15,9 @@ pauses so the human can confirm the seed, spot-check a sample of
 classifications, and approve LLM spend before scaling up:
 
 - **classify** — LLM tags every citing work with its relationship to
-  the seed (`extends`, `builds-on`, `uses-as-tool`, `benchmarks`,
-  `applies-to-domain`, `related-infrastructure`, or
-  `background-mention`), read only from title/abstract. **Every
+  the seed (`extends`, `uses-method-from`, `uses-data-from`,
+  `applies-to-domain`, `benchmarks`, `related`, or
+  `cites`), read only from title/abstract. **Every
   classification starts life as `provisional` — a placeholder guess,
   not a finding.**
 - **evidence** — for a specific high-signal citing work, fetch its PDF,

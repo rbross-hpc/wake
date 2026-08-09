@@ -38,19 +38,19 @@ def _make_classified(works, relationships, verification_status="provisional"):
 def test_build_metrics_totals():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["builds-on", "uses-as-tool", "background-mention"],
+        ["uses-method-from", "uses-data-from", "cites"],
     )
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     assert metrics["total_citing_works"] == 3
-    assert metrics["by_relationship"]["builds-on"] == 1
-    assert metrics["by_relationship"]["uses-as-tool"] == 1
-    assert metrics["by_relationship"]["background-mention"] == 1
+    assert metrics["by_relationship"]["uses-method-from"] == 1
+    assert metrics["by_relationship"]["uses-data-from"] == 1
+    assert metrics["by_relationship"]["cites"] == 1
 
 
 def test_build_metrics_highly_cited():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "applies-to-domain", "background-mention"],
+        ["extends", "applies-to-domain", "cites"],
     )
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     assert metrics["highly_cited_citing"] == 1
@@ -59,7 +59,7 @@ def test_build_metrics_highly_cited():
 def test_build_metrics_no_abstract():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     assert metrics["no_abstract_count"] == 1
@@ -68,7 +68,7 @@ def test_build_metrics_no_abstract():
 def test_build_metrics_by_year():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["builds-on", "uses-as-tool", "background-mention"],
+        ["uses-method-from", "uses-data-from", "cites"],
     )
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     years = {e["year"] for e in metrics["by_year"]}
@@ -80,7 +80,7 @@ def test_build_metrics_by_year():
 def test_top_evidence_sorted():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     top = metrics["top_evidence"]
@@ -92,7 +92,7 @@ def test_top_evidence_sorted():
 def test_bake_markdown_contains_sections():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "This paper contributes PnetCDF."}
     metrics = build_metrics(seed, classified)
@@ -108,7 +108,7 @@ def test_bake_markdown_contains_sections():
 def test_bake_markdown_has_okf_frontmatter():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     md = bake_markdown(PARALLEL_NETCDF_WORK, metrics)
@@ -139,7 +139,7 @@ def test_bake_markdown_seed_pdf_status_reflects_seed_json(tmp_path):
         "seed_pdf": {"path": None, "tried": ["osti"], "fallback_links": {}},
     })
 
-    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-as-tool", "background-mention"])
+    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-method-from", "cites"])
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
     assert "seed_pdf_status: attempted-failed" in md
@@ -150,7 +150,7 @@ def test_bake_markdown_seed_pdf_status_reflects_seed_json(tmp_path):
 
 
 def test_bake_markdown_no_nav_line_without_base():
-    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-as-tool", "background-mention"])
+    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-method-from", "cites"])
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     md = bake_markdown(PARALLEL_NETCDF_WORK, metrics)
     assert "See also:" not in md
@@ -196,7 +196,7 @@ def test_bake_markdown_nav_line_reflects_existing_wiki_artifacts(tmp_path):
     narrative.create_section(PARALLEL_NETCDF_WORK, "intro", title="Intro", prose="Framing.", base=tmp_path)
     narrative.stitch(PARALLEL_NETCDF_WORK, base=tmp_path)
 
-    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-as-tool", "background-mention"])
+    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-method-from", "cites"])
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
     assert "themes_confirmed: 0" in md
@@ -277,7 +277,7 @@ def test_bake_markdown_nav_line_reflects_cwd_wiki_artifacts_without_explicit_bas
 
 def test_score_higher_for_stronger_relationship():
     w_extends = {"cited_by_count": 100, "relationship": "extends"}
-    w_mention = {"cited_by_count": 100, "relationship": "background-mention"}
+    w_mention = {"cited_by_count": 100, "relationship": "cites"}
     assert _score(w_extends) > _score(w_mention)
 
 
@@ -293,7 +293,7 @@ def test_score_ignores_legacy_strength_field():
     win over the label-derived, config-driven score. Deliberately sets a
     bogus strength that would flip the comparison if honored."""
     w_extends = {"cited_by_count": 100, "relationship": "extends", "strength": 1}
-    w_mention = {"cited_by_count": 100, "relationship": "background-mention", "strength": 999}
+    w_mention = {"cited_by_count": 100, "relationship": "cites", "strength": 999}
     assert _score(w_extends) > _score(w_mention)
 
 
@@ -301,40 +301,40 @@ def test_relationship_score_reranks_when_config_strength_changes(monkeypatch):
     """The concrete 'rerank without reanalysis' workflow: editing
     classify.relationship_strength and recomputing (no LLM, no
     reclassification) changes the ranking."""
-    assert relationship_score("extends", 10) > relationship_score("applies-to-domain", 10)
+    assert relationship_score("applies-to-domain", 10) > relationship_score("benchmarks", 10)
 
     monkeypatch.setattr(
         "wake.classify.config.classify_cfg",
         lambda: {"relationship_strength": {
-            "extends": 1, "builds-on": 2, "uses-as-tool": 3, "benchmarks": 4,
-            "applies-to-domain": 9, "related-infrastructure": 5, "background-mention": 1,
+            "extends": 1, "uses-method-from": 2, "uses-data-from": 3, "benchmarks": 9,
+            "applies-to-domain": 4, "related": 5, "cites": 1,
         }},
     )
-    assert relationship_score("applies-to-domain", 10) > relationship_score("extends", 10)
+    assert relationship_score("benchmarks", 10) > relationship_score("applies-to-domain", 10)
 
 
 # --- multi-facet scoring (MAX across facets) ------------------------------
 
 def test_relationship_score_multi_facet_uses_max_strength():
-    """A work with facets ["uses-as-tool", "applies-to-domain"] scores by
+    """A work with facets ["uses-method-from", "benchmarks"] scores by
     whichever facet's configured strength is highest (MAX, not sum or
     average -- see Q1 of the multi-facet design discussion)."""
-    facets = [{"label": "uses-as-tool"}, {"label": "applies-to-domain"}]
-    single_stronger = relationship_score("uses-as-tool", 10)  # uses-as-tool has higher default strength
+    facets = [{"label": "uses-method-from"}, {"label": "benchmarks"}]
+    single_stronger = relationship_score("uses-method-from", 10)  # uses-method-from has higher default strength
     assert relationship_score(facets, 10) == single_stronger
 
 
 def test_relationship_score_multi_facet_does_not_exceed_its_strongest_single_facet():
     """MAX means a second (weaker) facet never inflates the score beyond
     what the strongest facet alone would produce."""
-    weak_facets = [{"label": "background-mention"}, {"label": "related-infrastructure"}]
-    assert relationship_score(weak_facets, 10) == relationship_score("related-infrastructure", 10)
+    weak_facets = [{"label": "cites"}, {"label": "related"}]
+    assert relationship_score(weak_facets, 10) == relationship_score("related", 10)
 
 
 def test_score_prefers_relationships_list_over_legacy_scalar():
     work = {
         "cited_by_count": 10,
-        "relationship": "background-mention",  # legacy scalar, should be ignored
+        "relationship": "cites",  # legacy scalar, should be ignored
         "relationships": [{"label": "extends"}],
     }
     assert _score(work) == relationship_score("extends", 10)
@@ -353,14 +353,14 @@ def test_build_metrics_by_relationship_counts_every_facet():
     discussion)."""
     classified = [{
         **SAMPLE_CITING_WORKS[0],
-        "relationship": "uses-as-tool",
-        "relationships": [{"label": "uses-as-tool"}, {"label": "applies-to-domain"}],
+        "relationship": "uses-method-from",
+        "relationships": [{"label": "uses-method-from"}, {"label": "applies-to-domain"}],
         "confidence": 0.9, "justification": "x", "has_abstract": True,
         "verification_status": "provisional",
     }]
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     assert metrics["classified_count"] == 1
-    assert metrics["by_relationship"]["uses-as-tool"] == 1
+    assert metrics["by_relationship"]["uses-method-from"] == 1
     assert metrics["by_relationship"]["applies-to-domain"] == 1
     assert sum(metrics["by_relationship"].values()) == 2
 
@@ -374,8 +374,8 @@ def test_build_metrics_by_relationship_single_facet_work_counts_once():
 def test_bake_markdown_footnotes_relationship_table_when_facets_overlap(tmp_path):
     classified = [{
         **SAMPLE_CITING_WORKS[0],
-        "relationship": "uses-as-tool",
-        "relationships": [{"label": "uses-as-tool"}, {"label": "applies-to-domain"}],
+        "relationship": "uses-method-from",
+        "relationships": [{"label": "uses-method-from"}, {"label": "applies-to-domain"}],
         "confidence": 0.9, "justification": "x", "has_abstract": True,
         "verification_status": "provisional",
     }]
@@ -385,7 +385,7 @@ def test_bake_markdown_footnotes_relationship_table_when_facets_overlap(tmp_path
 
 
 def test_bake_markdown_no_footnote_when_all_single_facet(tmp_path):
-    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-as-tool", "background-mention"])
+    classified = _make_classified(SAMPLE_CITING_WORKS, ["extends", "uses-method-from", "cites"])
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
     assert "Rows may sum to more than the total classified count" not in md
@@ -394,10 +394,10 @@ def test_bake_markdown_no_footnote_when_all_single_facet(tmp_path):
 def test_bake_markdown_strongest_evidence_shows_every_facet(tmp_path):
     classified = [{
         **SAMPLE_CITING_WORKS[0],
-        "relationship": "uses-as-tool",
+        "relationship": "uses-method-from",
         "confidence": 0.95,
         "relationships": [
-            {"label": "uses-as-tool", "confidence": 0.95},
+            {"label": "uses-method-from", "confidence": 0.95},
             {"label": "applies-to-domain", "confidence": 0.8},
         ],
         "justification": "Uses PnetCDF and applies it to flood modeling.",
@@ -406,7 +406,7 @@ def test_bake_markdown_strongest_evidence_shows_every_facet(tmp_path):
     }]
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
-    assert "*uses-as-tool*" in md
+    assert "*uses-method-from*" in md
     assert "*applies-to-domain*" in md
 
 
@@ -448,7 +448,7 @@ def test_bake_markdown_notes_partial_coverage():
 def test_bake_markdown_full_coverage_no_partial_note():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
@@ -506,7 +506,7 @@ def test_build_metrics_all_provisional_by_default():
     later go through wake evidence."""
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     assert metrics["verified_count"] == 0
@@ -516,7 +516,7 @@ def test_build_metrics_all_provisional_by_default():
 def test_build_metrics_counts_verified_works():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     # Promote one work to verified, as add_override() would.
     classified[0]["verification_status"] = "verified"
@@ -529,7 +529,7 @@ def test_build_metrics_counts_verified_works():
 def test_top_evidence_carries_verification_fields():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     classified[0]["verification_status"] = "verified"
     classified[0]["verification_source"] = "evidence-dossier"
@@ -544,7 +544,7 @@ def test_top_evidence_carries_verification_fields():
 def test_build_metrics_no_self_extension_by_default():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
     assert metrics["self_extension_count"] == 0
@@ -553,7 +553,7 @@ def test_build_metrics_no_self_extension_by_default():
 def test_build_metrics_counts_self_extension():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     classified[0]["author_overlap"] = True
     classified[0]["overlapping_authors"] = ["Jianwei Li"]
@@ -565,7 +565,7 @@ def test_build_metrics_counts_self_extension():
 def test_top_evidence_carries_author_overlap_fields():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     classified[0]["author_overlap"] = True
     classified[0]["overlapping_authors"] = ["Jianwei Li"]
@@ -583,7 +583,7 @@ def test_top_evidence_carries_author_overlap_fields():
 def test_bake_markdown_shows_provisional_tag_by_default():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
@@ -595,7 +595,7 @@ def test_bake_markdown_shows_provisional_tag_by_default():
 def test_bake_markdown_shows_verified_via_evidence_dossier():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     classified[0]["verification_status"] = "verified"
     classified[0]["verification_source"] = "evidence-dossier"
@@ -608,7 +608,7 @@ def test_bake_markdown_shows_verified_via_evidence_dossier():
 def test_bake_markdown_top_evidence_doi_and_openalex_both_linked():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
@@ -620,7 +620,7 @@ def test_bake_markdown_top_evidence_doi_and_openalex_both_linked():
 
 def test_bake_markdown_top_evidence_no_doi_still_shows_openalex_link():
     works = [{**SAMPLE_CITING_WORKS[0], "doi": None}, SAMPLE_CITING_WORKS[1], SAMPLE_CITING_WORKS[2]]
-    classified = _make_classified(works, ["extends", "uses-as-tool", "background-mention"])
+    classified = _make_classified(works, ["extends", "uses-method-from", "cites"])
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
     md = bake_markdown(seed, metrics)
@@ -636,7 +636,7 @@ def test_bake_markdown_top_evidence_no_doi_still_shows_openalex_link():
 def test_bake_markdown_top_evidence_title_plain_when_no_dossier(tmp_path):
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
@@ -655,7 +655,7 @@ def test_bake_markdown_top_evidence_title_links_to_dossier_when_present(tmp_path
 
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
@@ -672,7 +672,7 @@ def test_bake_markdown_top_evidence_title_links_to_dossier_when_present(tmp_path
 def test_bake_markdown_shows_verified_via_human_judgment():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     classified[0]["verification_status"] = "verified"
     classified[0]["verification_source"] = "human-judgment"
@@ -685,7 +685,7 @@ def test_bake_markdown_shows_verified_via_human_judgment():
 def test_bake_markdown_shows_self_extension_tag():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     classified[0]["author_overlap"] = True
     classified[0]["overlapping_authors"] = ["Jianwei Li"]
@@ -699,7 +699,7 @@ def test_bake_markdown_shows_self_extension_tag():
 def test_bake_markdown_omits_self_extension_summary_when_none():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     seed = {**PARALLEL_NETCDF_WORK, "description": "Test description."}
     metrics = build_metrics(seed, classified)
@@ -711,7 +711,7 @@ def test_bake_markdown_omits_self_extension_summary_when_none():
 def test_bake_markdown_nature_of_impact_summary_counts():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,
-        ["extends", "uses-as-tool", "background-mention"],
+        ["extends", "uses-method-from", "cites"],
     )
     classified[0]["verification_status"] = "verified"
     classified[0]["verification_source"] = "evidence-dossier"

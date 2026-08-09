@@ -161,15 +161,20 @@ unconditionally on every call regardless of what changed.
 
 ## Relationship Classes
 
-| Class | Meaning |
-|-------|---------|
-| `extends` | Directly extends the method/framework of the seed |
-| `builds-on` | Builds a new system/tool on top of the seed |
-| `uses-as-tool` | Uses the seed's software/tool/dataset as-is |
-| `benchmarks` | Benchmarks against the seed as a baseline |
-| `applies-to-domain` | Applies the seed's approach to a new domain |
-| `related-infrastructure` | Complementary tooling in the same ecosystem, no direct dependency |
-| `background-mention` | Cites as background/related work |
+Also noting the nearest [CiTO](https://sparontologies.github.io/cito/current/cito.html)
+(Citation Typing Ontology) property, where one exists — wake's taxonomy
+was deliberately aligned toward CiTO's naming in v0.4.21 (see
+`references/classify.md` for the full rationale and boundary notes):
+
+| Class | Meaning | Nearest CiTO |
+|-------|---------|--------------|
+| `extends` | Directly extends/modifies the seed's OWN method/framework | `cito:extends` |
+| `uses-method-from` | Uses the seed's method, algorithm, or tool — as-is or as a dependency of something new | `cito:usesMethodIn` |
+| `uses-data-from` | Uses the seed's dataset/data | `cito:usesDataFrom` |
+| `applies-to-domain` | Applies the seed's method to a new domain | `cito:usesMethodIn` (sub-case) |
+| `benchmarks` | Benchmarks against the seed as a baseline | `cito:citesAsPotentialSolution` (weak) |
+| `related` | Complementary work/infrastructure in the same ecosystem, no direct dependency | `cito:citesAsRelated` |
+| `cites` | Cites the seed with no more specific relationship determinable (the fallback) | `cito:cites` |
 
 Every classification also carries an orthogonal `author_overlap` tag
 (`true`/`false`, plus `overlapping_authors`): whether the citing work

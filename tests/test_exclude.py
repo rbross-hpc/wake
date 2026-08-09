@@ -23,7 +23,7 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "osti_1343551_netcdf_bigdata.pdf
 def _classified_work(idx: int, **overrides) -> dict:
     return {
         **SAMPLE_CITING_WORKS[idx],
-        "relationship": "uses-as-tool",
+        "relationship": "uses-method-from",
         "confidence": 0.4,
         "justification": "Likely uses PnetCDF for I/O.",
         "has_abstract": True,
@@ -150,7 +150,7 @@ def test_narrative_section_refuses_excluded_ref(tmp_path):
     )
     # Verified first, then excluded -- the realistic sequence: a human
     # notices after the fact that a verified work shouldn't count.
-    exclude.exclude_work(seed_id, work["openalex_id"], reason="On reflection, background-mention only.", base=tmp_path)
+    exclude.exclude_work(seed_id, work["openalex_id"], reason="On reflection, cites only.", base=tmp_path)
 
     with pytest.raises(ValueError, match="excluded"):
         narrative.create_section(

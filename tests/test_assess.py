@@ -46,8 +46,8 @@ def _run_cli(argv, tmp_path, capsys):
 def _classified_work(idx: int, **overrides) -> dict:
     return {
         **SAMPLE_CITING_WORKS[idx],
-        "relationship": "uses-as-tool",
-        "relationships": [{"label": "uses-as-tool", "confidence": 0.8,
+        "relationship": "uses-method-from",
+        "relationships": [{"label": "uses-method-from", "confidence": 0.8,
                             "justification": "x", "quotes": [], "verified": None}],
         "confidence": 0.8,
         "justification": "Uses PnetCDF for I/O.",
@@ -94,7 +94,7 @@ def test_build_assessment_mixed_states(tmp_path):
         base=tmp_path,
     )
 
-    add_override(seed_id, verified_work["openalex_id"], relationship="uses-as-tool", base=tmp_path)
+    add_override(seed_id, verified_work["openalex_id"], relationship="uses-method-from", base=tmp_path)
     _write_dossier(seed_id, proposed_work["openalex_id"], tmp_path)
 
     data = build_assessment(PARALLEL_NETCDF_WORK, tmp_path)
@@ -190,7 +190,7 @@ def test_build_assessment_theme_membership_and_coverage(tmp_path):
     provisional_work = _classified_work(1)
 
     save_classified(seed_id, [verified_work, provisional_work], base=tmp_path)
-    add_override(seed_id, verified_work["openalex_id"], relationship="uses-as-tool", base=tmp_path)
+    add_override(seed_id, verified_work["openalex_id"], relationship="uses-method-from", base=tmp_path)
 
     themes.create_theme(
         PARALLEL_NETCDF_WORK, "climate-modeling",

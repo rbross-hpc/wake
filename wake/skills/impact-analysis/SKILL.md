@@ -246,12 +246,12 @@ cleanup.
 
 ### 9. (Optional) Exclude works judged not actually about the seed
 
-A `background-mention` classification means the seed was cited, but not
+A `cites` classification means the seed was cited, but not
 necessarily meaningfully — some of those are just noise: the seed
 appears only in a bibliography, or the citing work is a poster/
 conference-abstract that duplicates a full paper's content, or the human
 simply doesn't want a work counted for some other reason. `override`ing
-these to `background-mention` still leaves them fully usable — nothing
+these to `cites` still leaves them fully usable — nothing
 stops a later theme or narrative section from citing one by accident.
 For a work that's genuinely out of scope, make that explicit:
 
@@ -274,7 +274,7 @@ wake --json unexclude "<seed>" <citing-id> --reason "..."
 ```
 
 This step is optional and should be reserved for works genuinely out of
-scope, not a general cleanup pass — most `background-mention` works are
+scope, not a general cleanup pass — most `cites` works are
 fine left as-is, just correctly classified as weak evidence.
 
 ### 10. (Optional) Resolve high-value abstract gaps
@@ -328,7 +328,7 @@ wake --json classify "<seed>" --ids <citing-id> --force   # re-classify with the
 front matter, never further in) and makes one small, targeted LLM call —
 not a full-document summarization. This step is optional and should only
 be offered for works that are clearly consequential (high citation count);
-don't suggest it for background-mention-tier works.
+don't suggest it for cites-tier works.
 
 ### 11. Bake and present the brief
 
@@ -476,7 +476,7 @@ already been checked before spending another `wake evidence` call on a
 work you may have already covered.
 
 (A dossier may propose more than one facet — e.g. a paper that's both
-`uses-as-tool` and `applies-to-domain`, see `references/classify.md`'s
+`uses-method-from` and `applies-to-domain`, see `references/classify.md`'s
 "Multi-Facet Relationships" — in which case `--relationship` affirms
 just one of them; the model's other facet stays in the dossier as an
 unaffirmed reading, not deleted. Run `override` again with a different

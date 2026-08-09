@@ -30,13 +30,14 @@ from .conftest import PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS
 
 def test_relationships_ordered():
     assert RELATIONSHIPS[0] == "extends"
-    assert RELATIONSHIPS[-1] == "background-mention"
+    assert RELATIONSHIPS[-1] == "cites"
 
 
 def test_relationship_strength_default():
     strength = relationship_strength()
-    assert strength["extends"] > strength["background-mention"]
-    assert strength["builds-on"] > strength["uses-as-tool"]
+    assert strength["applies-to-domain"] > strength["extends"]
+    assert strength["uses-method-from"] > strength["cites"]
+    assert strength["uses-data-from"] > strength["cites"]
 
 
 def test_relationship_strength_reads_from_config(monkeypatch):
@@ -44,8 +45,8 @@ def test_relationship_strength_reads_from_config(monkeypatch):
     classify.relationship_strength changes the scores relationship_strength()
     returns with no re-classification."""
     custom = {
-        "extends": 1, "builds-on": 2, "uses-as-tool": 3, "benchmarks": 4,
-        "applies-to-domain": 9, "related-infrastructure": 5, "background-mention": 1,
+        "extends": 1, "uses-method-from": 2, "uses-data-from": 3, "benchmarks": 4,
+        "applies-to-domain": 9, "related": 5, "cites": 1,
     }
     monkeypatch.setattr(
         "wake.classify.config.classify_cfg",
@@ -59,29 +60,29 @@ def test_relationship_strength_reads_from_config(monkeypatch):
 def test_relationship_strength_falls_back_to_default_when_config_omits_it(monkeypatch):
     monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     strength = relationship_strength()
-    assert strength["extends"] == 7
-    assert strength["background-mention"] == 1
+    assert strength["applies-to-domain"] == 7
+    assert strength["cites"] == 1
 
 
 def test_validate_relationship_strength_rejects_unknown_label():
-    with pytest.raises(ValueError, match="unknown relationship label 'uses_as_tool'"):
+    with pytest.raises(ValueError, match="unknown relationship label 'uses_method_from'"):
         _validate_relationship_strength({
-            "extends": 7, "builds-on": 6, "uses_as_tool": 5, "benchmarks": 4,
-            "applies-to-domain": 3, "related-infrastructure": 2, "background-mention": 1,
+            "extends": 5, "uses_method_from": 6, "uses-data-from": 6, "benchmarks": 3,
+            "applies-to-domain": 7, "related": 2, "cites": 1,
         })
 
 
 def test_validate_relationship_strength_unknown_label_suggests_closest_match():
-    with pytest.raises(ValueError, match="did you mean 'uses-as-tool'"):
+    with pytest.raises(ValueError, match="did you mean 'uses-method-from'"):
         _validate_relationship_strength({
-            "extends": 7, "builds-on": 6, "uses_as_tool": 5, "benchmarks": 4,
-            "applies-to-domain": 3, "related-infrastructure": 2, "background-mention": 1,
+            "extends": 5, "uses_method_from": 6, "uses-data-from": 6, "benchmarks": 3,
+            "applies-to-domain": 7, "related": 2, "cites": 1,
         })
 
 
 def test_validate_relationship_strength_rejects_missing_label():
-    incomplete = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8), strict=False) if k != "related-infrastructure"}
-    with pytest.raises(ValueError, match="missing required label.*related-infrastructure"):
+    incomplete = {k: v for k, v in zip(CANONICAL_RELATIONSHIPS, range(1, 8), strict=False) if k != "related"}
+    with pytest.raises(ValueError, match="missing required label.*related"):
         _validate_relationship_strength(incomplete)
 
 
@@ -123,8 +124,8 @@ def test_validate_relationship_strength_accepts_float():
 
 def test_validate_relationship_strength_reports_every_error_at_once():
     bad = {
-        "extends": 0, "builds-on": 6, "uses_as_tool": 5, "benchmarks": 4,
-        "applies-to-domain": 3, "related-infrastructure": 2,
+        "extends": 0, "uses_method_from": 6, "uses-data-from": 6, "benchmarks": 3,
+        "applies-to-domain": 7,
     }
     with pytest.raises(ValueError) as exc_info:
         _validate_relationship_strength(bad)
@@ -138,7 +139,7 @@ def test_sidecar_write_and_load(tmp_path):
     seed_id = "W2156077349"
     citing_id = "W1000000001"
     payload = {
-        "relationship": "builds-on",
+        "relationship": "uses-method-from",
         "confidence": 0.9,
         "justification": "Test justification.",
         "prompt_version": "classify-1",
@@ -192,8 +193,8 @@ def test_write_sidecar_migrates_legacy_dotfile_dir_in_place(tmp_path):
     _write_sidecar(
         seed_id, "W_new",
         {
-            "relationship": "uses-as-tool", "confidence": 0.8, "justification": "x",
-            "relationships": [{"label": "uses-as-tool", "confidence": 0.8, "justification": "x"}],
+            "relationship": "uses-method-from", "confidence": 0.8, "justification": "x",
+            "relationships": [{"label": "uses-method-from", "confidence": 0.8, "justification": "x"}],
         },
         base=tmp_path,
     )
@@ -218,7 +219,7 @@ def test_select_for_classification_ids():
 
 
 def _fake_chat_json(system, user, model_role="classify", model=None, temperature=0, cost_sink=None):
-    return {"relationship": "uses-as-tool", "confidence": 0.8, "justification": "fake"}
+    return {"relationship": "uses-method-from", "confidence": 0.8, "justification": "fake"}
 
 
 def test_classify_one_always_marks_provisional(tmp_path):
@@ -326,7 +327,7 @@ def test_classify_all_backfills_missing_abstract_before_classifying(tmp_path):
 
     def _capturing_chat_json(system, user, **kwargs):
         seen_abstracts.append(user)
-        return {"relationship": "uses-as-tool", "confidence": 0.7, "justification": "x"}
+        return {"relationship": "uses-method-from", "confidence": 0.7, "justification": "x"}
 
     with patch("wake.classify.chat_json", side_effect=_capturing_chat_json), \
          patch("wake.backfill.backfill_one", side_effect=lambda w, **kw: {**w, "abstract": "Recovered abstract text.", "abstract_source": "osti"}) as mock_backfill:
