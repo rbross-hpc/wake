@@ -1,7 +1,9 @@
 # Narrative Drafting (`wake narrative`)
 
 Once you have one or more confirmed themes (see [`themes.md`](themes.md)),
-draft a narrative from them — one component at a time, then assemble:
+draft a narrative from them — one component at a time, then assemble.
+(For a *chronological* view of the same evidence instead of a thematic
+one, see [`timeline.md`](timeline.md)'s `wake timeline`.)
 
 ```bash
 wake narrative outline create <seed> --components '[
@@ -116,3 +118,9 @@ the results into a clean-OK count and a flagged list — any
 `CLOSEST`/`NO MATCH` status, plus an identifier-confirmed `OK` match
 that still carries a note (year mismatch, dead URL, exhausted retries)
 worth a second look.
+
+Neither direction of this integration involves an LLM — `export` and
+`summarize` are both plain field-shuffling over data already in
+`classified.json`, and `ref-checker` itself is a separate deterministic
+tool. See [`trust-model.md`](trust-model.md) for the full map of where
+model output does and doesn't enter the workflow.

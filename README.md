@@ -130,6 +130,8 @@ or your editor of choice — the folder is self-describing.
 | [`docs/evidence.md`](docs/evidence.md) | Provisional → proposed → verified lifecycle, the evidence wiki |
 | [`docs/themes.md`](docs/themes.md) | Combined-evidence thematic synthesis (`wake theme`) |
 | [`docs/narrative.md`](docs/narrative.md) | Narrative drafting from confirmed themes (`wake narrative`) |
+| [`docs/timeline.md`](docs/timeline.md) | Curated timeline of key developments over time (`wake timeline`) |
+| [`docs/trust-model.md`](docs/trust-model.md) | Where LLM output enters the workflow, and how it's contained before reaching a human as a settled claim |
 | [`wake/skills/impact-analysis/SKILL.md`](wake/skills/impact-analysis/SKILL.md) | The agent-facing workflow guide (primary way this tool is meant to be used) |
 | [`BACKLOG.md`](BACKLOG.md) | Open roadmap: deferred features, held designs, not-yet-built items |
 | [`PLAN.md`](PLAN.md) | Design charter + current forward-looking plan |
