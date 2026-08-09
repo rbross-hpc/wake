@@ -11,6 +11,8 @@ split out once it grew past a comfortable single-screen overview.
 | [`evidence.md`](evidence.md) | The provisional → proposed → verified lifecycle, the evidence wiki, diagnosing a surprising finding |
 | [`themes.md`](themes.md) | Combined-evidence thematic synthesis (`wake theme`) |
 | [`narrative.md`](narrative.md) | Narrative drafting from confirmed themes (`wake narrative`), inline source references |
+| [`timeline.md`](timeline.md) | Curated timeline of key developments over time (`wake timeline`), the confirmed-only handoff for a graphic-rendering tool |
+| [`trust-model.md`](trust-model.md) | Where LLM output enters the workflow, how it's contained before reaching a human as a settled claim, and what involves no model at all |
 | [`build-log.md`](build-log.md) | Append-only engineering journal: every shipped version, what/why/how verified. Not a forward plan — see the top-level `PLAN.md` for that. |
 | [`design/backlog-built-history.md`](design/backlog-built-history.md) | Design rationale, rejected alternatives, and lifecycle corrections for already-shipped `BACKLOG.md` product themes |
 | [`design/normalize-audit.md`](design/normalize-audit.md) | Function-by-function audit of every remaining `_normalize_*`/legacy-shape function, closing a Structural Hardening follow-on |

@@ -3,7 +3,9 @@
 `classify` only ever reads a citing work's title/abstract/venue — never
 the actual paper — so every classification it produces is labeled
 `"verification_status": "provisional"`: a placeholder guess, not a
-finding, regardless of how high its confidence score looks.
+finding, regardless of how high its confidence score looks. See
+[`trust-model.md`](trust-model.md) for the complete map of every point an
+LLM's output can enter the workflow and how each one is contained.
 
 ```bash
 wake evidence <seed> <citing-id>
