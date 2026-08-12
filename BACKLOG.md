@@ -268,6 +268,20 @@ Revisit only if/when MinerU or another genuinely slow step gets adopted.
   `evidence/themes/` for a tech editor) — F1's `narrative.md` +
   `evidence/` directory already are that folder; only the packaging step
   itself (zip, or a `wake export` command) remains unbuilt.
+- **Harvest OpenAlex's own OA PDF location during `wake citing`.**
+  OpenAlex's work records carry `open_access`/`best_oa_location.pdf_url`
+  fields, but `sources/openalex.py::_summarize_work`'s `select=` list and
+  return dict currently discard them — `pdf_fetch.py`'s source chain
+  (OSTI, Semantic Scholar, Unpaywall, Springer, arXiv, CORE) re-derives
+  an OA PDF URL from scratch via DOI lookups instead, even when OpenAlex
+  already knew one from the very first `citing` call. Surfacing it (a new
+  `oa_pdf_url` field on `Work`, tried first in `pdf_fetch`'s chain before
+  the DOI-keyed sources) would be a strictly earlier, non-redundant PDF
+  opportunity — noted while evaluating (and declining) a Primo-based PDF
+  source for the same reason: Primo's OA `linktopdf` links only ever
+  cover records that are already open access, which this OpenAlex field
+  would catch even earlier and for free (no extra API call). Not
+  designed or estimated yet.
 
 ---
 
