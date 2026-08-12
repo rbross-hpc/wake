@@ -79,6 +79,7 @@ sections), narrative packaging/export.
 | G | Timeline curation (`wake timeline`) | this file — "Built — Theme G", v0.4.20 |
 | J | Session-notes batch (11 items: dotfile rename, docs split, `show` verbs, help-text audit, README split, `refs-check`, `dedup`, `posters`, `exclude`, `unverify`) | [history](docs/design/backlog-built-history.md) — Theme J |
 | L | Structural Hardening (13 phases, v0.4.0–v0.4.12) | [build log](docs/build-log.md), summarized in [history](docs/design/backlog-built-history.md) — Theme L |
+| M | Primo abstract/DOI/PDF-URL backfill (opt-in institutional discovery-layer source) | this file — "Built — Theme M", `feature/primo-abstract-backfill` + `feature/oa-pdf-url-capture` |
 
 ---
 
@@ -195,6 +196,74 @@ one-shot aggregate:
   `[timeline](timeline.md)` nav link added to `impact.md`/README/AGENTS
   when it exists.
 
+---
+
+## Built — Theme M: Primo abstract/DOI/PDF-URL backfill
+
+**BUILT** across two branches: `feature/primo-abstract-backfill`
+(abstracts + DOI) and `feature/oa-pdf-url-capture` (OpenAlex + Primo PDF
+URLs). Originated from a live capability investigation of the ANL Primo
+discovery-layer API (Ex Libris) — confirmed reachable and unauthenticated
+from the working environment, tolerant of a much higher request rate in
+practice than OSTI/Semantic Scholar (no throttling observed at 20
+parallel / 15 rapid-sequential requests), and able to recover a usable
+abstract for 20/20 sampled citing works OpenAlex's own abstract
+reconstruction had missed (Elsevier/Springer/IEEE sources).
+
+- `wake/sources/primo.py` — DOI- and title-similarity-guarded
+  lookups for abstract, DOI, and (new) OA PDF URL
+  (`get_oa_pdf_url_by_doi`/`by_title`, gated on Primo's own
+  `display.oa == free_for_read` — verified against live paywalled IEEE/
+  Elsevier/ACM records, which only ever exposed a `linktorsrc` abstract-
+  page link, never a PDF). Institutional endpoint resolved from
+  `WAKE_PRIMO_BASE_URL`/`_VID`/`_INST`/`_SCOPE` env vars first, then an
+  optional `abstract_backfill.primo` config block — every function is a
+  safe no-op with no network call unless explicitly configured, since a
+  Primo endpoint is one institution's library subscription, never a
+  shared default.
+- `wake/backfill.py` — Primo wired in as the first abstract-backfill
+  source (`[primo, osti, semanticscholar]`), plus DOI backfill for
+  DOI-less works and a `prefer_over_openalex` mode that consults Primo
+  for every citing work, not just abstract-less ones. A discovered OA
+  PDF URL (`primo_pdf_url`) is captured as a side effect of whichever
+  Primo call already ran for the abstract/DOI — never an extra request.
+- `wake/sources/openalex.py` — separately, `best_oa_location.pdf_url`
+  and `open_access.oa_status` added to the citing-works `select=` and
+  `_summarize_work`'s output as `oa_pdf_url`/`oa_status` — free (already
+  in the `citing` response), populated for the ~13–23% of works OpenAlex
+  itself marks open access. Noticed while evaluating (and declining) a
+  Primo-based PDF source: Primo's OA links only ever cover records
+  already open access, which this OpenAlex field reaches even earlier
+  and for zero extra API calls; a live PVFS-seed data pull confirmed
+  OpenAlex's `best_oa_location` strictly dominates its own
+  `primary_location.pdf_url` (every work with the latter also has the
+  former; 12/843 had only the former) and that the recovered PDF hosts
+  include a long tail (institutional repositories, ACM, Springer,
+  figshare, etc.) `pdf_fetch.py`'s existing DOI-keyed chain doesn't
+  reliably reach on its own.
+- `wake/models.py` — `Work` gained `oa_pdf_url`/`oa_status` (OpenAlex,
+  born with the work) and `primo_pdf_url` (Primo, backfill-time) as two
+  independent fields, not one overwritten by the other, since they come
+  from different sources at different times and may disagree.
+- `wake/pdf_fetch.py` — new `openalex_oa` (pre-resolved URL, zero
+  network calls) and `primo` (prefers a captured `primo_pdf_url`, else a
+  live lookup) chain entries. Default order:
+  `[openalex_oa, osti, semanticscholar, unpaywall, springer, arxiv,
+  primo, core]` — `openalex_oa` first (free and only ever helps), `primo`
+  second-to-last (opt-in, and a smaller long-tail fallback given the
+  earlier sources' overlap with it).
+
+Verification: `ruff check`/`mypy` clean on both branches; full offline
+suite green throughout (895 passed after the abstract/DOI branch, no
+regressions after the PDF-URL branch's ~35 new tests across
+`test_primo.py`, `test_backfill.py`, `test_pdf_fetch.py`,
+`test_openalex.py`, `test_models.py`).
+
+Deferred (not part of Theme M): authenticated Primo/Alma delivery for
+licensed (non-OA) publisher PDFs — the public API this integration uses
+only ever exposes OA full text, confirmed by inspecting real IEEE/
+Elsevier paywalled records during the initial capability check.
+
 ## Deferred — Theme H: Non-Publication Evidence Search
 
 Press releases, news coverage, etc. — a genuinely new source type (web
@@ -268,21 +337,6 @@ Revisit only if/when MinerU or another genuinely slow step gets adopted.
   `evidence/themes/` for a tech editor) — F1's `narrative.md` +
   `evidence/` directory already are that folder; only the packaging step
   itself (zip, or a `wake export` command) remains unbuilt.
-- **Harvest OpenAlex's own OA PDF location during `wake citing`.**
-  OpenAlex's work records carry `open_access`/`best_oa_location.pdf_url`
-  fields, but `sources/openalex.py::_summarize_work`'s `select=` list and
-  return dict currently discard them — `pdf_fetch.py`'s source chain
-  (OSTI, Semantic Scholar, Unpaywall, Springer, arXiv, CORE) re-derives
-  an OA PDF URL from scratch via DOI lookups instead, even when OpenAlex
-  already knew one from the very first `citing` call. Surfacing it (a new
-  `oa_pdf_url` field on `Work`, tried first in `pdf_fetch`'s chain before
-  the DOI-keyed sources) would be a strictly earlier, non-redundant PDF
-  opportunity — noted while evaluating (and declining) a Primo-based PDF
-  source for the same reason: Primo's OA `linktopdf` links only ever
-  cover records that are already open access, which this OpenAlex field
-  would catch even earlier and for free (no extra API call). Not
-  designed or estimated yet.
-
 ---
 
 ## Theme L follow-on — Structural Hardening deferred work

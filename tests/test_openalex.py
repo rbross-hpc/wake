@@ -112,6 +112,70 @@ def test_summarize_work_authorship_with_no_name_is_skipped():
     assert w["author_ids"] == ["A222"]
 
 
+# --- OA PDF URL / status capture (BACKLOG: "harvest OpenAlex OA PDF URL") ---
+
+
+def test_summarize_work_captures_oa_pdf_url_and_status():
+    raw = {
+        "id": "https://openalex.org/W123",
+        "display_name": "Open Access Paper",
+        "publication_year": 2020,
+        "authorships": [],
+        "topics": [],
+        "open_access": {"is_oa": True, "oa_status": "green"},
+        "best_oa_location": {"pdf_url": "https://www.osti.gov/servlets/purl/1150929", "is_oa": True},
+    }
+    w = _summarize_work(raw)
+    assert w["oa_pdf_url"] == "https://www.osti.gov/servlets/purl/1150929"
+    assert w["oa_status"] == "green"
+
+
+def test_summarize_work_closed_access_has_no_oa_pdf_url():
+    raw = {
+        "id": "https://openalex.org/W123",
+        "display_name": "Closed Access Paper",
+        "publication_year": 2020,
+        "authorships": [],
+        "topics": [],
+        "open_access": {"is_oa": False, "oa_status": "closed"},
+        "best_oa_location": None,
+    }
+    w = _summarize_work(raw)
+    assert w["oa_pdf_url"] is None
+    assert w["oa_status"] == "closed"
+
+
+def test_summarize_work_missing_oa_fields_defaults_to_none():
+    """A raw work with no open_access/best_oa_location keys at all (e.g.
+    an older cached response, or a field the select= list didn't
+    request) should degrade to None rather than KeyError."""
+    raw = {
+        "id": "https://openalex.org/W123",
+        "display_name": "No OA Fields",
+        "publication_year": 2020,
+        "authorships": [],
+        "topics": [],
+    }
+    w = _summarize_work(raw)
+    assert w["oa_pdf_url"] is None
+    assert w["oa_status"] is None
+
+
+def test_iter_citing_works_select_includes_oa_fields():
+    """Regression guard: the citing-works select= must request
+    open_access/best_oa_location, or _summarize_work's oa_pdf_url/
+    oa_status will silently always be None for the bulk citing path
+    (single-work fetches via get_work_by_doi/get_work_by_openalex_id
+    don't restrict fields at all, so they're unaffected)."""
+    import inspect
+
+    from wake.sources import openalex
+
+    src = inspect.getsource(openalex.iter_citing_works)
+    assert "open_access" in src
+    assert "best_oa_location" in src
+
+
 @pytest.mark.network
 def test_live_get_by_doi():
     from wake.sources.openalex import get_work_by_doi

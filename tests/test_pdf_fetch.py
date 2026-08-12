@@ -201,6 +201,152 @@ def test_fetch_pdf_springer_noop_for_non_springer_doi(tmp_path):
     assert result["source"] == "arxiv"
 
 
+# --- openalex_oa source: pre-resolved URL, no network lookup ---
+
+
+def test_fetch_pdf_uses_openalex_oa_url_first_no_lookup(tmp_path):
+    """openalex_oa should win before any DOI-keyed source is even tried,
+    since it's a URL already in hand (no lookup call of its own)."""
+    with patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi") as mock_osti, \
+         patch("wake.pdf_fetch.requests.get", return_value=_mock_response()):
+        result = pdf_fetch.fetch_pdf(
+            "W123", "W456", doi="10.1016/fake",
+            oa_pdf_url="https://example.com/openalex-oa.pdf",
+            base=tmp_path, verbose=False,
+        )
+    mock_osti.assert_not_called()
+    assert result["ok"] is True
+    assert result["source"] == "openalex_oa"
+    assert result["url"] == "https://example.com/openalex-oa.pdf"
+
+
+def test_fetch_pdf_skips_openalex_oa_when_url_absent(tmp_path):
+    """No oa_pdf_url supplied (e.g. a closed-access work) -- the chain
+    should fall straight through to the next source with no error."""
+    with patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi", return_value="https://osti.example/paper.pdf") as mock_osti, \
+         patch("wake.pdf_fetch.requests.get", return_value=_mock_response()):
+        result = pdf_fetch.fetch_pdf(
+            "W123", "W456", doi="10.1016/fake", base=tmp_path, verbose=False,
+        )
+    mock_osti.assert_called_once()
+    assert result["ok"] is True
+    assert result["source"] == "osti"
+    assert "openalex_oa" not in result.get("tried", [])
+
+
+def test_fetch_pdf_openalex_oa_bad_url_falls_through(tmp_path):
+    """openalex_oa's URL turning out not to actually be a valid PDF (e.g.
+    a dead link) should fall through to the next source, same as any
+    other source's URL failing."""
+    with patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi", return_value="https://osti.example/paper.pdf") as mock_osti, \
+         patch("wake.pdf_fetch.requests.get") as mock_get:
+        mock_get.side_effect = [
+            _mock_response(content=_FAKE_HTML_BYTES),  # openalex_oa's dead link
+            _mock_response(content=_FAKE_PDF_BYTES),   # osti succeeds
+        ]
+        result = pdf_fetch.fetch_pdf(
+            "W123", "W456", doi="10.1016/fake",
+            oa_pdf_url="https://example.com/dead-link.pdf",
+            base=tmp_path, verbose=False,
+        )
+    mock_osti.assert_called_once()
+    assert result["ok"] is True
+    assert result["source"] == "osti"
+
+
+# --- primo source: prefers a captured URL, else live lookup, disabled-by-default ---
+
+
+def test_fetch_pdf_primo_disabled_is_skipped(tmp_path):
+    """Default posture (no Primo endpoint configured): primo.is_enabled()
+    is False, so the chain should never even attempt a Primo lookup, even
+    with a primo_pdf_url supplied -- is_enabled() gates the whole source,
+    not just the live-lookup path (mirrors backfill.py's same gate)."""
+    with patch("wake.pdf_fetch.primo.is_enabled", return_value=False), \
+         patch("wake.pdf_fetch.primo.get_oa_pdf_url_by_doi") as mock_lookup, \
+         patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.semanticscholar.get_open_access_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.unpaywall.get_oa_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.arxiv_fetch.find_pdf_url_by_title", return_value=None), \
+         patch("wake.pdf_fetch.core.is_enabled", return_value=False):
+        result = pdf_fetch.fetch_pdf(
+            "W123", "W456", doi="10.1016/fake", title="Some Title",
+            primo_pdf_url="https://example.com/should-be-ignored.pdf",
+            base=tmp_path, verbose=False,
+        )
+    mock_lookup.assert_not_called()
+    assert "primo" not in result.get("tried", [])
+    assert result["ok"] is False
+
+
+def test_fetch_pdf_primo_uses_captured_url_no_live_lookup(tmp_path):
+    """A primo_pdf_url already captured during backfill should be used
+    directly -- no live Primo lookup call."""
+    with patch("wake.pdf_fetch.primo.is_enabled", return_value=True), \
+         patch("wake.pdf_fetch.primo.get_oa_pdf_url_by_doi") as mock_lookup, \
+         patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.semanticscholar.get_open_access_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.unpaywall.get_oa_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.arxiv_fetch.find_pdf_url_by_title", return_value=None), \
+         patch("wake.pdf_fetch.core.is_enabled", return_value=False), \
+         patch("wake.pdf_fetch.requests.get", return_value=_mock_response()):
+        result = pdf_fetch.fetch_pdf(
+            "W123", "W456", doi="10.1016/fake", title="Some Title",
+            primo_pdf_url="https://example.com/captured.pdf",
+            base=tmp_path, verbose=False,
+        )
+    mock_lookup.assert_not_called()
+    assert result["ok"] is True
+    assert result["source"] == "primo"
+    assert result["url"] == "https://example.com/captured.pdf"
+
+
+def test_fetch_pdf_primo_live_lookup_when_not_captured(tmp_path):
+    """No primo_pdf_url supplied but Primo is enabled and a DOI is
+    available -- falls back to a live Primo lookup."""
+    with patch("wake.pdf_fetch.primo.is_enabled", return_value=True), \
+         patch("wake.pdf_fetch.primo.get_oa_pdf_url_by_doi", return_value="https://example.com/live-lookup.pdf") as mock_lookup, \
+         patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.semanticscholar.get_open_access_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.unpaywall.get_oa_pdf_url_by_doi", return_value=None), \
+         patch("wake.pdf_fetch.arxiv_fetch.find_pdf_url_by_title", return_value=None), \
+         patch("wake.pdf_fetch.core.is_enabled", return_value=False), \
+         patch("wake.pdf_fetch.requests.get", return_value=_mock_response()):
+        result = pdf_fetch.fetch_pdf(
+            "W123", "W456", doi="10.1016/fake", title="Some Title",
+            base=tmp_path, verbose=False,
+        )
+    mock_lookup.assert_called_once_with("10.1016/fake")
+    assert result["ok"] is True
+    assert result["source"] == "primo"
+
+
+def test_fetch_pdf_primo_live_lookup_by_title_when_no_doi(tmp_path):
+    with patch("wake.pdf_fetch.primo.is_enabled", return_value=True), \
+         patch("wake.pdf_fetch.primo.get_oa_pdf_url_by_title", return_value="https://example.com/by-title.pdf") as mock_lookup, \
+         patch("wake.pdf_fetch.arxiv_fetch.find_pdf_url_by_title", return_value=None), \
+         patch("wake.pdf_fetch.core.is_enabled", return_value=False), \
+         patch("wake.pdf_fetch.requests.get", return_value=_mock_response()):
+        result = pdf_fetch.fetch_pdf(
+            "W123", "W456", doi=None, title="Some Title",
+            base=tmp_path, verbose=False,
+        )
+    mock_lookup.assert_called_once_with("Some Title")
+    assert result["ok"] is True
+    assert result["source"] == "primo"
+
+
+def test_fetch_pdf_default_source_order_has_openalex_oa_first_and_primo_before_core():
+    cfg = pdf_fetch._cfg()
+    sources = cfg.get(
+        "sources",
+        ["openalex_oa", "osti", "semanticscholar", "unpaywall", "springer", "arxiv", "primo", "core"],
+    )
+    assert sources[0] == "openalex_oa"
+    assert sources.index("primo") < sources.index("core")
+    assert sources.index("osti") < sources.index("primo")
+
+
 def test_fallback_links_includes_google_scholar_when_title_present():
     links = pdf_fetch.fallback_links(doi=None, title="A Paper Title")
     assert "google_scholar" in links

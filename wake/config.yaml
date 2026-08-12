@@ -73,21 +73,31 @@ pdf_extract:
   prompt_version: "pdf-abstract-1"
 
 # PDF acquisition chain (wake fetch-pdf): tried in order, all API-based
-# (no scraping publisher landing pages, no sci-hub-style sources). OSTI
-# first (DOE-funded work, direct PDF, no auth wall); Semantic Scholar and
-# Unpaywall next (broader OA aggregation, some URLs 403 bot downloads);
-# arXiv for preprints; CORE last and optional (needs CORE_API_KEY, silently
+# (no scraping publisher landing pages, no sci-hub-style sources).
+# openalex_oa first -- the work's own best_oa_location.pdf_url, already
+# captured for free at `wake citing`/resolve time (see
+# sources/openalex.py); no network call, just reads a field, so it costs
+# nothing to try first and only ever helps. OSTI next (DOE-funded work,
+# direct PDF, no auth wall); Semantic Scholar and Unpaywall after that
+# (broader OA aggregation, some URLs 403 bot downloads); Springer's
+# predictable-URL guess; arXiv for preprints; primo second-to-last --
+# opt-in (see abstract_backfill.primo above), and deliberately late: its
+# OA PDF links only ever cover records already open access, which the
+# earlier sources already target, so it's a smaller-long-tail fallback,
+# not a primary source (silently skipped entirely if Primo isn't
+# configured); CORE last and optional (needs CORE_API_KEY, silently
 # skipped if unset). On full failure, returns human-actionable links
 # instead (Unpaywall lookup page, Google Scholar search, publisher DOI,
 # CORE search).
 pdf_fetch:
-  sources: [osti, semanticscholar, unpaywall, springer, arxiv, core]
+  sources: [openalex_oa, osti, semanticscholar, unpaywall, springer, arxiv, primo, core]
   rate_limit_s:
     osti: 0.5
     semanticscholar: 1.2
     unpaywall: 0.5
     springer: 0.5
     arxiv: 3.0
+    primo: 0.2
     core: 1.0
   download_timeout_s: 30
   # A downloaded file below this size is treated as a failed fetch (e.g. an

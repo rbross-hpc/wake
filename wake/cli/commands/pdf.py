@@ -91,6 +91,8 @@ def run_fetch_pdf(args) -> None:
         seed_id, args.citing_id,
         doi=citing_work.get("doi"),
         title=citing_work.get("title"),
+        oa_pdf_url=citing_work.get("oa_pdf_url"),
+        primo_pdf_url=citing_work.get("primo_pdf_url"),
         seed_title=work.get("title"),
         base=base,
         force=args.force,

@@ -29,14 +29,26 @@ def _clear_primo_env_and_config(monkeypatch):
     config.reload()
 
 
-def _doc(title: str, abstract: str | None = None, doi: str | None = None) -> dict:
+def _doc(
+    title: str,
+    abstract: str | None = None,
+    doi: str | None = None,
+    *,
+    oa: bool = False,
+    pdf_url: str | None = None,
+) -> dict:
     display: dict = {"title": [title]}
     if abstract is not None:
         display["description"] = [abstract]
+    if oa:
+        display["oa"] = ["free_for_read"]
     addata: dict = {}
     if doi is not None:
         addata["doi"] = [doi]
-    return {"pnx": {"display": display, "addata": addata}}
+    links: dict = {}
+    if pdf_url is not None:
+        links["linktopdf"] = [f"$$U{pdf_url}$$EPDF$$Gsource$$Hfree_for_read$$Pomit_proxy_true"]
+    return {"pnx": {"display": display, "addata": addata, "links": links}}
 
 
 # --- Safety: no endpoint configured => always a no-op, never touches network ---
@@ -209,7 +221,12 @@ def test_get_metadata_by_doi_returns_full_record(monkeypatch):
     )
     with patch("wake.sources.primo.requests.get", return_value=resp):
         record = primo.get_metadata_by_doi("10.5555/x")
-    assert record == {"title": "Full Record Title", "abstract": "The abstract.", "doi": "10.5555/x"}
+    assert record == {
+        "title": "Full Record Title",
+        "abstract": "The abstract.",
+        "doi": "10.5555/x",
+        "oa_pdf_url": None,
+    }
 
 
 # --- Title-fallback lookups, with the similarity guard ---
@@ -277,6 +294,123 @@ def test_get_doi_by_title_no_doi_on_matched_record_returns_none(monkeypatch):
 def test_title_similarity_threshold_configurable(monkeypatch):
     monkeypatch.setattr(primo, "_cfg", lambda: {"title_similarity_threshold": 0.99})
     assert primo._title_similarity_threshold() == 0.99
+
+
+# --- OA PDF URL extraction ---
+#
+# Primo exposes links.linktopdf only for records it marks free_for_read
+# in display.oa (verified against Argonne's live Primo instance: every
+# paywalled IEEE/Elsevier/ACM record returned only linktorsrc, an
+# abstract-page link, never linktopdf). These tests exercise the
+# extraction + OA gate in isolation from the endpoint/network plumbing
+# already covered above.
+
+
+def test_extract_pdf_url_present_and_oa():
+    pnx = _doc("A Paper", oa=True, pdf_url="https://www.osti.gov/servlets/purl/754505")["pnx"]
+    assert primo._extract_pdf_url(pnx) == "https://www.osti.gov/servlets/purl/754505"
+
+
+def test_extract_pdf_url_absent_without_oa_flag():
+    """A linktopdf entry present but the record NOT marked free_for_read
+    -- should never happen in practice (Primo only emits linktopdf for OA
+    records) but the gate must hold even if it did."""
+    pnx = _doc("A Paper", oa=False, pdf_url="https://example.com/paper.pdf")["pnx"]
+    assert primo._extract_pdf_url(pnx) is None
+
+
+def test_extract_pdf_url_none_when_no_linktopdf():
+    pnx = _doc("A Paper", oa=True)["pnx"]  # oa but no linktopdf, e.g. paywalled record
+    assert primo._extract_pdf_url(pnx) is None
+
+
+def test_get_oa_pdf_url_by_doi_hit(monkeypatch):
+    _configure(monkeypatch)
+    resp = _mock_response(
+        200,
+        {"docs": [_doc("PVFS Paper", doi="10.1234/oa", oa=True, pdf_url="https://osti.gov/servlets/purl/1")]},
+    )
+    with patch("wake.sources.primo.requests.get", return_value=resp):
+        url = primo.get_oa_pdf_url_by_doi("10.1234/oa")
+    assert url == "https://osti.gov/servlets/purl/1"
+
+
+def test_get_oa_pdf_url_by_doi_paywalled_record_returns_none(monkeypatch):
+    _configure(monkeypatch)
+    # Mirrors what a real paywalled IEEE/Elsevier record looks like: no
+    # oa flag, no linktopdf, only ever a linktorsrc (not modeled here
+    # since _extract_pdf_url never reads it).
+    resp = _mock_response(200, {"docs": [_doc("Closed-Access Paper", doi="10.1234/closed")]})
+    with patch("wake.sources.primo.requests.get", return_value=resp):
+        url = primo.get_oa_pdf_url_by_doi("10.1234/closed")
+    assert url is None
+
+
+def test_get_oa_pdf_url_by_title_accepts_close_match(monkeypatch):
+    _configure(monkeypatch)
+    resp = _mock_response(
+        200,
+        {
+            "docs": [
+                _doc(
+                    "PVFS: A Parallel File System for Linux Clusters",
+                    oa=True,
+                    pdf_url="https://www.osti.gov/servlets/purl/754505",
+                )
+            ]
+        },
+    )
+    with patch("wake.sources.primo.requests.get", return_value=resp):
+        url = primo.get_oa_pdf_url_by_title("PVFS: A Parallel File System for Linux Clusters")
+    assert url == "https://www.osti.gov/servlets/purl/754505"
+
+
+def test_get_oa_pdf_url_by_title_rejects_dissimilar_top_hit(monkeypatch):
+    _configure(monkeypatch)
+    resp = _mock_response(
+        200,
+        {"docs": [_doc("An Unrelated Paper", oa=True, pdf_url="https://example.com/wrong.pdf")]},
+    )
+    with patch("wake.sources.primo.requests.get", return_value=resp):
+        url = primo.get_oa_pdf_url_by_title("Something Completely Different Entirely")
+    assert url is None
+
+
+def test_get_oa_pdf_url_by_doi_noop_without_endpoint():
+    with patch("wake.sources.primo.requests.get") as mock_get:
+        assert primo.get_oa_pdf_url_by_doi("10.1234/x") is None
+    mock_get.assert_not_called()
+
+
+def test_get_record_by_title_single_query_for_multiple_fields(monkeypatch):
+    """A caller wanting doi + abstract + oa_pdf_url from one title lookup
+    should be able to do it in a single Primo round-trip via
+    get_record_by_title, rather than three (one per get_*_by_title
+    wrapper)."""
+    _configure(monkeypatch)
+    resp = _mock_response(
+        200,
+        {
+            "docs": [
+                _doc(
+                    "Combined Fields Paper",
+                    abstract="An abstract.",
+                    doi="10.1234/combined",
+                    oa=True,
+                    pdf_url="https://example.com/combined.pdf",
+                )
+            ]
+        },
+    )
+    with patch("wake.sources.primo.requests.get", return_value=resp) as mock_get:
+        record = primo.get_record_by_title("Combined Fields Paper")
+    mock_get.assert_called_once()
+    assert record == {
+        "title": "Combined Fields Paper",
+        "abstract": "An abstract.",
+        "doi": "10.1234/combined",
+        "oa_pdf_url": "https://example.com/combined.pdf",
+    }
 
 
 @pytest.mark.network
