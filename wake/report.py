@@ -330,6 +330,7 @@ def build_metrics(
     highly_cited = 0
     no_abstract = 0
     backfilled_abstract = 0
+    low_signal = 0
 
     for w in citing_works:
         yr = w.get("year")
@@ -345,6 +346,8 @@ def build_metrics(
             no_abstract += 1
         if w.get("abstract_source"):
             backfilled_abstract += 1
+        if w.get("low_signal"):
+            low_signal += 1
 
     # Counts each classified work under EVERY facet it has (see Q2 in the
     # multi-facet design discussion), not just its top/legacy facet -- a
@@ -387,6 +390,14 @@ def build_metrics(
         "highly_cited_citing": highly_cited,
         "no_abstract_count": no_abstract,
         "backfilled_abstract_count": backfilled_abstract,
+        # Count of citing works classified via classify_all's title-only
+        # deterministic short-circuit (no LLM call) -- see PLAN.md's
+        # "title-only short-circuit". Distinct from no_abstract_count:
+        # that counts every abstract-less work regardless of whether the
+        # LLM was actually asked to guess (title_only_shortcircuit:
+        # false disables the short-circuit but leaves no_abstract_count
+        # unchanged).
+        "low_signal_count": low_signal,
         "by_year": per_year_sorted,
         "by_relationship": dict(by_relationship),
         "by_venue_type": dict(by_venue_type),
@@ -412,6 +423,7 @@ def build_metrics(
                 "verification_source": w.get("verification_source"),
                 "author_overlap": bool(w.get("author_overlap")),
                 "overlapping_authors": w.get("overlapping_authors", []),
+                "low_signal": bool(w.get("low_signal")),
                 "score": round(_score(w), 3),
             }
             for w in top_evidence
@@ -771,6 +783,7 @@ def bake_markdown(
     highly_cited = metrics["highly_cited_citing"]
     no_abstract = metrics["no_abstract_count"]
     backfilled = metrics.get("backfilled_abstract_count", 0)
+    low_signal = metrics.get("low_signal_count", 0)
     lines.append(f"- **{total:,}** works cite this paper")
     if highly_cited:
         lines.append(f"- **{highly_cited:,}** of those are themselves highly cited (≥50 citations)")
@@ -778,6 +791,11 @@ def bake_markdown(
         lines.append(f"- {backfilled:,} abstracts recovered via OSTI/Semantic Scholar backfill (OpenAlex lacked them)")
     if no_abstract:
         lines.append(f"- {no_abstract:,} citing works still lack an abstract (classified from title/venue only)")
+    if low_signal:
+        lines.append(
+            f"- {low_signal:,} of {total:,} citing works were title/venue-only after backfill "
+            "and not LLM-classified (deterministic \"cites\", not a model judgment)"
+        )
     lines.append("")
 
     by_year = metrics.get("by_year", [])

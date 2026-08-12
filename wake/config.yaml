@@ -122,7 +122,23 @@ evidence:
   seed_excerpt_chars: 4000
 
 classify:
-  prompt_version: "classify-2"
+  prompt_version: "classify-4"
+  # If true (default), a citing work that still has no abstract after
+  # backfill (Primo/OSTI/Semantic Scholar all missed) is given a
+  # deterministic "cites" classification with no LLM call, tagged
+  # low_signal: true -- see PLAN.md's "title-only short-circuit"
+  # investigation: on the PVFS packet, 89% of title/venue-only works were
+  # LLM-classified as "cites" anyway (mostly reproducing the prompt's own
+  # fallback instruction), so skipping the call loses little signal in
+  # aggregate. The other ~11% that got a real signal from a
+  # self-describing title alone are lost by enabling this -- set to
+  # false to have the LLM attempt every title-only work regardless.
+  title_only_shortcircuit: true
+  # The relationship label written by the short-circuit above. "cites" by
+  # default (matches what classify-2/classify-4 already default to for
+  # abstract-less works); override if a different fallback label better
+  # fits an analysis where a title-only mention should count differently.
+  title_only_relationship: "cites"
   # How much each relationship label counts for when ranking citing works
   # (impact.md's "Strongest Evidence" and the evidence wiki's Verified/
   # Pending ordering): score = strength * log(1 + citing work's own

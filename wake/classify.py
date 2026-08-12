@@ -52,17 +52,26 @@ one story -- e.g. a paper that uses the seed's tool as-is AND applies it
 to a new domain is both "uses-method-from" and "applies-to-domain", and
 picking only one loses signal. classify-3 (see _SYSTEM_CLASSIFY_3) asks
 for a short, confidence-ordered list of facets ("relationships": [...])
-instead of one label; classify-2 (the default, see `prompt_version` in
-config.yaml) keeps the original single-label behavior. Both write the
-same sidecar shape either way: a top-level "relationships" facets list
-plus legacy "relationship"/"confidence"/"justification" scalars set from
-the top (most-confident) facet, so every existing consumer (themes,
-narrative, report metrics) keeps working unchanged regardless of which
-prompt version produced the sidecar. Opting into classify-3 is a local
-config edit (`classify.prompt_version: "classify-3"`), not a default --
+instead of one label; classify-2 and classify-4 keep the original
+single-label behavior. All three write the same sidecar shape either
+way: a top-level "relationships" facets list plus legacy
+"relationship"/"confidence"/"justification" scalars set from the top
+(most-confident) facet, so every existing consumer (themes, narrative,
+report metrics) keeps working unchanged regardless of which prompt
+version produced the sidecar. Opting into classify-3 is a local config
+edit (`classify.prompt_version: "classify-3"`), not a default --
 switching prompt versions invalidates every existing sidecar's cache
 (see classify_all's prompt_version check), so it's deliberately not
 flipped by an upgrade alone.
+
+classify-4 (the packaged default as of this pass, see _SYSTEM_CLASSIFY_4)
+is classify-2's direct successor, not classify-3's: same single-label
+schema, but the prompt is given the seed paper's own abstract and (when
+`wake describe` has run) its LLM-written contribution paragraph, plus the
+citing work's `topics` -- so the model knows what the seed actually
+contributes instead of pattern-matching on its title alone. See PLAN.md's
+"classify-4 prompt enrichment" section for the investigation that
+motivated this.
 
 Each classification is written atomically as a sidecar JSON file, so the
 pipeline is safely resumable after Ctrl-C.
@@ -325,9 +334,70 @@ your decision on title and venue; set confidence <= 0.5 for every facet
 in that case (i.e., in practice, return exactly one low-confidence facet).\
 """
 
+# classify-4: single-facet successor to classify-2 (NOT classify-3 --
+# see PLAN.md's "Investigation findings": classify-3's multi-facet
+# schema has never been the packaged default and this change
+# deliberately doesn't flip that on as a side effect of fixing input
+# starvation). classify-2 only ever sees the seed's title/year plus the
+# citing work's title/year/venue/abstract -- it doesn't even know what
+# the seed paper actually contributes. classify-4 adds the seed's own
+# abstract (always present post-resolve) and, when available, its LLM-
+# written `wake describe` contribution paragraph, plus the citing work's
+# `topics`. Deliberately excludes author_overlap (kept a post-hoc tag,
+# never a classification input -- see PLAN.md). Same seven-label taxonomy
+# and JSON response shape as classify-2; only the system/user prompts
+# differ.
+_SYSTEM_CLASSIFY_4 = """\
+You are a bibliometric analyst classifying how a citing paper uses a seed paper.
+
+You will be given the seed paper's own abstract (and, when available, a
+short description of its contribution) so you understand what the seed
+paper actually is, not just its title -- use that context to distinguish
+"uses-method-from" (the citing paper uses the seed's method/tool
+unchanged), "related" (same ecosystem, no direct dependency), and "cites"
+(no specific relationship determinable) with more precision than title
+alone allows.
+
+You MUST choose exactly one of these seven relationship class strings —
+copy one verbatim into the "relationship" field, do not invent a new label:
+- "extends": The citing paper directly extends or modifies the seed's OWN
+  method, framework, or theory. Contrast with "uses-method-from": extends
+  changes the seed's method itself, uses-method-from uses it unchanged.
+- "uses-method-from": The citing paper uses the seed's method, algorithm,
+  or software tool — either applying it as-is, or incorporating it as a
+  component/dependency of a new system the citing paper builds. Either
+  way, the seed's method is used unchanged, not modified.
+- "uses-data-from": The citing paper uses the seed's dataset or data.
+- "applies-to-domain": The citing paper applies the seed's method to a
+  new domain or problem — a special case of "uses-method-from" where the
+  key story is the domain transfer itself, not just the reuse.
+- "benchmarks": The citing paper benchmarks against or compares performance with the seed.
+- "related": The citing paper is complementary work or infrastructure in
+  the same ecosystem (e.g. another library solving an adjacent problem in
+  the same domain) — an affirmative "these are related" judgment, but
+  without directly depending on, extending, or benchmarking the seed.
+- "cites": The citing paper cites the seed but no more specific
+  relationship can be determined from the text — the fallback for
+  unclear, indirect, or merely contextual mentions, and for cases that
+  don't fit any of the other six.
+
+If none of the first six clearly apply, use "cites" — never invent an
+eighth category or a variation on these names.
+
+Respond with ONLY a single JSON object, no markdown fence, matching this schema:
+{
+  "relationship": "<one of the seven exact strings above>",
+  "confidence": <float 0.0-1.0>,
+  "justification": "<one sentence explaining the classification>"
+}
+If the citing work's abstract is missing, base your decision on its title,
+venue, and topics; set confidence <= 0.5.\
+"""
+
 _SYSTEM_BY_VERSION: dict[str, str] = {
     "classify-2": _SYSTEM_CLASSIFY_2,
     "classify-3": _SYSTEM_CLASSIFY_3,
+    "classify-4": _SYSTEM_CLASSIFY_4,
 }
 
 
@@ -421,6 +491,60 @@ Citing paper:
 Classify the relationship.\
 """
 
+# classify-4's user template, paired with _SYSTEM_CLASSIFY_4 above. Adds
+# the seed's own abstract (always present post-resolve) and, when
+# present, its `wake describe` contribution paragraph, plus the citing
+# work's topics -- see PLAN.md's "Part A" for the rationale. The seed
+# description line is appended conditionally (build_classify4_user_msg,
+# below) rather than left as a literal "(not available)" placeholder, so
+# a fresh-resolve packet (no `wake describe` run yet) degrades cleanly to
+# abstract-only, matching classify-2's existing "(not available)"
+# handling for the citing work's own abstract.
+_USER_TEMPLATE_4 = """\
+Seed paper: "{seed_title}" ({seed_year})
+Seed abstract: {seed_abstract}{seed_description_block}
+
+Citing paper:
+  Title: {title}
+  Year: {year}
+  Venue: {venue}
+  Topics: {topics}
+  Abstract: {abstract}
+
+Classify the relationship.\
+"""
+
+_SEED_DESCRIPTION_LINE = "\nSeed contribution (from a prior analysis pass): {seed_description}"
+
+# Defensive cap on the seed description injected into classify-4's user
+# message -- describe.py's contribution paragraph is normally a few
+# sentences, but bounding it here prevents an unusually long or malformed
+# description from blowing up per-call token cost (see PLAN.md's Part A).
+_SEED_DESCRIPTION_MAX_CHARS = 1500
+
+
+def _build_classify4_user_msg(
+    seed_work: dict[str, Any], citing_work: dict[str, Any]
+) -> str:
+    seed_description = (seed_work.get("description") or "").strip()
+    seed_description_block = ""
+    if seed_description:
+        seed_description_block = _SEED_DESCRIPTION_LINE.format(
+            seed_description=seed_description[:_SEED_DESCRIPTION_MAX_CHARS]
+        )
+    topics = ", ".join(citing_work.get("topics") or []) or "(none)"
+    return _USER_TEMPLATE_4.format(
+        seed_title=seed_work.get("title") or "Unknown",
+        seed_year=seed_work.get("year") or "Unknown",
+        seed_abstract=seed_work.get("abstract") or "(not available)",
+        seed_description_block=seed_description_block,
+        title=citing_work.get("title") or "Unknown",
+        year=citing_work.get("year") or "Unknown",
+        venue=citing_work.get("venue") or "Unknown",
+        topics=topics,
+        abstract=citing_work.get("abstract") or "(not available)",
+    )
+
 
 def _prompt_version() -> str:
     return config.classify_cfg().get("prompt_version", "classify-2")
@@ -508,14 +632,18 @@ def classify_one(
     legacy "relationship"/"confidence"/"justification" scalars populated
     from the top (most-confident) facet.
     """
-    user_msg = _USER_TEMPLATE.format(
-        seed_title=seed_work.get("title") or "Unknown",
-        seed_year=seed_work.get("year") or "Unknown",
-        title=citing_work.get("title") or "Unknown",
-        year=citing_work.get("year") or "Unknown",
-        venue=citing_work.get("venue") or "Unknown",
-        abstract=citing_work.get("abstract") or "(not available)",
-    )
+    prompt_version = _prompt_version()
+    if prompt_version == "classify-4":
+        user_msg = _build_classify4_user_msg(seed_work, citing_work)
+    else:
+        user_msg = _USER_TEMPLATE.format(
+            seed_title=seed_work.get("title") or "Unknown",
+            seed_year=seed_work.get("year") or "Unknown",
+            title=citing_work.get("title") or "Unknown",
+            year=citing_work.get("year") or "Unknown",
+            venue=citing_work.get("venue") or "Unknown",
+            abstract=citing_work.get("abstract") or "(not available)",
+        )
 
     cost_sink = None
     if record_cost and seed_id is not None:
@@ -525,7 +653,7 @@ def classify_one(
                 system=system, user=user, response_text=response_text, base=base,
             )
 
-    system_prompt = _system_prompt(_prompt_version())
+    system_prompt = _system_prompt(prompt_version)
     result = chat_json(system_prompt, user_msg, model_role="classify", cost_sink=cost_sink)
 
     facets = _parse_relationships_response(result)
@@ -559,6 +687,44 @@ def classify_one(
         # Not a new relationship label -- "extends" + author_overlap=True
         # is a different story than "extends" + author_overlap=False, but
         # both are still "extends".
+        **overlap,
+    }
+
+
+def _title_only_shortcircuit_enabled() -> bool:
+    return bool(config.classify_cfg().get("title_only_shortcircuit", True))
+
+
+def _title_only_relationship() -> str:
+    return config.classify_cfg().get("title_only_relationship", "cites")
+
+
+def _title_only_shortcircuit_result(
+    seed_work: dict[str, Any], citing_work: dict[str, Any]
+) -> dict[str, Any]:
+    """Deterministic classification for a citing work that still has no
+    abstract after backfill -- no LLM call. See PLAN.md's "title-only
+    short-circuit": on the PVFS packet, 89% of title/venue-only works
+    were LLM-classified as "cites" anyway, mostly reproducing the
+    prompt's own fallback instruction ("if abstract missing, base
+    decision on title and venue; set confidence <= 0.5") rather than
+    adding signal. Tagged low_signal=True so report.py can distinguish
+    this from a work the LLM actually judged to be "cites".
+    """
+    label = _title_only_relationship()
+
+    from .author_overlap import compute_overlap
+    overlap = compute_overlap(seed_work, citing_work)
+
+    justification = "No abstract available after backfill; title/venue-only — not classified by LLM."
+    return {
+        "relationship": label,
+        "confidence": 0.0,
+        "justification": justification,
+        "relationships": [{"label": label, "confidence": 0.0, "justification": justification}],
+        "has_abstract": False,
+        "verification_status": "provisional",
+        "low_signal": True,
         **overlap,
     }
 
@@ -640,7 +806,9 @@ def classify_all(
     skipped = 0
     errors = 0
     to_call = 0
+    title_only = 0
     total = len(selected)
+    shortcircuit_enabled = _title_only_shortcircuit_enabled()
 
     for i, cw in enumerate(selected):
         citing_id = cw.get("openalex_id", f"unknown-{i}")
@@ -656,6 +824,30 @@ def classify_all(
             continue
 
         cw = backfill_mod.backfill_one(cw, verbose=verbose)
+
+        if shortcircuit_enabled and not cw.get("abstract"):
+            result = _title_only_shortcircuit_result(seed_work, cw)
+            sidecar = {
+                **result,
+                "prompt_version": pv,
+                "model": model,
+                "classified_at": now_iso(),
+            }
+            _write_sidecar(seed_id, citing_id, sidecar, base)
+            by_id[citing_id] = {**cw, **sidecar}
+            done += 1
+            title_only += 1
+
+            if verbose and (done + skipped) % 50 == 0:
+                print(
+                    f"[wake]   classified {done + skipped:,}/{total:,} "
+                    f"(new={done}, cached={skipped}, errors={errors})",
+                    file=sys.stderr,
+                )
+
+            if inter_call_delay > 0:
+                time.sleep(inter_call_delay)
+            continue
 
         try:
             result = classify_one(seed_work, cw, seed_id=seed_id, base=base, record_cost=record_cost)
@@ -703,9 +895,10 @@ def classify_all(
                 file=sys.stderr,
             )
         else:
+            title_only_note = f", {title_only} title-only short-circuited" if title_only else ""
             print(
                 f"[wake] Classification done: {done + skipped:,} total "
-                f"({done} new, {skipped} cached, {errors} errors)",
+                f"({done} new, {skipped} cached, {errors} errors{title_only_note})",
                 file=sys.stderr,
             )
 

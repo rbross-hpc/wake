@@ -11,11 +11,14 @@ import pytest
 from wake.classify import (
     CANONICAL_RELATIONSHIPS,
     RELATIONSHIPS,
+    _build_classify4_user_msg,
     _legacy_sidecar_dir,
     _legacy_sidecar_path,
     _load_sidecar,
     _sidecar_dir,
     _sidecar_path,
+    _system_prompt,
+    _title_only_shortcircuit_result,
     _validate_relationship_strength,
     _write_sidecar,
     classify_all,
@@ -341,3 +344,137 @@ def test_classify_all_backfills_missing_abstract_before_classifying(tmp_path):
     classified = [w for w in result if w.get("relationship")]
     assert len(classified) == 1
     assert classified[0]["has_abstract"] is True
+
+
+def test_system_prompt_classify_4_differs_from_classify_2():
+    assert _system_prompt("classify-4") != _system_prompt("classify-2")
+    assert "seed paper's own abstract" in _system_prompt("classify-4")
+
+
+def test_classify_4_user_msg_includes_seed_abstract_and_topics():
+    citing = {**SAMPLE_CITING_WORKS[0], "topics": ["High-performance computing"]}
+    msg = _build_classify4_user_msg(PARALLEL_NETCDF_WORK, citing)
+    assert PARALLEL_NETCDF_WORK["abstract"] in msg
+    assert "High-performance computing" in msg
+
+
+def test_classify_4_user_msg_includes_seed_description_when_present():
+    seed = {**PARALLEL_NETCDF_WORK, "description": "This paper introduces a high-performance I/O library."}
+    msg = _build_classify4_user_msg(seed, SAMPLE_CITING_WORKS[0])
+    assert "This paper introduces a high-performance I/O library." in msg
+
+
+def test_classify_4_user_msg_omits_seed_description_when_absent():
+    """Fresh-resolve case: no `wake describe` run yet -- no
+    'Seed contribution' line should appear at all."""
+    seed = {**PARALLEL_NETCDF_WORK}
+    seed.pop("description", None)
+    msg = _build_classify4_user_msg(seed, SAMPLE_CITING_WORKS[0])
+    assert "Seed contribution" not in msg
+
+
+def test_classify_4_user_msg_never_includes_author_overlap():
+    """Regression guard for the explicit exclusion (see PLAN.md):
+    author_overlap must never leak into the classify prompt."""
+    msg = _build_classify4_user_msg(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0])
+    assert "author_overlap" not in msg.lower().replace(" ", "_")
+    assert "overlap" not in msg.lower()
+
+
+def test_classify_one_uses_classify_4_template_when_configured(monkeypatch):
+    monkeypatch.setattr(
+        "wake.classify.config.classify_cfg",
+        lambda: {"prompt_version": "classify-4"},
+    )
+    seen = {}
+
+    def _capturing_chat_json(system, user, **kwargs):
+        seen["system"] = system
+        seen["user"] = user
+        return {"relationship": "uses-method-from", "confidence": 0.8, "justification": "x"}
+
+    with patch("wake.classify.chat_json", side_effect=_capturing_chat_json):
+        classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
+
+    assert seen["system"] == _system_prompt("classify-4")
+    assert PARALLEL_NETCDF_WORK["abstract"] in seen["user"]
+
+
+def test_title_only_shortcircuit_result_is_low_signal_cites():
+    result = _title_only_shortcircuit_result(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0])
+    assert result["relationship"] == "cites"
+    assert result["low_signal"] is True
+    assert result["has_abstract"] is False
+    assert result["verification_status"] == "provisional"
+
+
+def test_title_only_shortcircuit_respects_configured_label(monkeypatch):
+    monkeypatch.setattr(
+        "wake.classify.config.classify_cfg",
+        lambda: {"title_only_relationship": "related"},
+    )
+    result = _title_only_shortcircuit_result(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0])
+    assert result["relationship"] == "related"
+
+
+def test_classify_all_short_circuits_title_only_works_with_no_llm_call(tmp_path):
+    """A work with no abstract after backfill should be classified
+    deterministically, with chat_json never called."""
+    no_abstract_work = {
+        **SAMPLE_CITING_WORKS[0],
+        "openalex_id": "W_title_only",
+        "abstract": None,
+        "doi": None,
+    }
+    with patch("wake.classify.chat_json") as mock_chat, \
+         patch("wake.backfill.backfill_one", side_effect=lambda w, **kw: w):
+        result = classify_all(
+            PARALLEL_NETCDF_WORK, [no_abstract_work],
+            base=tmp_path, inter_call_delay=0, verbose=False,
+        )
+    mock_chat.assert_not_called()
+    classified = [w for w in result if w.get("relationship")]
+    assert len(classified) == 1
+    assert classified[0]["relationship"] == "cites"
+    assert classified[0]["low_signal"] is True
+
+    # Cached/resumable exactly like an LLM-produced sidecar.
+    cached = _load_sidecar(PARALLEL_NETCDF_WORK["openalex_id"], "W_title_only", base=tmp_path)
+    assert cached is not None
+    assert cached["low_signal"] is True
+
+
+def test_classify_all_short_circuit_disabled_falls_back_to_llm(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "wake.classify.config.classify_cfg",
+        lambda: {"prompt_version": "classify-2", "title_only_shortcircuit": False},
+    )
+    no_abstract_work = {
+        **SAMPLE_CITING_WORKS[0],
+        "openalex_id": "W_title_only_2",
+        "abstract": None,
+        "doi": None,
+    }
+    with patch("wake.classify.chat_json", side_effect=_fake_chat_json) as mock_chat, \
+         patch("wake.backfill.backfill_one", side_effect=lambda w, **kw: w):
+        result = classify_all(
+            PARALLEL_NETCDF_WORK, [no_abstract_work],
+            base=tmp_path, inter_call_delay=0, verbose=False,
+        )
+    mock_chat.assert_called_once()
+    classified = [w for w in result if w.get("relationship")]
+    assert len(classified) == 1
+    assert not classified[0].get("low_signal")
+
+
+def test_classify_all_does_not_short_circuit_works_with_an_abstract(tmp_path):
+    works_with_abstracts = [w for w in SAMPLE_CITING_WORKS if w.get("abstract")]
+    assert works_with_abstracts, "fixture must contain at least one work with an abstract"
+    with patch("wake.classify.chat_json", side_effect=_fake_chat_json) as mock_chat:
+        result = classify_all(
+            PARALLEL_NETCDF_WORK, works_with_abstracts,
+            base=tmp_path, inter_call_delay=0, verbose=False,
+        )
+    assert mock_chat.called
+    classified = [w for w in result if w.get("relationship")]
+    assert all(not w.get("low_signal") for w in classified)

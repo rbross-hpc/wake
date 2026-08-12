@@ -2555,3 +2555,65 @@ No functional change to wake's behavior beyond the label rename/merge and defaul
 purely a naming/taxonomy clarity refactor made possible by wake having exactly one user at the time.
 Open roadmap items unchanged: Theme B (DOE-relevance signals), Theme H (non-publication evidence
 search), `wake narrative section audit`, full `WakeContext` threading (still deliberately deferred).
+
+## v0.4.22 — `classify-4` prompt enrichment + title-only short-circuit (`feature/classify-4-enrichment`)
+
+Motivated by a live-data investigation against the PVFS packet (843 citing works,
+`wake-out/W2110298485/`) recorded in `PLAN.md`: `classify-2` (the packaged default since v0.1) only
+ever saw the seed's *title* plus the citing work's title/year/venue/abstract -- it didn't know what the
+seed paper actually contributes, just pattern-matched on its title. 62% of classified works landed in
+the `cites` fallback (89% among the ~22% of works OpenAlex left abstract-less), mean confidence 0.61.
+
+### What was built
+
+**Part A -- `classify-4` prompt** (`wake/classify.py`): a single-facet successor to `classify-2` (NOT
+`classify-3` -- `classify-3`'s multi-facet schema has never been a packaged default and this change
+deliberately doesn't flip it on as a side effect). `_SYSTEM_CLASSIFY_4`/`_USER_TEMPLATE_4` add the
+seed's own abstract (always present post-resolve), the seed's `wake describe` contribution paragraph
+when one exists (degrades cleanly to abstract-only otherwise, capped at 1500 chars), and the citing
+work's `topics`. `author_overlap` deliberately excluded from the prompt -- stays a post-hoc tag only.
+`classify.prompt_version` packaged default bumped `classify-2` -> `classify-4` in `wake/config.yaml`
+(invalidates every existing packet's classify sidecars, same as any prior prompt-version bump).
+
+**Part B -- title-only deterministic short-circuit** (`wake/classify.py::classify_all`): a citing work
+that still has no abstract after backfill (Primo/OSTI/Semantic Scholar all missed) gets a deterministic
+`cites` classification with **no LLM call**, tagged `low_signal: true` -- gated on new
+`classify.title_only_shortcircuit` (default `true`) and `classify.title_only_relationship` (default
+`"cites"`, overridable). Based on the same investigation: 89% of PVFS's title/venue-only works were
+LLM-classified `cites` anyway, mostly reproducing the prompt's own fallback instruction. The
+short-circuited sidecar carries the same `has_abstract`/`verification_status`/`prompt_version`/`model`/
+`classified_at` fields as an LLM result, so it's cached and resumable identically. `wake.models`'s
+`ClassificationResult`/`ClassificationResultWrite` gained a `low_signal: bool = False` field.
+
+**Part C -- `low_signal` surfaced in the brief** (`wake/report.py`): `build_metrics` counts
+`low_signal_count`, carries `low_signal` through `top_evidence` entries, and `bake_markdown` adds a
+"Reach" coverage line ("N of M citing works were title/venue-only after backfill and not
+LLM-classified") when the count is nonzero -- distinct from the pre-existing `no_abstract_count` line,
+so a short-circuited work is never confused with one the LLM actually judged `cites`.
+
+**Part D -- skill guidance** (`wake/skills/impact-analysis/SKILL.md`,
+`references/classify.md`): new "Run `wake describe` first" and "Title-only short-circuit" sections in
+`classify.md`; step 4 of `SKILL.md`'s sequence now recommends `wake describe` before the first
+`classify` call on a new seed. Soft guidance only -- not auto-triggered, no stage dependency added.
+
+### Verification
+
+`ruff check wake/ tests/` clean, `mypy` clean. Full offline suite: 939 passed, 15 deselected (up from
+862 in v0.4.21 -- new coverage for classify-4's prompt/template dispatch, the seed-description
+present/absent/author_overlap-exclusion cases, the short-circuit's deterministic output and
+no-LLM-call guarantee, its config-flag opt-out, cache/resume behavior, and `low_signal` propagation
+through `build_metrics`/`bake_markdown`/`top_evidence`).
+
+### Explicitly not in this pass (see `PLAN.md`'s "Explicitly not in this plan" for the full list)
+
+`classify-3`'s multi-facet schema was not adopted; no per-difficulty model routing; no in-text citation
+context integration; no auto-triggering of `wake describe`; no confidence calibration or evaluation
+harness. All separate, larger ideas, deliberately scoped out.
+
+### Next phase
+
+Product features next: Theme B (DOE-relevance signals), Theme H (non-publication evidence search). See
+`BACKLOG.md`'s "Open / Not Yet Built" section for current sequencing. A live spot-check re-run of `wake
+classify --force` against the PVFS packet (to confirm the coverage/confidence shift the investigation
+predicted) remains a natural follow-up but wasn't required to close this pass -- the offline suite is
+green and the change is behavior-verified there.
