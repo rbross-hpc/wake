@@ -200,9 +200,23 @@ mostly reproduces the prompt's own fallback instruction. Full account in
 `docs/build-log.md`'s "v0.4.22" entry; the design record below (kept
 as-is for that context) predates the build.
 
-**Next phase:** product features — Theme B (DOE-relevance signals),
-Theme H (non-publication evidence search). See `BACKLOG.md`'s "Open /
-Not Yet Built" section for current sequencing.
+A live A/B run of classify-4 against the PVFS packet (843 citing works)
+surfaced two real follow-on items, tracked in the new plan section below
+("classify-4: description-only + required, non-destructive re-resolve"):
+(1) `resolve_and_cache` silently overwrites `seed.json` on any re-resolve
+that races ahead of a stale/missing `.state.json` seed-stage entry,
+destroying `description`/`seed_pdf` enrichment with no warning -- caught
+live when a classify-4 run turned out to have run abstract-only, not
+description-enriched, with no error; (2) classify-4's seed abstract +
+optional description was, on reflection, the wrong shape -- the
+PDF-grounded `wake describe` description is strictly more informative
+than the abstract, so classify-4 should use it exclusively and require
+it, not silently degrade.
+
+**Next phase:** `classify-4` description-only + required, non-destructive
+re-resolve (full plan below), then product features — Theme B
+(DOE-relevance signals), Theme H (non-publication evidence search). See
+`BACKLOG.md`'s "Open / Not Yet Built" section for current sequencing.
 
 **Deferred, real, not forgotten:**
 - Product features: Theme B (DOE-relevance signals), Theme H
@@ -401,3 +415,236 @@ Explicitly **not** planned: replacing the filesystem-artifact model with
 a database. Both the original external assessment and independent
 review agree file-first is a real strength of wake's design, not a
 symptom needing a fix.
+
+---
+
+## Next: `classify-4` description-only + required, non-destructive re-resolve
+
+**Status: planned, not yet built.** Motivated by a live A/B run of the
+v0.4.22 `classify-4` prompt against the PVFS packet (843 citing works,
+`wake-out/W2110298485/`, comparison baseline preserved at
+`wake-out-classify-2/W2110298485/`). Two problems surfaced mid-run, one a
+data-loss bug, one a prompt-design reconsideration:
+
+1. **`resolve_and_cache` silently destroys seed enrichment on re-resolve.**
+   The PVFS classify-4 run was set up by hand-copying `seed.json`/
+   `seed.pdf`/`seed.pdf.json`/`citing.json` into a fresh work-dir without
+   also seeding `.state.json`'s `seed`/`citing` stage-completion entries.
+   Because `is_stage_current()` saw no recorded `seed` stage, `wake
+   classify`'s call to `resolve_and_cache` silently re-resolved the seed
+   from OpenAlex and **overwrote `seed.json` wholesale** — the fresh
+   resolve has `abstract` (OpenAlex always returns that) but not
+   `description`/`described_at`/`seed_pdf` (only ever written by `wake
+   describe`/`wake fetch-pdf`, never re-derived by `resolve`). The
+   resulting classify-4 run completed successfully (839/843 classified)
+   but with an **empty seed-description block** for all 839 calls — no
+   error, no warning, silently degraded to abstract-only. This is a real
+   bug independent of the hand-copy scenario that surfaced it: any
+   packet whose `.state.json` is missing, stale, or hasn't recorded the
+   `seed` stage (a corrupted/partial `.state.json`, a packet built by an
+   older wake version with a different stage-key convention, or any
+   manual intervention in `wake-out/`) will silently lose `wake
+   describe`/`wake fetch-pdf` work the next time anything triggers a
+   re-resolve.
+2. **classify-4's abstract+optional-description shape was the wrong
+   call.** The seed's `wake describe` description (see `describe.py`,
+   `describe-2`) is generated *from* the abstract **plus** an excerpt of
+   the seed's own extracted PDF full text (up to
+   `describe.seed_excerpt_chars`, default 6000 chars) — confirmed live on
+   the PVFS seed: `describe-2`'s output paragraph reflects details (API
+   names, benchmark specifics) present only in the PDF body, not the
+   abstract. The description therefore strictly dominates the abstract as
+   seed-side context; classify-4 sending both (abstract always, description
+   only when present) is redundant on the common path and silently
+   downgrades on the uncommon one (see item 1) with no signal to the
+   operator that anything was lost.
+
+### What changed from the original classify-4 design (already shipped, v0.4.22)
+
+The original plan (previous section) had classify-4 send the seed
+**abstract** unconditionally plus the seed **description** as an optional
+extra line, and treated "no description yet" as an unremarkable,
+silently-degraded case (soft `wake describe`-first guidance only, per
+that plan's Part D). This next pass **replaces** that shape:
+classify-4 will use the description **only** (no seed abstract line at
+all) and will **require** it — a `wake classify` run under classify-4
+against a seed with no description fails fast with a clear instruction,
+rather than silently sending less context than intended.
+
+### Part A — classify-4 prompt: description-only
+
+- `wake/classify.py`:
+  - `_SYSTEM_CLASSIFY_4`: rewrite the opening paragraph. Currently: "You
+    will be given the seed paper's own abstract (and, when available, a
+    short description of its contribution)...". New: the model is told
+    it will be given the seed's **contribution description** (grounded in
+    the paper's own PDF text, not just its abstract) — no mention of an
+    abstract at all.
+  - `_USER_TEMPLATE_4`: remove the `Seed abstract: {seed_abstract}` line
+    entirely. The seed description becomes the sole, always-present
+    seed-side context block (no longer a conditionally-appended extra
+    line via `_SEED_DESCRIPTION_BLOCK`/`_SEED_DESCRIPTION_LINE`) — since
+    it's now required (Part B), there's no "omit cleanly when absent"
+    case to design for on the happy path. Citing-side fields (title/
+    year/venue/topics/abstract) are unchanged.
+  - `_build_classify4_user_msg`: drop the `seed_abstract` parameter/
+    formatting; keep the existing `_SEED_DESCRIPTION_MAX_CHARS = 1500`
+    truncation cap on the description. Add a defensive assertion (not a
+    silent fallback) that `seed_work.get("description")` is non-empty —
+    belt-and-suspenders under the Part B guard, which is the actual
+    enforcement point.
+  - Module docstring's classify-4 paragraph updated to describe it as
+    description-only and description-required, not abstract+optional-
+    description.
+  - **This mutates classify-4 in place** (not a new `classify-5`) — the
+    existing PVFS classify-4 sidecars (abstract+topics-only, no
+    description) are superseded by this shape and will be re-classified
+    from scratch the next time `wake classify` runs against that packet
+    (same cache-invalidation mechanism as every prior prompt-version
+    change; see `_load_sidecar`'s prompt_version+model check). The
+    abstract-only run has already been preserved as a frozen snapshot at
+    `wake-out-classify-4-abstractonly/W2110298485/` specifically so this
+    in-place mutation doesn't lose that data point.
+
+### Part B — Fail-fast requirement: classify-4 needs a seed description
+
+- `wake/classify.py::classify_all`: add a check near the top of the
+  function, before the resume-cache loop and before any LLM calls:
+  if the active prompt version is `"classify-4"` and
+  `seed_work.get("description")` is empty/missing, raise immediately
+  with a clear, actionable message (e.g. "classify-4 requires a seed
+  description; run `wake describe <seed>` first.") — one check, one
+  error, zero wasted LLM calls, rather than 800+ identical per-work
+  failures.
+  - Exception type: match whatever convention `wake/errors.py` already
+    uses for user-facing precondition failures (audit at implementation
+    time — likely a dedicated exception class so `cli/commands/classify.py`
+    can catch it and route through the existing `emit_error()` path for a
+    clean CLI message instead of a raw traceback, consistent with how
+    `SeedNotFound` is already handled in `_resolve_seed_to_work`).
+  - Deliberately **no auto-triggering of `wake describe`** from
+    `classify` — same "no implicit side-effects" principle as the
+    original plan's Part D, just enforced as a hard error now instead of
+    soft guidance. The workflow this produces: `wake classify` on a
+    seed with no description fails with the instruction, the operator
+    (or agent) runs `wake describe <seed>`, then re-runs `wake classify`
+    — self-healing, and it surfaces exactly the problem that silently
+    degraded the PVFS run in item 1 above, instead of hiding it.
+  - `classify-2`/`classify-3` are unaffected — the requirement is
+    specific to `prompt_version == "classify-4"`.
+
+### Part C — Non-destructive re-resolve (root-cause fix for the clobber bug)
+
+- `wake/seed.py::resolve_and_cache`: when re-writing `seed.json` (the
+  `if not force and is_stage_current(...)` guard falls through to a
+  fresh resolve — whether because of `--force`, a genuinely stale
+  prompt_version, or a missing/incomplete `.state.json`), **merge-preserve**
+  existing enrichment fields from the on-disk `seed.json` if one is
+  already present, rather than replacing the whole file with a bare
+  fresh `resolve()` result:
+  - Preserved (carried forward from the existing file if the fresh
+    resolve doesn't independently produce them): `description`,
+    `described_at`, `seed_pdf`, `abstract_source`, and any other
+    post-resolve enrichment field a later stage has written (audit
+    `models.Work`'s "Enrichment fields, added post-creation" list at
+    implementation time for the authoritative set).
+  - Still overwritten by the fresh resolve: core bibliographic fields
+    (`title`, `authors`, `author_ids`, `year`, `venue`, `venue_type`,
+    `doi`, `url`, `cited_by_count`, `type`, `abstract`, `topics`,
+    `oa_pdf_url`, `oa_status`) — a genuine re-resolve should still pick
+    up upstream OpenAlex corrections/updates to these.
+  - Audit every existing caller of `resolve_and_cache` (`wake resolve`,
+    every command's `_resolve_seed_to_work` path) to confirm none
+    depends on the current destructive-overwrite behavior (e.g. a test
+    or workflow that intentionally re-resolves specifically *to* clear
+    stale enrichment — if one exists, it needs an explicit `--force`-like
+    opt-out for the merge, not a silent behavior change out from under
+    it).
+  - This is a root-cause fix, not scoped to the classify-4 interaction:
+    it protects `wake describe`/`wake fetch-pdf` output for every stage
+    and every packet, not just classify-4's new hard dependency on
+    `description`.
+
+### Part D — Docs
+
+- `wake/skills/impact-analysis/references/classify.md` /
+  `wake/skills/impact-analysis/SKILL.md`: update the classify-4
+  description — it now uses the seed's PDF-grounded contribution
+  description exclusively (not the abstract) and **requires** `wake
+  describe` to have been run first; the "Run `wake describe` first"
+  guidance shifts from *recommended* to *required* specifically for
+  classify-4 (still not auto-triggered).
+  - Also document, as a clarification (no behavior change): abstract-only
+    relationship judgment is the `classify` stage's job
+    (`models.classify`); full-text-grounded judgment against the
+    *citing* paper's own PDF is the `evidence` stage's job
+    (`models.evidence`) — these are already two independently
+    configurable model roles today, so no new model-role config is
+    needed to distinguish "abstract-only" from "with full text";
+    the distinction is which *stage* is running, not a new setting.
+- `wake/config.yaml`: add a short comment near `models.classify`/
+  `models.evidence` documenting that division of labor, so a reader
+  scanning the models block doesn't go looking for a `classify_full_text`
+  key that doesn't exist.
+
+### Tests
+
+- `tests/test_classify.py`:
+  - classify-4's user message no longer contains a `Seed abstract:` line
+    (inverts the existing `test_classify_4_user_msg_includes_seed_abstract_and_topics`
+    assertion) and always contains the seed description.
+  - `classify_all` raises the fail-fast error when `prompt_version ==
+    "classify-4"` and the seed has no description, with `chat_json`
+    asserted **never called** (mirrors the existing dry-run/short-circuit
+    "no LLM call" test pattern).
+  - `classify_all` proceeds normally (LLM called, sidecars written) when
+    a description is present.
+  - `classify-2`/`classify-3` prompts/behavior unchanged (regression
+    guard, same as the original classify-4 pass).
+- A seed-resolve test (new or added to wherever `resolve_and_cache` is
+  covered today): re-resolving a seed that already has `description`/
+  `described_at`/`seed_pdf` on disk preserves all three, while core
+  bibliographic fields still reflect the fresh resolve.
+
+### Verification
+
+`ruff check wake/ tests/`, `mypy`, `pytest tests/ -m 'not network'`.
+
+Post-merge validation is deliberately **not** a full 843-work
+re-classification of the PVFS packet (that already happened once for the
+abstract-only shape and is preserved at
+`wake-out-classify-4-abstractonly/`). Instead: `wake describe
+W2110298485` to regenerate the live packet's description (safe now under
+Part C's non-destructive resolve), then `wake classify W2110298485
+--limit 20 --sort cited-by` as a small sanity sample under the new
+description-only classify-4 — checked for a sane label distribution and
+a couple of legible justifications, not a full second A/B run. A full
+843-work description-only comparison against the two preserved
+snapshots (`wake-out-classify-2/`, `wake-out-classify-4-abstractonly/`)
+remains a natural follow-up but is explicitly not required to close this
+pass.
+
+### Explicitly not in this plan
+
+- **No new model-role config surface** (e.g. no
+  `models.classify_abstract_only` / `models.classify_full_text` split).
+  The abstract-only vs. full-text-grounded judgment distinction already
+  exists as the `classify` vs. `evidence` stage split, each with its own
+  independently configurable model role — adding a parallel config knob
+  inside `classify` alone would be redundant, since `classify` has no
+  citing-work-PDF-text code path today (that's `evidence`'s job; see the
+  original plan's "Investigation findings" for confirmation that
+  `classify_one` only ever sees title/abstract/venue/topics, never
+  citing full text).
+- **No `classify-5`** — this mutates `classify-4` in place, by explicit
+  choice, accepting the cache invalidation this causes (the
+  abstract-only PVFS classify-4 sidecars are superseded, but preserved
+  separately as a frozen snapshot rather than kept live).
+- **No auto-triggering of `wake describe`** from `classify` — hard
+  failure with an actionable message instead, per Part B.
+- **No full re-run of the PVFS 843-work comparison** as part of this
+  plan (see Verification above) — a small-sample sanity check only.
+- Everything already out-of-scope in the original classify-4 plan above
+  (multi-facet adoption, per-difficulty model routing beyond the
+  classify/evidence split, citation-context integration, confidence
+  calibration/eval harness) remains out of scope here too.
