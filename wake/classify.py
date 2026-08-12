@@ -66,12 +66,20 @@ flipped by an upgrade alone.
 
 classify-4 (the packaged default as of this pass, see _SYSTEM_CLASSIFY_4)
 is classify-2's direct successor, not classify-3's: same single-label
-schema, but the prompt is given the seed paper's own abstract and (when
-`wake describe` has run) its LLM-written contribution paragraph, plus the
-citing work's `topics` -- so the model knows what the seed actually
-contributes instead of pattern-matching on its title alone. See PLAN.md's
-"classify-4 prompt enrichment" section for the investigation that
-motivated this.
+schema, but the prompt is given the seed paper's own `wake describe`
+contribution paragraph (grounded in the seed's own PDF text, not just its
+abstract -- see describe.py) plus the citing work's `topics` -- so the
+model knows what the seed actually contributes instead of
+pattern-matching on its title alone. The seed description is REQUIRED
+for classify-4 (classify_all fails fast, before any LLM calls, if the
+seed has none) -- earlier revisions of classify-4 sent the seed's
+abstract unconditionally plus the description as an optional extra line,
+but the description is generated from the abstract plus a PDF excerpt
+and therefore strictly dominates it as context, so sending both was
+redundant and a missing description silently downgraded the whole run
+with no signal to the operator. See PLAN.md's "classify-4
+description-only + required" section for the investigation that
+motivated this change.
 
 Each classification is written atomically as a sidecar JSON file, so the
 pipeline is safely resumable after Ctrl-C.
@@ -340,18 +348,26 @@ in that case (i.e., in practice, return exactly one low-confidence facet).\
 # deliberately doesn't flip that on as a side effect of fixing input
 # starvation). classify-2 only ever sees the seed's title/year plus the
 # citing work's title/year/venue/abstract -- it doesn't even know what
-# the seed paper actually contributes. classify-4 adds the seed's own
-# abstract (always present post-resolve) and, when available, its LLM-
-# written `wake describe` contribution paragraph, plus the citing work's
-# `topics`. Deliberately excludes author_overlap (kept a post-hoc tag,
-# never a classification input -- see PLAN.md). Same seven-label taxonomy
-# and JSON response shape as classify-2; only the system/user prompts
+# the seed paper actually contributes. classify-4 gives the model the
+# seed's `wake describe` contribution paragraph (see describe.py --
+# grounded in the seed's own PDF text, not just its abstract) plus the
+# citing work's `topics`. The seed description is REQUIRED: classify_all
+# fails fast, before any LLM calls, if the seed has none (see PLAN.md's
+# "classify-4 description-only + required" -- an earlier revision of
+# this prompt sent the seed abstract unconditionally plus the
+# description as an optional extra, but the description is generated
+# from the abstract plus a PDF excerpt and so strictly dominates it;
+# silently degrading to abstract-only when the description was missing
+# masked a real seed-enrichment bug rather than surfacing it).
+# Deliberately excludes author_overlap (kept a post-hoc tag, never a
+# classification input -- see PLAN.md). Same seven-label taxonomy and
+# JSON response shape as classify-2; only the system/user prompts
 # differ.
 _SYSTEM_CLASSIFY_4 = """\
 You are a bibliometric analyst classifying how a citing paper uses a seed paper.
 
-You will be given the seed paper's own abstract (and, when available, a
-short description of its contribution) so you understand what the seed
+You will be given a description of the seed paper's contribution
+(grounded in the paper's own full text) so you understand what the seed
 paper actually is, not just its title -- use that context to distinguish
 "uses-method-from" (the citing paper uses the seed's method/tool
 unchanged), "related" (same ecosystem, no direct dependency), and "cites"
@@ -491,18 +507,18 @@ Citing paper:
 Classify the relationship.\
 """
 
-# classify-4's user template, paired with _SYSTEM_CLASSIFY_4 above. Adds
-# the seed's own abstract (always present post-resolve) and, when
-# present, its `wake describe` contribution paragraph, plus the citing
-# work's topics -- see PLAN.md's "Part A" for the rationale. The seed
-# description line is appended conditionally (build_classify4_user_msg,
-# below) rather than left as a literal "(not available)" placeholder, so
-# a fresh-resolve packet (no `wake describe` run yet) degrades cleanly to
-# abstract-only, matching classify-2's existing "(not available)"
-# handling for the citing work's own abstract.
+# classify-4's user template, paired with _SYSTEM_CLASSIFY_4 above. Uses
+# the seed's `wake describe` contribution paragraph (REQUIRED -- see
+# classify_all's fail-fast check; there is deliberately no "(not
+# available)" fallback here, unlike the citing work's own abstract
+# below) plus the citing work's topics -- see PLAN.md's "classify-4
+# description-only + required" for the rationale. No seed-abstract line:
+# the description is generated from the abstract plus a PDF excerpt (see
+# describe.py) and therefore strictly dominates it as seed-side context,
+# so sending both was redundant.
 _USER_TEMPLATE_4 = """\
 Seed paper: "{seed_title}" ({seed_year})
-Seed abstract: {seed_abstract}{seed_description_block}
+Seed contribution: {seed_description}
 
 Citing paper:
   Title: {title}
@@ -514,30 +530,32 @@ Citing paper:
 Classify the relationship.\
 """
 
-_SEED_DESCRIPTION_LINE = "\nSeed contribution (from a prior analysis pass): {seed_description}"
-
 # Defensive cap on the seed description injected into classify-4's user
 # message -- describe.py's contribution paragraph is normally a few
 # sentences, but bounding it here prevents an unusually long or malformed
-# description from blowing up per-call token cost (see PLAN.md's Part A).
+# description from blowing up per-call token cost.
 _SEED_DESCRIPTION_MAX_CHARS = 1500
 
 
 def _build_classify4_user_msg(
     seed_work: dict[str, Any], citing_work: dict[str, Any]
 ) -> str:
+    """Build classify-4's user message. Callers MUST ensure
+    seed_work has a non-empty "description" before calling this --
+    classify_all's own fail-fast check (raised near the top of that
+    function, before any LLM calls) is the actual enforcement point;
+    the assertion here is a belt-and-suspenders backstop, not the
+    primary guard."""
     seed_description = (seed_work.get("description") or "").strip()
-    seed_description_block = ""
-    if seed_description:
-        seed_description_block = _SEED_DESCRIPTION_LINE.format(
-            seed_description=seed_description[:_SEED_DESCRIPTION_MAX_CHARS]
-        )
+    assert seed_description, (
+        "classify-4 requires a seed description; classify_all should have "
+        "failed fast before calling _build_classify4_user_msg with none"
+    )
     topics = ", ".join(citing_work.get("topics") or []) or "(none)"
     return _USER_TEMPLATE_4.format(
         seed_title=seed_work.get("title") or "Unknown",
         seed_year=seed_work.get("year") or "Unknown",
-        seed_abstract=seed_work.get("abstract") or "(not available)",
-        seed_description_block=seed_description_block,
+        seed_description=seed_description[:_SEED_DESCRIPTION_MAX_CHARS],
         title=citing_work.get("title") or "Unknown",
         year=citing_work.get("year") or "Unknown",
         venue=citing_work.get("venue") or "Unknown",
@@ -777,10 +795,23 @@ def classify_all(
 
     If dry_run=True, no LLM calls are made; the function reports what would
     happen (new vs. already-cached) without writing anything.
+
+    Raises ValueError immediately (before any LLM calls, any cache
+    lookups, or any backfill attempts) if the active prompt_version is
+    "classify-4" and *seed_work* has no description -- see PLAN.md's
+    "classify-4 description-only + required". One upfront failure
+    instead of every one of potentially hundreds of citing works failing
+    identically.
     """
     seed_id = seed_work["openalex_id"]
     pv = _prompt_version()
     model = _model()
+
+    if pv == "classify-4" and not (seed_work.get("description") or "").strip():
+        raise ValueError(
+            "classify-4 requires a seed description. Run "
+            f"'wake describe {seed_id}' first, then re-run classify."
+        )
 
     manual_abstracts = load_manual_abstracts(seed_id, base)
     if manual_abstracts:

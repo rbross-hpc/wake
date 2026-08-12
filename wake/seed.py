@@ -100,6 +100,23 @@ def load_seed(openalex_id: str, base: Path | None = None) -> dict[str, Any] | No
     return read_json(p)
 
 
+# Enrichment fields written by later stages (wake describe, wake
+# fetch-pdf/seed_pdf, backfill), never re-derived by a bare resolve()
+# call -- see models.Work's "Enrichment fields" list, the authoritative
+# source for this set. Preserved across any re-resolve (see
+# resolve_and_cache below) rather than dropped, so a re-resolve
+# triggered by --force or a missing/stale .state.json entry never
+# silently destroys `wake describe`/`wake fetch-pdf` output. Deliberately
+# excludes `resolved_at`, which a genuine resolve always freshly sets.
+_SEED_ENRICHMENT_FIELDS = (
+    "abstract_source",
+    "description",
+    "described_at",
+    "seed_pdf",
+    "primo_pdf_url",
+)
+
+
 def resolve_and_cache(seed: str, base: Path | None = None, force: bool = False) -> dict[str, Any]:
     """Resolve seed and cache the result; return cached if current.
 
@@ -110,6 +127,17 @@ def resolve_and_cache(seed: str, base: Path | None = None, force: bool = False) 
     not by blocking resolve. This means resolve is idempotent: re-running
     on a cached seed skips the metadata re-fetch but still tries to get
     the PDF if it isn't already cached.
+
+    Non-destructive on re-resolve: if a seed.json already exists on disk
+    (whether reached via --force, a genuinely stale prompt_version, or a
+    missing/incomplete .state.json seed-stage entry), any enrichment
+    fields it already carries (see _SEED_ENRICHMENT_FIELDS) are merged
+    forward into the freshly-resolved payload rather than being dropped.
+    Core bibliographic fields (title, authors, abstract, etc.) always
+    reflect the fresh resolve. See PLAN.md's "classify-4 description-only
+    + required" for the live bug this fixes: a re-resolve was silently
+    wiping out a seed's `wake describe` description and `seed_pdf`
+    metadata with no warning.
     """
     work = resolve(seed)
     oid = work["openalex_id"]
@@ -121,8 +149,15 @@ def resolve_and_cache(seed: str, base: Path | None = None, force: bool = False) 
             _maybe_auto_fetch_seed_pdf(cached, base=base, verbose=True)
             return cached
 
+    existing = load_seed(oid, base) or {}
+    preserved = {
+        field: existing[field]
+        for field in _SEED_ENRICHMENT_FIELDS
+        if existing.get(field) is not None
+    }
+
     wd.mkdir(parents=True, exist_ok=True)
-    payload: dict[str, Any] = {**work, "resolved_at": now_iso()}
+    payload: dict[str, Any] = {**work, **preserved, "resolved_at": now_iso()}
     atomic_write_json(wd / "seed.json", payload)
     mark_stage_complete(wd, _STAGE, seed_id=oid, prompt_version=_VERSION)
     _maybe_auto_fetch_seed_pdf(payload, base=base, verbose=True)
