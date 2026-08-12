@@ -225,38 +225,47 @@ def _fake_chat_json(system, user, model_role="classify", model=None, temperature
     return {"relationship": "uses-method-from", "confidence": 0.8, "justification": "fake"}
 
 
-def test_classify_one_always_marks_provisional(tmp_path):
+def test_classify_one_always_marks_provisional(tmp_path, monkeypatch):
     """classify_one only ever sees title/abstract/venue -- it can never
     verify against the citing work's actual text, so every result it
     produces must be stamped 'provisional', with no way to opt out.
-    Promotion to 'verified' only happens via wake evidence + wake override."""
+    Promotion to 'verified' only happens via wake evidence + wake override.
+
+    Pinned to classify-2: this test is about classify_one's general
+    provisional-tagging behavior, independent of which prompt version is
+    active, and PARALLEL_NETCDF_WORK has no description (classify-4
+    requires one -- see test_classify_4_* below for that behavior)."""
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
         result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
     assert result["verification_status"] == "provisional"
 
 
-def test_classify_one_tags_author_overlap_false_by_default(tmp_path):
+def test_classify_one_tags_author_overlap_false_by_default(tmp_path, monkeypatch):
     """Fixture works have no author_ids -- must never be spuriously
     flagged as an overlap just because both sides lack the field."""
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
         result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
     assert result["author_overlap"] is False
 
 
-def test_classify_one_does_not_persist_a_strength_field():
+def test_classify_one_does_not_persist_a_strength_field(monkeypatch):
     """Strength is a derived ranking score, recomputed at bake time from
     the relationship label and the current config (see
     relationship_strength()/report.relationship_score()) -- classify_one's
     output must never carry a "strength" field, so a later config edit to
     classify.relationship_strength can rerank without stale, baked-in
     scores winning over the new config."""
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
         result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
     assert "strength" not in result
     assert result["overlapping_authors"] == []
 
 
-def test_classify_one_tags_author_overlap_true_when_shared_author_id(tmp_path):
+def test_classify_one_tags_author_overlap_true_when_shared_author_id(tmp_path, monkeypatch):
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     seed = {**PARALLEL_NETCDF_WORK, "author_ids": ["A1", "A2"]}
     citing = {**SAMPLE_CITING_WORKS[0], "authors": ["Alice Smith"], "author_ids": ["A1"]}
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
@@ -265,7 +274,8 @@ def test_classify_one_tags_author_overlap_true_when_shared_author_id(tmp_path):
     assert result["overlapping_authors"] == ["Alice Smith"]
 
 
-def test_classify_all_results_are_provisional(tmp_path):
+def test_classify_all_results_are_provisional(tmp_path, monkeypatch):
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
         result = classify_all(
             PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS,
@@ -276,7 +286,8 @@ def test_classify_all_results_are_provisional(tmp_path):
     assert all(w["verification_status"] == "provisional" for w in classified)
 
 
-def test_classify_all_dry_run_makes_no_calls(tmp_path):
+def test_classify_all_dry_run_makes_no_calls(tmp_path, monkeypatch):
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     with patch("wake.classify.chat_json") as mock_chat:
         result = classify_all(
             PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS,
@@ -286,9 +297,10 @@ def test_classify_all_dry_run_makes_no_calls(tmp_path):
     assert all(not w.get("relationship") for w in result)
 
 
-def test_classify_all_scoped_run_preserves_prior_classifications(tmp_path):
+def test_classify_all_scoped_run_preserves_prior_classifications(tmp_path, monkeypatch):
     """Regression test: a scoped classify_all (--limit/--ids) must not drop
     classifications made in a previous, differently-scoped run."""
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
         # First run: classify only the first work.
         first_id = SAMPLE_CITING_WORKS[0]["openalex_id"]
@@ -314,9 +326,10 @@ def test_classify_all_scoped_run_preserves_prior_classifications(tmp_path):
         assert len(classified2) == 2
 
 
-def test_classify_all_backfills_missing_abstract_before_classifying(tmp_path):
+def test_classify_all_backfills_missing_abstract_before_classifying(tmp_path, monkeypatch):
     """Works with no abstract should be backfilled (if a DOI is present)
     before being sent to the LLM, so classify_one sees the recovered text."""
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     no_abstract_work = {
         **SAMPLE_CITING_WORKS[0],
         "openalex_id": "W1000000099",
@@ -346,37 +359,47 @@ def test_classify_all_backfills_missing_abstract_before_classifying(tmp_path):
     assert classified[0]["has_abstract"] is True
 
 
+_SEED_WITH_DESCRIPTION = {
+    **PARALLEL_NETCDF_WORK,
+    "description": "This paper introduces a high-performance I/O library.",
+}
+
+
 def test_system_prompt_classify_4_differs_from_classify_2():
     assert _system_prompt("classify-4") != _system_prompt("classify-2")
-    assert "seed paper's own abstract" in _system_prompt("classify-4")
+    assert "description of the seed paper's contribution" in _system_prompt("classify-4")
 
 
-def test_classify_4_user_msg_includes_seed_abstract_and_topics():
+def test_classify_4_user_msg_includes_seed_description_and_topics():
     citing = {**SAMPLE_CITING_WORKS[0], "topics": ["High-performance computing"]}
-    msg = _build_classify4_user_msg(PARALLEL_NETCDF_WORK, citing)
-    assert PARALLEL_NETCDF_WORK["abstract"] in msg
+    msg = _build_classify4_user_msg(_SEED_WITH_DESCRIPTION, citing)
+    assert _SEED_WITH_DESCRIPTION["description"] in msg
     assert "High-performance computing" in msg
 
 
-def test_classify_4_user_msg_includes_seed_description_when_present():
-    seed = {**PARALLEL_NETCDF_WORK, "description": "This paper introduces a high-performance I/O library."}
-    msg = _build_classify4_user_msg(seed, SAMPLE_CITING_WORKS[0])
-    assert "This paper introduces a high-performance I/O library." in msg
+def test_classify_4_user_msg_never_includes_seed_abstract():
+    """classify-4 uses the seed description exclusively -- the seed's
+    own abstract must never appear in the user message (see PLAN.md's
+    'classify-4 description-only + required')."""
+    msg = _build_classify4_user_msg(_SEED_WITH_DESCRIPTION, SAMPLE_CITING_WORKS[0])
+    assert PARALLEL_NETCDF_WORK["abstract"] not in msg
 
 
-def test_classify_4_user_msg_omits_seed_description_when_absent():
-    """Fresh-resolve case: no `wake describe` run yet -- no
-    'Seed contribution' line should appear at all."""
+def test_classify_4_user_msg_raises_when_seed_description_missing():
+    """Description is required, not conditionally appended -- calling
+    this with no description should never silently degrade. The real
+    enforcement point is classify_all's fail-fast check (see below); this
+    is a belt-and-suspenders backstop in the message-builder itself."""
     seed = {**PARALLEL_NETCDF_WORK}
     seed.pop("description", None)
-    msg = _build_classify4_user_msg(seed, SAMPLE_CITING_WORKS[0])
-    assert "Seed contribution" not in msg
+    with pytest.raises(AssertionError):
+        _build_classify4_user_msg(seed, SAMPLE_CITING_WORKS[0])
 
 
 def test_classify_4_user_msg_never_includes_author_overlap():
     """Regression guard for the explicit exclusion (see PLAN.md):
     author_overlap must never leak into the classify prompt."""
-    msg = _build_classify4_user_msg(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0])
+    msg = _build_classify4_user_msg(_SEED_WITH_DESCRIPTION, SAMPLE_CITING_WORKS[0])
     assert "author_overlap" not in msg.lower().replace(" ", "_")
     assert "overlap" not in msg.lower()
 
@@ -394,10 +417,10 @@ def test_classify_one_uses_classify_4_template_when_configured(monkeypatch):
         return {"relationship": "uses-method-from", "confidence": 0.8, "justification": "x"}
 
     with patch("wake.classify.chat_json", side_effect=_capturing_chat_json):
-        classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
+        classify_one(_SEED_WITH_DESCRIPTION, SAMPLE_CITING_WORKS[0], record_cost=False)
 
     assert seen["system"] == _system_prompt("classify-4")
-    assert PARALLEL_NETCDF_WORK["abstract"] in seen["user"]
+    assert _SEED_WITH_DESCRIPTION["description"] in seen["user"]
 
 
 def test_title_only_shortcircuit_result_is_low_signal_cites():
@@ -417,9 +440,10 @@ def test_title_only_shortcircuit_respects_configured_label(monkeypatch):
     assert result["relationship"] == "related"
 
 
-def test_classify_all_short_circuits_title_only_works_with_no_llm_call(tmp_path):
+def test_classify_all_short_circuits_title_only_works_with_no_llm_call(tmp_path, monkeypatch):
     """A work with no abstract after backfill should be classified
     deterministically, with chat_json never called."""
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     no_abstract_work = {
         **SAMPLE_CITING_WORKS[0],
         "openalex_id": "W_title_only",
@@ -467,7 +491,8 @@ def test_classify_all_short_circuit_disabled_falls_back_to_llm(tmp_path, monkeyp
     assert not classified[0].get("low_signal")
 
 
-def test_classify_all_does_not_short_circuit_works_with_an_abstract(tmp_path):
+def test_classify_all_does_not_short_circuit_works_with_an_abstract(tmp_path, monkeypatch):
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     works_with_abstracts = [w for w in SAMPLE_CITING_WORKS if w.get("abstract")]
     assert works_with_abstracts, "fixture must contain at least one work with an abstract"
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json) as mock_chat:
@@ -478,3 +503,31 @@ def test_classify_all_does_not_short_circuit_works_with_an_abstract(tmp_path):
     assert mock_chat.called
     classified = [w for w in result if w.get("relationship")]
     assert all(not w.get("low_signal") for w in classified)
+
+
+def test_classify_all_fails_fast_when_classify_4_seed_has_no_description(tmp_path, monkeypatch):
+    """classify-4 requires a seed description -- classify_all must raise
+    immediately, before any LLM call and before touching the resume
+    cache, rather than failing once per citing work."""
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-4"})
+    seed = {**PARALLEL_NETCDF_WORK}
+    seed.pop("description", None)
+    with patch("wake.classify.chat_json") as mock_chat:
+        with pytest.raises(ValueError, match="classify-4 requires a seed description"):
+            classify_all(
+                seed, SAMPLE_CITING_WORKS,
+                base=tmp_path, inter_call_delay=0, verbose=False,
+            )
+    mock_chat.assert_not_called()
+
+
+def test_classify_all_proceeds_when_classify_4_seed_has_description(tmp_path, monkeypatch):
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-4"})
+    with patch("wake.classify.chat_json", side_effect=_fake_chat_json) as mock_chat:
+        result = classify_all(
+            _SEED_WITH_DESCRIPTION, SAMPLE_CITING_WORKS,
+            base=tmp_path, inter_call_delay=0, verbose=False,
+        )
+    assert mock_chat.called
+    classified = [w for w in result if w.get("relationship")]
+    assert len(classified) == len(SAMPLE_CITING_WORKS)

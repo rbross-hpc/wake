@@ -168,7 +168,8 @@ def _fake_chat_json(system, user, model_role="classify", model=None, temperature
     return {"relationship": "uses-method-from", "confidence": 0.8, "justification": "fake"}
 
 
-def test_classification_result_validates_real_classify_one_output():
+def test_classification_result_validates_real_classify_one_output(monkeypatch):
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
         result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
 
@@ -180,9 +181,10 @@ def test_classification_result_validates_real_classify_one_output():
     assert "strength" not in parsed.to_json_dict()
 
 
-def test_classification_result_validates_real_sidecar_shape(tmp_path):
+def test_classification_result_validates_real_sidecar_shape(tmp_path, monkeypatch):
     """save_classified's sidecar adds prompt_version/model/classified_at
     on top of classify_one's own fields -- must still validate."""
+    monkeypatch.setattr("wake.classify.config.classify_cfg", lambda: {"prompt_version": "classify-2"})
     with patch("wake.classify.chat_json", side_effect=_fake_chat_json):
         result = classify_one(PARALLEL_NETCDF_WORK, SAMPLE_CITING_WORKS[0], record_cost=False)
     sidecar = {**result, "prompt_version": "classify-2", "model": "Claude Sonnet 4.6", "classified_at": "2026-01-01T00:00:00"}

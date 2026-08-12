@@ -2617,3 +2617,88 @@ Product features next: Theme B (DOE-relevance signals), Theme H (non-publication
 classify --force` against the PVFS packet (to confirm the coverage/confidence shift the investigation
 predicted) remains a natural follow-up but wasn't required to close this pass -- the offline suite is
 green and the change is behavior-verified there.
+
+## v0.4.23 — `classify-4` description-only + required, non-destructive re-resolve (`feature/classify-4-description-only`)
+
+Motivated by a live A/B run of v0.4.22's `classify-4` against the PVFS packet (843 citing works,
+comparison baseline preserved at `wake-out-classify-2/W2110298485/`). Two problems surfaced mid-run:
+
+1. **`resolve_and_cache` silently destroyed seed enrichment on re-resolve.** The PVFS classify-4 run was
+   set up by hand-copying `seed.json`/`seed.pdf`/`seed.pdf.json`/`citing.json` into a fresh work-dir
+   without also seeding `.state.json`'s `seed`/`citing` stage-completion entries. Because
+   `is_stage_current()` saw no recorded `seed` stage, the next `wake classify` call silently re-resolved
+   the seed from OpenAlex and overwrote `seed.json` wholesale -- the fresh resolve has `abstract` but not
+   `description`/`described_at`/`seed_pdf` (only ever written by `wake describe`/`wake fetch-pdf`, never
+   re-derived by `resolve`). The classify-4 run completed successfully (839/843 classified) with an
+   **empty seed-description block** for all 839 calls -- no error, no warning, silently degraded to
+   abstract-only.
+2. **classify-4's abstract+optional-description shape was the wrong call.** `wake describe`'s description
+   is generated from the abstract *plus* an excerpt of the seed's own extracted PDF full text (confirmed
+   live: the PVFS seed's `describe-2` output paragraph reflects details present only in the PDF body, not
+   the abstract) -- so the description strictly dominates the abstract as seed-side context. Sending both
+   was redundant on the common path and silently downgraded on the uncommon one with no signal to the
+   operator.
+
+### What was built
+
+**Part A -- classify-4 description-only** (`wake/classify.py`): `_SYSTEM_CLASSIFY_4` rewritten to tell the
+model it's given a description of the seed's contribution (no mention of an abstract); `_USER_TEMPLATE_4`
+no longer has a `Seed abstract:` line -- the description is the sole, always-present seed-side context
+block; `_build_classify4_user_msg` drops the `seed_abstract` parameter and asserts the description is
+non-empty (belt-and-suspenders backstop; Part B is the real enforcement point). Mutated classify-4 in
+place (not a new `classify-5`) -- the existing PVFS classify-4 sidecars (abstract+topics-only) are
+superseded and were preserved as a frozen snapshot at `wake-out-classify-4-abstractonly/W2110298485/`
+before this change, specifically so that data point isn't lost.
+
+**Part B -- fail-fast requirement** (`wake/classify.py::classify_all`): raises `ValueError` immediately,
+before the resume-cache loop and before any LLM calls, if `prompt_version == "classify-4"` and the seed
+has no description ("classify-4 requires a seed description. Run `wake describe <seed>` first, then
+re-run classify."). `cli/commands/classify.py::run_classify` now wraps the `classify_all` call in
+`try/except ValueError` and routes through `emit_error` (that command previously had no error handling at
+all -- any exception propagated as a raw traceback). One upfront failure instead of every one of
+potentially hundreds of citing works failing identically. `classify-2`/`classify-3` are unaffected.
+
+**Part C -- non-destructive re-resolve** (`wake/seed.py::resolve_and_cache`): new
+`_SEED_ENRICHMENT_FIELDS` (`abstract_source`, `description`, `described_at`, `seed_pdf`,
+`primo_pdf_url` -- the authoritative set per `models.Work`'s "Enrichment fields" list, minus
+`resolved_at`, which a genuine resolve always freshly sets). Any re-resolve that falls through the
+`is_stage_current` fast path now merges these forward from the existing on-disk `seed.json` (if present)
+into the freshly-resolved payload, rather than overwriting wholesale. Core bibliographic fields (title,
+authors, abstract, etc.) still always reflect the fresh resolve. Root-cause fix, not classify-4-specific
+-- protects `wake describe`/`wake fetch-pdf` output for every stage and every packet.
+
+**Part D -- docs**: `references/classify.md`'s "Run `wake describe` first" section rewritten as "`wake
+describe` is required before `wake classify`"; documents that abstract-only judgment (`classify` stage,
+`models.classify`) vs. full-text-grounded judgment against the citing paper's own PDF (`evidence` stage,
+`models.evidence`) are already two independently configurable model roles -- no new model-role config
+surface was added, since the "abstract-only vs. with-PDF-text" distinction the investigation raised maps
+onto that existing stage split, not a new setting inside `classify` (which has no citing-PDF-text code
+path at all). `SKILL.md` step 4 updated to run `wake describe` unconditionally, not as an optional
+consideration. `config.yaml` gained a comment on `models:` documenting the classify/evidence division of
+labor.
+
+### Verification
+
+`ruff check wake/ tests/` clean, `mypy` clean. Full offline suite: 944 passed, 15 deselected (up from 939
+in v0.4.22 -- new coverage for classify-4's description-only/required behavior, the
+`classify_all`/`_build_classify4_user_msg` fail-fast paths, and `resolve_and_cache`'s non-destructive
+merge). Several pre-existing tests that called `classify_one`/`classify_all` with the shared
+`PARALLEL_NETCDF_WORK` fixture (which has no `description`) and no explicit `prompt_version` pin were
+updated to pin `classify-2` explicitly, since they test behavior orthogonal to which prompt version is
+active and the packaged default is now classify-4.
+
+### Not in this pass
+
+No new model-role config surface (existing `classify`/`evidence` split covers the abstract-only vs.
+full-text distinction); no `classify-5` (mutated classify-4 in place, by explicit choice); no
+auto-triggering of `wake describe` from `classify` (hard failure with an actionable message instead); no
+full re-run of the PVFS 843-work comparison (see "Next phase" below).
+
+### Next phase
+
+Post-merge validation was a small sanity sample, not a full second A/B run: `wake describe` regenerated
+the live PVFS packet's description (safe now under Part C), then `wake classify --limit 20 --sort
+cited-by` under the new description-only classify-4. A full 843-work description-only comparison against
+the two preserved snapshots (`wake-out-classify-2/`, `wake-out-classify-4-abstractonly/`) remains a
+natural follow-up but is not required to close this pass. Product features next: Theme B (DOE-relevance
+signals), Theme H (non-publication evidence search).

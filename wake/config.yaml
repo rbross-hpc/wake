@@ -1,3 +1,9 @@
+# classify vs. evidence is already the abstract-only vs. full-text-grounded
+# split: `classify` only ever sees a citing work's title/abstract/venue/topics
+# (never its PDF), while `evidence` reads the citing work's actual full PDF
+# text. They're independently configurable here -- no separate
+# "classify_full_text"-style model role is needed to distinguish the two,
+# since that distinction is which *stage* is running, not a model setting.
 models:
   describe: "Claude Sonnet 4.6"
   classify: "Claude Sonnet 4.6"

@@ -213,10 +213,18 @@ PDF-grounded `wake describe` description is strictly more informative
 than the abstract, so classify-4 should use it exclusively and require
 it, not silently degrade.
 
-**Next phase:** `classify-4` description-only + required, non-destructive
-re-resolve (full plan below), then product features — Theme B
-(DOE-relevance signals), Theme H (non-publication evidence search). See
-`BACKLOG.md`'s "Open / Not Yet Built" section for current sequencing.
+v0.4.23 built the `classify-4` description-only + required,
+non-destructive re-resolve plan below: classify-4 now uses the seed's
+`wake describe` contribution paragraph exclusively (no seed abstract
+line) and requires it -- `classify_all` fails fast, before any LLM
+calls, if the seed has none. `resolve_and_cache` no longer silently
+destroys `description`/`seed_pdf` enrichment on a re-resolve. Full
+account in `docs/build-log.md`'s "v0.4.23" entry; the design record
+below (kept as-is for that context) predates the build.
+
+**Next phase:** product features — Theme B (DOE-relevance signals),
+Theme H (non-publication evidence search). See `BACKLOG.md`'s "Open /
+Not Yet Built" section for current sequencing.
 
 **Deferred, real, not forgotten:**
 - Product features: Theme B (DOE-relevance signals), Theme H
@@ -420,7 +428,8 @@ symptom needing a fix.
 
 ## Next: `classify-4` description-only + required, non-destructive re-resolve
 
-**Status: planned, not yet built.** Motivated by a live A/B run of the
+**Status: built, v0.4.23** (see `docs/build-log.md`'s "v0.4.23" entry for
+what actually shipped). Design record kept below as-is. Motivated by a live A/B run of the
 v0.4.22 `classify-4` prompt against the PVFS packet (843 citing works,
 `wake-out/W2110298485/`, comparison baseline preserved at
 `wake-out-classify-2/W2110298485/`). Two problems surfaced mid-run, one a

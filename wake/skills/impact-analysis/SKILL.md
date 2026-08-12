@@ -141,14 +141,16 @@ abstract). This is free — no LLM calls yet.
 
 ### 4. Classify the sample, then check in
 
-Before the first `classify` call on a new seed, consider running `wake
-describe "<seed>"` — the packaged `classify-4` prompt uses the seed's own
-abstract plus (when available) `describe`'s LLM-written contribution
-paragraph to judge relationships with more context than title/abstract
-alone gives it. Not required — classify-4 degrades cleanly to
-abstract-only without it — but recommended when you have budget for one
-extra LLM call up front. See `references/classify.md`'s "Run `wake
-describe` first" section.
+Run `wake describe "<seed>"` **before** the first `classify` call on a
+new seed — the packaged `classify-4` prompt requires the seed's `wake
+describe` contribution paragraph (grounded in the seed's own PDF text)
+and will fail immediately, before any LLM calls, if it's missing. See
+`references/classify.md`'s "`wake describe` is required before `wake
+classify`" section.
+
+```bash
+wake --json describe "<seed>"
+```
 
 ```bash
 wake --json classify "<seed>" --limit 10 --sort cited-by

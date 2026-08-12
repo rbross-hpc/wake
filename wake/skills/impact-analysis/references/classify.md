@@ -1,20 +1,38 @@
 # Classification (`wake classify`)
 
-## Run `wake describe` first
+## `wake describe` is required before `wake classify`
 
 The packaged `classify-4` prompt (the default) gives the LLM the seed
-paper's own abstract *plus*, when available, the contribution paragraph
-`wake describe` writes — without it, classify-4 still works (it degrades
-cleanly to abstract-only), but the model has less context for
-distinguishing `uses-method-from` / `related` / `cites` than it would
-with a description in hand. Recommended, not enforced: run `wake
-describe` before `wake classify` on a new seed so the richer context is
-already there:
+paper's `wake describe` contribution paragraph — grounded in the seed's
+own PDF text, not just its abstract (see `describe.py`: the description
+is generated from the abstract *plus* an excerpt of the seed's extracted
+PDF full text, so it strictly dominates the abstract as context). Unlike
+an earlier revision of this prompt, classify-4 no longer degrades
+silently to abstract-only when no description exists — it's a hard
+requirement. Run `wake describe` before `wake classify` on every new
+seed:
 
 ```
 wake describe <seed-id>
 wake classify <seed-id>
 ```
+
+A `wake classify` run against a seed with no description fails
+immediately, before any LLM calls, with an actionable error ("classify-4
+requires a seed description. Run `wake describe <seed-id>` first, then
+re-run classify."). This is deliberate: an earlier version of classify-4
+silently sent the seed's abstract instead when no description existed,
+which meant a data-loss bug elsewhere (a seed re-resolve wiping out an
+already-generated description) went completely unnoticed — the classify
+run "succeeded" with quietly degraded input. Failing loudly instead
+surfaces that kind of problem immediately rather than hiding it.
+
+Abstract-only relationship judgment is the `classify` stage's job
+(`models.classify` in `wake.config.yaml`); full-text-grounded judgment
+against the *citing* paper's own PDF is the `evidence` stage's job
+(`models.evidence`) — these are already two independently configurable
+model roles, so no separate "abstract vs. full-text" model setting is
+needed inside `classify` itself.
 
 ## Title-only short-circuit
 

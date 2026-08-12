@@ -12,7 +12,9 @@ registering each family's parser, and dispatching to its `run_*`.
 """
 from __future__ import annotations
 
-from ..emit import emit, is_quiet
+import sys
+
+from ..emit import emit, emit_error, is_quiet
 from ..main_helpers import _resolve_seed_to_work, _work_dir_base
 
 
@@ -41,18 +43,26 @@ def run_classify(args) -> None:
     citing = fetch_and_cache(work["openalex_id"], base=base, verbose=not quiet)
     ids = [s.strip() for s in args.ids.split(",")] if args.ids else None
 
-    result = classify_all(
-        work,
-        citing,
-        base=base,
-        force=args.force,
-        verbose=not quiet,
-        inter_call_delay=args.delay,
-        ids=ids,
-        limit=args.limit,
-        sort=args.sort,
-        dry_run=args.dry_run,
-    )
+    try:
+        result = classify_all(
+            work,
+            citing,
+            base=base,
+            force=args.force,
+            verbose=not quiet,
+            inter_call_delay=args.delay,
+            ids=ids,
+            limit=args.limit,
+            sort=args.sort,
+            dry_run=args.dry_run,
+        )
+    except ValueError as exc:
+        # classify_all's fail-fast precondition check (e.g. classify-4
+        # requires a seed description) -- one clean error, not a
+        # traceback, matching every other command's error-handling
+        # convention (see cli/commands/evidence.py).
+        emit_error("classify", exc, as_json=args.json_out)
+        sys.exit(1)
 
     if not args.dry_run:
         from ...classify import save_classified

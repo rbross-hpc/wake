@@ -81,6 +81,7 @@ sections), narrative packaging/export.
 | L | Structural Hardening (13 phases, v0.4.0–v0.4.12) | [build log](docs/build-log.md), summarized in [history](docs/design/backlog-built-history.md) — Theme L |
 | M | Primo abstract/DOI/PDF-URL backfill (opt-in institutional discovery-layer source) | this file — "Built — Theme M", `feature/primo-abstract-backfill` + `feature/oa-pdf-url-capture` |
 | — | `classify-4` prompt enrichment + title-only short-circuit | [build log](docs/build-log.md) — v0.4.22, design record in `PLAN.md` |
+| — | `classify-4` description-only + required, non-destructive re-resolve | [build log](docs/build-log.md) — v0.4.23, design record in `PLAN.md` |
 
 ---
 
