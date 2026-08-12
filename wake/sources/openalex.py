@@ -114,6 +114,9 @@ def _summarize_work(work: dict) -> dict[str, Any]:
         if field and field not in topics:
             topics.append(field)
 
+    best_oa = work.get("best_oa_location") or {}
+    open_access = work.get("open_access") or {}
+
     return {
         "openalex_id": openalex_id,
         "title": work.get("display_name"),
@@ -128,6 +131,15 @@ def _summarize_work(work: dict) -> dict[str, Any]:
         "type": work.get("type"),
         "abstract": _reconstruct_abstract(work.get("abstract_inverted_index")),
         "topics": topics,
+        # Direct OA PDF URL, when OpenAlex knows one -- free (already in
+        # this response, no extra API call), but only populated for the
+        # ~13-23% of works that are open access at all (see BACKLOG.md's
+        # now-built "harvest OpenAlex OA PDF URL" item for the live-data
+        # analysis this is based on). None for closed-access works; a
+        # downstream fetch still falls through to pdf_fetch.py's other
+        # sources in that case.
+        "oa_pdf_url": best_oa.get("pdf_url"),
+        "oa_status": open_access.get("oa_status"),
     }
 
 
@@ -214,7 +226,7 @@ def iter_citing_works(
             "select": (
                 "id,display_name,doi,publication_year,cited_by_count,"
                 "primary_location,authorships,abstract_inverted_index,"
-                "type,topics"
+                "type,topics,open_access,best_oa_location"
             ),
         })
         if min_year is not None:

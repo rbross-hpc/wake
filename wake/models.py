@@ -110,6 +110,13 @@ class Work(WakeModel):
     type: str | None = None
     abstract: str | None = None
     topics: list[str] = Field(default_factory=list)
+    # Direct OA PDF URL from OpenAlex's own best_oa_location, and its
+    # oa_status ("green"/"gold"/"closed"/...) -- born with the work,
+    # captured at `wake citing`/resolve time, free (no extra API call).
+    # None for closed-access works. See pdf_fetch.py's source chain,
+    # which tries this before any DOI-keyed lookup.
+    oa_pdf_url: str | None = None
+    oa_status: str | None = None
 
     # Enrichment fields, added post-creation by other stages -- see
     # seed.py/describe.py/backfill.py/gaps.py/seed_pdf.py.
@@ -118,6 +125,13 @@ class Work(WakeModel):
     description: str | None = None
     described_at: str | None = None
     seed_pdf: dict[str, Any] | None = None
+    # Direct OA PDF URL discovered via Primo (wake/sources/primo.py),
+    # captured during backfill.py's abstract-backfill pass -- separate
+    # from oa_pdf_url because it comes from a different source at a
+    # different time (classify-time, not citing-time) and may or may not
+    # agree with OpenAlex's own OA link; both are kept rather than one
+    # overwriting the other (see BACKLOG.md's OA-PDF-URL-capture item).
+    primo_pdf_url: str | None = None
 
 
 class RelationshipFacet(WakeModel):

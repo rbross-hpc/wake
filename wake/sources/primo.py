@@ -31,11 +31,19 @@ Configuration (all optional; unset = feature inactive):
   config.yaml `abstract_backfill.primo` block (see config.yaml's commented
   example) as a fallback for any of the above not set via environment.
 
-No PDF acquisition here by design: Primo's `linktopdf` only ever appears
-for already-open-access records, which OpenAlex/OSTI/arXiv/Unpaywall
-already surface — see PLAN.md/BACKLOG.md for the (deferred) idea of
-harvesting OpenAlex's own best_oa_location.pdf_url instead, which would be
-a strictly earlier and non-redundant opportunity.
+PDF acquisition: `get_oa_pdf_url_by_doi`/`get_oa_pdf_url_by_title` expose
+Primo's `linktopdf`, but only when the record's own `display.oa` field
+says `free_for_read` -- Primo's full-text link only ever resolves for
+records that are already open access (verified against Argonne's live
+Primo instance: every paywalled IEEE/Elsevier/ACM record returned only
+`linktorsrc`, a publisher abstract-page link, never a PDF). This makes
+Primo's PDF value a fallback, not a primary source -- see pdf_fetch.py,
+which tries OpenAlex's own best_oa_location.pdf_url first (already in
+hand from `wake citing`, zero extra API calls, and dominant in practice:
+every work with a Primo PDF hit in the OSTI-hosted seed case observed
+during design was the *same* underlying file OpenAlex/OSTI already
+pointed at) before falling to Primo late in the chain, only for the
+smaller long-tail of OA copies the earlier sources miss.
 """
 from __future__ import annotations
 
@@ -168,6 +176,35 @@ def _first_field(disp: dict[str, Any], key: str) -> str | None:
     return None
 
 
+_LINK_URL_RE = re.compile(r"\$\$U([^$]+)")
+
+
+def _is_free_for_read(disp: dict[str, Any]) -> bool:
+    oa = disp.get("oa")
+    if isinstance(oa, list):
+        return "free_for_read" in oa
+    return oa == "free_for_read"
+
+
+def _extract_pdf_url(pnx: dict[str, Any]) -> str | None:
+    """Pull the raw URL out of a PNX links.linktopdf entry, e.g.
+    "$$Uhttps://www.osti.gov/servlets/purl/754505$$EPDF$$Gosti$$Hfree_for_read$$Pomit_proxy_true"
+    -> "https://www.osti.gov/servlets/purl/754505". Only returns a URL
+    when the record's own `display.oa` marks it free_for_read -- Primo
+    exposes linktopdf for open-access records only, but we double-check
+    here rather than trusting linktopdf's mere presence (see module
+    docstring)."""
+    disp = pnx.get("display", {})
+    if not _is_free_for_read(disp):
+        return None
+    links = pnx.get("links", {})
+    linktopdf = links.get("linktopdf")
+    if not isinstance(linktopdf, list) or not linktopdf:
+        return None
+    m = _LINK_URL_RE.search(linktopdf[0])
+    return m.group(1) if m else None
+
+
 def _record_from_doc(doc: dict[str, Any]) -> dict[str, Any]:
     pnx = doc.get("pnx", {})
     disp = pnx.get("display", {})
@@ -177,12 +214,14 @@ def _record_from_doc(doc: dict[str, Any]) -> dict[str, Any]:
         "title": _first_field(disp, "title"),
         "abstract": _clean_description(_first_field(disp, "description")),
         "doi": doi_list[0] if isinstance(doi_list, list) and doi_list else None,
+        "oa_pdf_url": _extract_pdf_url(pnx),
     }
 
 
 def get_metadata_by_doi(doi: str) -> dict[str, Any] | None:
-    """Return {"title", "abstract", "doi"} for *doi*, or None if unavailable
-    (no endpoint configured, no hit, or non-fatal lookup failure)."""
+    """Return {"title", "abstract", "doi", "oa_pdf_url"} for *doi*, or None
+    if unavailable (no endpoint configured, no hit, or non-fatal lookup
+    failure). oa_pdf_url is None unless the record is free_for_read."""
     norm = _normalize_doi(doi)
     if not norm:
         return None
@@ -221,35 +260,57 @@ def _best_title_match(
     return None
 
 
-def get_abstract_by_title(title: str) -> str | None:
+def get_record_by_title(title: str) -> dict[str, Any] | None:
     """Fallback lookup for DOI-less works: search by title, accept the
     best-matching hit only if it clears the configured title-similarity
     threshold (guards against a generic title returning an unrelated
-    top result -- see module tests). Returns None on no endpoint, no
-    hit, or no sufficiently-similar hit.
+    top result -- see module tests). Returns
+    {"title", "abstract", "doi", "oa_pdf_url"}, or None on no endpoint,
+    no hit, or no sufficiently-similar hit.
+
+    Single-query entry point for get_abstract_by_title/get_doi_by_title/
+    get_oa_pdf_url_by_title below -- a caller wanting more than one of
+    those fields for the same title (see backfill.py's DOI+abstract+PDF
+    recovery) should call this directly instead, to avoid one Primo
+    round-trip per field.
     """
     if not title:
         return None
     docs = _query(title, field="title", limit=5)
     if not docs:
         return None
-    match = _best_title_match(docs, title, _title_similarity_threshold())
-    if not match:
-        return None
-    return match.get("abstract")
+    return _best_title_match(docs, title, _title_similarity_threshold())
+
+
+def get_abstract_by_title(title: str) -> str | None:
+    """Fallback lookup for DOI-less works: see get_record_by_title."""
+    record = get_record_by_title(title)
+    return record.get("abstract") if record else None
 
 
 def get_doi_by_title(title: str) -> str | None:
-    """Fallback DOI recovery for DOI-less works: same title-similarity
-    guard as get_abstract_by_title. Returns None on no endpoint, no hit,
-    no sufficiently-similar hit, or a hit with no DOI of its own.
+    """Fallback DOI recovery for DOI-less works: see get_record_by_title."""
+    record = get_record_by_title(title)
+    return record.get("doi") if record else None
+
+
+def get_oa_pdf_url_by_doi(doi: str) -> str | None:
+    """Return Primo's OA PDF URL for *doi*, or None.
+
+    Only ever non-None for a record Primo itself marks free_for_read --
+    see _extract_pdf_url. This is a fallback source in pdf_fetch.py's
+    chain, not a primary one: OpenAlex's own best_oa_location.pdf_url
+    (captured at citing-time, zero extra API calls) is tried first and,
+    in practice, frequently resolves to the exact same underlying file.
     """
-    if not title:
+    record = get_metadata_by_doi(doi)
+    if not record:
         return None
-    docs = _query(title, field="title", limit=5)
-    if not docs:
-        return None
-    match = _best_title_match(docs, title, _title_similarity_threshold())
-    if not match:
-        return None
-    return match.get("doi")
+    return record.get("oa_pdf_url")
+
+
+def get_oa_pdf_url_by_title(title: str) -> str | None:
+    """Fallback OA-PDF-URL lookup for DOI-less works: see
+    get_record_by_title."""
+    record = get_record_by_title(title)
+    return record.get("oa_pdf_url") if record else None

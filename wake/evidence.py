@@ -865,6 +865,8 @@ def build_dossier(
         seed_id, citing_id,
         doi=citing_work.get("doi"),
         title=citing_work.get("title"),
+        oa_pdf_url=citing_work.get("oa_pdf_url"),
+        primo_pdf_url=citing_work.get("primo_pdf_url"),
         seed_title=seed_work.get("title"),
         base=base,
         verbose=verbose,

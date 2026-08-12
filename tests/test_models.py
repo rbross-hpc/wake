@@ -142,6 +142,26 @@ def test_work_tolerates_extra_enrichment_fields():
     assert work.seed_pdf["source"] == "osti"
 
 
+def test_work_oa_pdf_url_fields_default_to_none():
+    work = Work.model_validate(PARALLEL_NETCDF_WORK)
+    assert work.oa_pdf_url is None
+    assert work.oa_status is None
+    assert work.primo_pdf_url is None
+
+
+def test_work_accepts_oa_and_primo_pdf_url_fields():
+    enriched = {
+        **PARALLEL_NETCDF_WORK,
+        "oa_pdf_url": "https://www.osti.gov/servlets/purl/1150929",
+        "oa_status": "green",
+        "primo_pdf_url": "https://example.primo.exlibrisgroup.com/paper.pdf",
+    }
+    work = Work.model_validate(enriched)
+    assert work.oa_pdf_url == "https://www.osti.gov/servlets/purl/1150929"
+    assert work.oa_status == "green"
+    assert work.primo_pdf_url == "https://example.primo.exlibrisgroup.com/paper.pdf"
+
+
 # --- ClassificationResult -------------------------------------------------
 
 def _fake_chat_json(system, user, model_role="classify", model=None, temperature=0, cost_sink=None):

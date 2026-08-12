@@ -9,18 +9,34 @@ existing `wake fill-abstract --from-pdf` workflow by skipping the manual
 download step when the chain succeeds.
 
 Source chain (config: pdf_fetch.sources, default order):
-  1. OSTI            — direct 'fulltext' link, DOE-funded work, no auth wall
-  2. Semantic Scholar — openAccessPdf.url (often a repository copy)
-  3. Unpaywall        — best_oa_location PDF URL (frequently 403s on
+  1. OpenAlex OA      — the work's own best_oa_location.pdf_url, captured
+                        for free at `wake citing`/resolve time (see
+                        sources/openalex.py::_summarize_work) -- no
+                        network call here, just reads a field already on
+                        the work dict. Populated only for the ~13-23% of
+                        works OpenAlex itself marks open access; None
+                        (skipped) otherwise.
+  2. OSTI            — direct 'fulltext' link, DOE-funded work, no auth wall
+  3. Semantic Scholar — openAccessPdf.url (often a repository copy)
+  4. Unpaywall        — best_oa_location PDF URL (frequently 403s on
                         publisher sites; still worth attempting)
-  4. Springer         — predictable link.springer.com/content/pdf/<DOI>.pdf
+  5. Springer         — predictable link.springer.com/content/pdf/<DOI>.pdf
                         URL for Springer DOIs (10.1007/...); no API call,
                         just a direct download attempt. Frequently succeeds
                         for older LNCS conference chapters that Unpaywall/
                         OSTI/S2 don't index, and is a no-op (returns None
                         immediately) for non-Springer DOIs.
-  5. arXiv            — title-search match, always freely downloadable
-  6. CORE.ac.uk       — optional, requires CORE_API_KEY, silently skipped
+  6. arXiv            — title-search match, always freely downloadable
+  7. Primo            — opt-in institutional discovery-layer OA PDF link
+                        (see sources/primo.py); prefers a primo_pdf_url
+                        already captured during classify-time backfill,
+                        else does a live lookup. Deliberately placed late:
+                        Primo's OA PDF links only ever cover records
+                        already open access, which the sources above
+                        already target, so its marginal value is a
+                        smaller long-tail rather than a primary source.
+                        Silently skipped if Primo isn't configured.
+  8. CORE.ac.uk       — optional, requires CORE_API_KEY, silently skipped
                         if unset
 
 Mostly API-based (Springer is a direct, predictable URL rather than an
@@ -41,7 +57,7 @@ import requests
 
 from . import config
 from .seed import work_dir
-from .sources import arxiv_fetch, core, osti, semanticscholar, springer, unpaywall
+from .sources import arxiv_fetch, core, osti, primo, semanticscholar, springer, unpaywall
 
 
 def _cfg() -> dict[str, Any]:
@@ -76,6 +92,10 @@ def _source_func(name: str) -> Callable[[str], str | None] | None:
         return springer.get_fulltext_pdf_url_by_doi
     if name == "arxiv":
         return None  # handled specially below (needs title, not doi)
+    if name == "openalex_oa":
+        return None  # handled specially below (pre-resolved URL, no lookup)
+    if name == "primo":
+        return None  # handled specially below (prefers a captured URL)
     if name == "core":
         return core.get_oa_pdf_url_by_doi
     return None
@@ -138,6 +158,8 @@ def _fetch_pdf_to(
     *,
     doi: str | None,
     title: str | None,
+    oa_pdf_url: str | None = None,
+    primo_pdf_url: str | None = None,
     log_seed_id: str,
     log_citing_id: str,
     log_seed_title: str | None,
@@ -150,13 +172,25 @@ def _fetch_pdf_to(
     fetch_seed_pdf (the seed paper itself). Tries the configured source
     chain and writes the result to *dest*. Returns a result dict.
 
+    *oa_pdf_url*/*primo_pdf_url* are pre-resolved URLs captured earlier in
+    the pipeline (see sources/openalex.py's oa_pdf_url and backfill.py's
+    primo_pdf_url) — passing them in lets the "openalex_oa" source use
+    one with zero network calls, and lets the "primo" source skip its own
+    live lookup when one's already in hand. Both are optional; a caller
+    with only doi/title (e.g. an older call site, or a work never run
+    through backfill) still gets full source-chain behavior, just without
+    those two shortcuts.
+
     *log_citing_id* is the ID used in evidence/log.md entries —
     for citing-work fetches it's the citing work's openalex_id; for seed
     fetches it's the seed's own openalex_id, keeping them distinguishable
     in the log by the event name.
     """
     cfg = _cfg()
-    sources = cfg.get("sources", ["osti", "semanticscholar", "unpaywall", "springer", "arxiv", "core"])
+    sources = cfg.get(
+        "sources",
+        ["openalex_oa", "osti", "semanticscholar", "unpaywall", "springer", "arxiv", "primo", "core"],
+    )
     rate_limits = cfg.get("rate_limit_s", {})
     timeout = cfg.get("download_timeout_s", 30)
     min_bytes = cfg.get("min_valid_pdf_bytes", 2048)
@@ -164,8 +198,14 @@ def _fetch_pdf_to(
     tried: list[str] = []
 
     for source_name in sources:
-        if source_name == "arxiv":
+        if source_name == "openalex_oa":
+            if not oa_pdf_url:
+                continue
+        elif source_name == "arxiv":
             if not title:
+                continue
+        elif source_name == "primo":
+            if not primo.is_enabled() or not (primo_pdf_url or doi or title):
                 continue
         elif source_name == "core":
             if not core.is_enabled() or not doi:
@@ -177,9 +217,20 @@ def _fetch_pdf_to(
 
         tried.append(source_name)
         try:
-            if source_name == "arxiv":
+            if source_name == "openalex_oa":
+                url = oa_pdf_url
+            elif source_name == "arxiv":
                 assert title is not None
                 url = arxiv_fetch.find_pdf_url_by_title(title)
+            elif source_name == "primo":
+                if primo_pdf_url:
+                    # Already captured during backfill -- no network call.
+                    url = primo_pdf_url
+                elif doi:
+                    url = primo.get_oa_pdf_url_by_doi(doi)
+                else:
+                    assert title is not None
+                    url = primo.get_oa_pdf_url_by_title(title)
             elif source_name == "core":
                 assert doi is not None
                 url = core.get_oa_pdf_url_by_doi(doi)
@@ -191,7 +242,10 @@ def _fetch_pdf_to(
                 print(f"[wake]   WARN: {source_name} lookup failed: {exc}", file=sys.stderr)
             url = None
         finally:
-            delay = rate_limits.get(source_name, 1.0)
+            # openalex_oa never makes a network call (its URL is already
+            # in hand), so it shouldn't pay the courtesy delay other
+            # sources use to avoid hammering a live API.
+            delay = 0.0 if source_name == "openalex_oa" else rate_limits.get(source_name, 1.0)
             if delay > 0:
                 time.sleep(delay)
 
@@ -230,12 +284,22 @@ def fetch_pdf(
     *,
     doi: str | None,
     title: str | None = None,
+    oa_pdf_url: str | None = None,
+    primo_pdf_url: str | None = None,
     seed_title: str | None = None,
     base: Path | None = None,
     force: bool = False,
     verbose: bool = True,
 ) -> dict[str, Any]:
     """Try the configured source chain to acquire a PDF for a citing work.
+
+    *oa_pdf_url*/*primo_pdf_url*, when the caller has them (typically a
+    citing work's own dict — see Work.oa_pdf_url/primo_pdf_url in
+    models.py), let the "openalex_oa" and "primo" chain entries skip
+    straight to a download instead of a fresh lookup. Both optional;
+    omitting them just means those two entries fall back to a live
+    lookup (primo) or are skipped (openalex_oa, which has no live-lookup
+    equivalent — it only ever reads a pre-resolved field).
 
     Returns a result dict:
       {"ok": True, "path": "<local path>", "source": "<source name>"}
@@ -261,6 +325,8 @@ def fetch_pdf(
         dest,
         doi=doi,
         title=title,
+        oa_pdf_url=oa_pdf_url,
+        primo_pdf_url=primo_pdf_url,
         log_seed_id=seed_id,
         log_citing_id=citing_id,
         log_seed_title=seed_title,
@@ -299,6 +365,8 @@ def fetch_seed_pdf(
         dest,
         doi=seed_work.get("doi"),
         title=seed_work.get("title"),
+        oa_pdf_url=seed_work.get("oa_pdf_url"),
+        primo_pdf_url=seed_work.get("primo_pdf_url"),
         log_seed_id=seed_id,
         log_citing_id=seed_id,
         log_seed_title=seed_work.get("title"),

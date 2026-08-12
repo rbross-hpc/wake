@@ -74,9 +74,17 @@ exact shape. Two config knobs worth knowing:
   falling through to OSTI/Semantic Scholar — those remain gap-fillers,
   not a second-guessing cascade.
 
-Primo is not used as a PDF source: its full-text links only ever resolve
-for records already open access, which OpenAlex/OSTI/arXiv/Unpaywall
-already surface via `wake fetch-pdf` — see `BACKLOG.md` for the related,
-still-open idea of harvesting OpenAlex's own OA PDF location during
-`wake citing`, a strictly earlier and non-redundant opportunity that
-Primo's OA links can't add to.
+**Primo also contributes a PDF URL**, captured as a side effect of
+whichever abstract/DOI call above already ran — never an extra Primo
+request of its own. When Primo's record for a work is marked
+`free_for_read`, its `linktopdf` link is saved as `primo_pdf_url` on the
+work (see `wake/models.py`'s `Work.primo_pdf_url`). `wake fetch-pdf`
+tries this (falling back to a live Primo lookup if it wasn't captured)
+fairly late in its own source chain — see `docs/pdf-sources.md` — because
+Primo's OA links only ever cover records already open access, which
+OpenAlex's own `best_oa_location.pdf_url` (captured separately, at
+`wake citing` time, as `oa_pdf_url` — see `docs/pdf-sources.md`'s first
+entry) and OSTI/arXiv/Unpaywall typically reach first and for free. Both
+URLs are kept as independent fields rather than one overwriting the
+other, since they come from different sources at different times and
+may disagree.
