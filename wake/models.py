@@ -162,6 +162,12 @@ class ClassificationResult(WakeModel):
     verification_status: Literal["provisional"] = "provisional"
     author_overlap: bool = False
     overlapping_authors: list[str] = Field(default_factory=list)
+    # True only for classify_all's title-only deterministic short-circuit
+    # (no LLM call made -- see PLAN.md's "title-only short-circuit"):
+    # distinguishes "there was nothing to decide from" (low_signal=True)
+    # from "the model actually judged this to be 'cites'"
+    # (low_signal=False/absent). Never set by classify_one itself.
+    low_signal: bool = False
 
     # Sidecar metadata (present once written by classify_all, absent on
     # the raw classify_one() return value).

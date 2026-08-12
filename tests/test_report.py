@@ -65,6 +65,58 @@ def test_build_metrics_no_abstract():
     assert metrics["no_abstract_count"] == 1
 
 
+def test_build_metrics_low_signal_count():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-method-from", "cites"],
+    )
+    classified[2] = {**classified[2], "low_signal": True}
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    assert metrics["low_signal_count"] == 1
+
+
+def test_build_metrics_low_signal_count_zero_when_absent():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-method-from", "cites"],
+    )
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    assert metrics["low_signal_count"] == 0
+
+
+def test_bake_markdown_renders_low_signal_coverage_line(tmp_path):
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-method-from", "cites"],
+    )
+    classified[2] = {**classified[2], "low_signal": True}
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
+    assert "1 of 3 citing works were title/venue-only after backfill" in md
+
+
+def test_bake_markdown_omits_low_signal_line_when_zero(tmp_path):
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-method-from", "cites"],
+    )
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    md = bake_markdown(PARALLEL_NETCDF_WORK, metrics, base=tmp_path)
+    assert "title/venue-only after backfill" not in md
+
+
+def test_top_evidence_carries_low_signal_flag():
+    classified = _make_classified(
+        SAMPLE_CITING_WORKS,
+        ["extends", "uses-method-from", "cites"],
+    )
+    classified[2] = {**classified[2], "low_signal": True}
+    metrics = build_metrics(PARALLEL_NETCDF_WORK, classified)
+    by_id = {e["openalex_id"]: e for e in metrics["top_evidence"]}
+    assert by_id[classified[2]["openalex_id"]]["low_signal"] is True
+    assert by_id[classified[0]["openalex_id"]]["low_signal"] is False
+
+
 def test_build_metrics_by_year():
     classified = _make_classified(
         SAMPLE_CITING_WORKS,

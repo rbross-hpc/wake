@@ -191,10 +191,18 @@ working artifact, all periods) and `timeline.json` (confirmed periods
 only -- the handoff to a separate graphic-rendering tool). Wired into
 `wake rebuild` and the rebuild manifest.
 
-**Next phase:** `classify-4` prompt enrichment + title-only short-circuit
-(full plan below), then product features — Theme B (DOE-relevance
-signals), Theme H (non-publication evidence search). See `BACKLOG.md`'s
-"Open / Not Yet Built" section for current sequencing.
+v0.4.22 built the `classify-4` prompt enrichment + title-only
+short-circuit plan below: the packaged classify default now includes the
+seed's own abstract/description and the citing work's topics, and a
+citing work with no abstract after backfill gets a deterministic `cites`
+short-circuit (no LLM call, tagged `low_signal`) rather than a call that
+mostly reproduces the prompt's own fallback instruction. Full account in
+`docs/build-log.md`'s "v0.4.22" entry; the design record below (kept
+as-is for that context) predates the build.
+
+**Next phase:** product features — Theme B (DOE-relevance signals),
+Theme H (non-publication evidence search). See `BACKLOG.md`'s "Open /
+Not Yet Built" section for current sequencing.
 
 **Deferred, real, not forgotten:**
 - Product features: Theme B (DOE-relevance signals), Theme H
@@ -204,7 +212,9 @@ signals), Theme H (non-publication evidence search). See `BACKLOG.md`'s
 
 ## Next: `classify-4` prompt enrichment + title-only short-circuit
 
-**Status: planned, not yet built.** Motivated by a live-data investigation
+**Status: built, v0.4.22** (see `docs/build-log.md`'s "v0.4.22" entry for
+what actually shipped). Design record kept below as-is. Motivated by a
+live-data investigation
 against the PVFS packet (843 citing works, `wake-out/W2110298485/`):
 `classify-2` (the packaged default since v0.1 — see "Investigation
 findings" below) sees only the seed's *title* plus the citing work's

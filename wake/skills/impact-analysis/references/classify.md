@@ -1,5 +1,38 @@
 # Classification (`wake classify`)
 
+## Run `wake describe` first
+
+The packaged `classify-4` prompt (the default) gives the LLM the seed
+paper's own abstract *plus*, when available, the contribution paragraph
+`wake describe` writes — without it, classify-4 still works (it degrades
+cleanly to abstract-only), but the model has less context for
+distinguishing `uses-method-from` / `related` / `cites` than it would
+with a description in hand. Recommended, not enforced: run `wake
+describe` before `wake classify` on a new seed so the richer context is
+already there:
+
+```
+wake describe <seed-id>
+wake classify <seed-id>
+```
+
+## Title-only short-circuit
+
+A citing work that still has no abstract after backfill (Primo/OSTI/
+Semantic Scholar all missed) is, by default, given a deterministic
+`cites` classification with **no LLM call** — `classify.
+title_only_shortcircuit: true` in `wake.config.yaml`. This is based on
+live-data investigation: 89% of PVFS's title/venue-only works were
+LLM-classified `cites` anyway, mostly reproducing the prompt's own
+fallback instruction rather than adding real signal. These sidecars are
+tagged `low_signal: true` and surfaced in `impact.md`'s "Reach" section
+as a distinct coverage line, so a short-circuited work is never confused
+with one the LLM actually judged to be `cites`. The other ~11% of
+title-only works that *did* get a specific, plausible label from a
+self-describing title alone are lost by this short-circuit — set
+`classify.title_only_shortcircuit: false` to have the LLM attempt every
+title-only work instead.
+
 ## Relationship Classes
 
 Ordered by default strength, strongest first (also noting the nearest
@@ -98,8 +131,8 @@ sum to more than the classified total — the rendered brief footnotes
 this when it happens (rare, since most works have exactly one facet).
 
 **Opt-in, not a default.** The packaged `classify.prompt_version` /
-`evidence.prompt_version` stay at the original single-label prompts
-(`classify-2` / `evidence-1`) — multi-facet (`classify-3` / `evidence-2`)
+`evidence.prompt_version` stay at single-label prompts (`classify-4` /
+`evidence-1`, see below) — multi-facet (`classify-3` / `evidence-2`)
 is enabled per project by setting these in `wake.config.yaml`:
 ```yaml
 classify:
