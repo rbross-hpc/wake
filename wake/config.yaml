@@ -13,15 +13,50 @@ openalex:
 # no OpenAlex abstract, try these sources in order before falling back to
 # title+venue-only classification. Tried once per citing work; result is
 # cached in the classify sidecar (abstract_source field) so it's never
-# re-fetched. OSTI first (free, no rate limit, high precision but DOE-only
-# coverage); Semantic Scholar second (unauthenticated, ~100 req/5min,
-# broader coverage). Both return None quickly on a miss.
+# re-fetched. Primo first (see the commented block below -- inactive unless
+# configured, since it's an institution-specific endpoint); OSTI next
+# (free, no rate limit, high precision but DOE-only coverage); Semantic
+# Scholar last (unauthenticated, ~100 req/5min, broader coverage). All
+# three return None quickly on a miss.
 abstract_backfill:
   enabled: true
-  sources: [osti, semanticscholar]
+  sources: [primo, osti, semanticscholar]
   rate_limit_s:
+    primo: 0.2
     osti: 0.5
     semanticscholar: 1.2
+
+  # Ex Libris Primo discovery-layer lookup (wake/sources/primo.py) --
+  # OPT-IN, disabled by default. Primo aggregates publisher metadata
+  # (Elsevier, Springer, IEEE, ACM, ...) behind a single institutional
+  # endpoint and tolerates a much higher request rate than OSTI/Semantic
+  # Scholar in practice, but the endpoint below is specific to ONE
+  # institution's library subscription -- it must never be a shared
+  # default, or every wake install would silently query someone else's
+  # Primo instance. Leave this whole block absent/disabled and instead
+  # set these as environment variables (WAKE_PRIMO_BASE_URL, _VID, _INST,
+  # _SCOPE -- see docs/abstract-recovery.md) in your own .env/shell; env
+  # vars always take precedence over this block, so nothing institution-
+  # specific ever needs to be committed here. The example below shows the
+  # shape only -- replace with your own library's Primo details if you'd
+  # rather configure via file than environment.
+  # primo:
+  #   enabled: false
+  #   base_url: "https://your-institution.primo.exlibrisgroup.com"
+  #   vid: "01YOUR_INST:01YOUR_INST"
+  #   inst: "01YOUR_INST"
+  #   scope: "MyInst_and_CI"
+  #   # Accept a title-only match (DOI-less works) only above this
+  #   # similarity ratio -- guards against a generic title returning an
+  #   # unrelated top hit.
+  #   title_similarity_threshold: 0.85
+  #   # When true, Primo's abstract is preferred over OpenAlex's own
+  #   # (reconstructed-from-inverted-index) abstract for EVERY citing
+  #   # work, not just ones OpenAlex left abstract-less -- Primo's
+  #   # publisher-sourced abstracts are frequently more complete. A Primo
+  #   # miss in this mode keeps OpenAlex's abstract rather than falling
+  #   # through to OSTI/Semantic Scholar.
+  #   prefer_over_openalex: true
 
 # Human-driven escalation for high-value citing works that automatic
 # backfill (OSTI/Semantic Scholar) couldn't recover an abstract for. See

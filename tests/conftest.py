@@ -3,6 +3,31 @@
 """Shared pytest fixtures for wake tests."""
 from __future__ import annotations
 
+import pytest
+
+# Primo (wake.sources.primo) is opt-in and reads its endpoint from
+# WAKE_PRIMO_* environment variables (see that module's docstring). A
+# developer running the suite locally may well have these set in their
+# own shell/.env for real analysis work — exactly the "convenient for
+# me, inert for everyone else" setup this feature is designed around.
+# Tests must not depend on (or be broken by) whatever happens to be in
+# the ambient environment, so every test gets a clean slate here; tests
+# that specifically want Primo "configured" set these explicitly via
+# monkeypatch.setenv within the test itself.
+_WAKE_PRIMO_ENV_VARS = (
+    "WAKE_PRIMO_BASE_URL",
+    "WAKE_PRIMO_VID",
+    "WAKE_PRIMO_INST",
+    "WAKE_PRIMO_SCOPE",
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_primo_env(monkeypatch):
+    for var in _WAKE_PRIMO_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+
+
 PARALLEL_NETCDF_WORK = {
     "openalex_id": "W2156077349",
     "title": "Parallel netCDF: A High-Performance Scientific I/O Interface",

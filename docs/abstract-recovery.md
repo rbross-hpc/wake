@@ -5,10 +5,21 @@ confidence title/venue-only classification. `wake` recovers most of these
 automatically and lazily (only for works actually selected for
 classification, never eagerly for the full citing set):
 
-1. **Automatic backfill** (`classify` does this transparently): tries
-   [OSTI](https://www.osti.gov) (DOE-funded work, via its `description`
-   field), then [Semantic Scholar](https://www.semanticscholar.org)
-   (broader coverage). Free, unauthenticated, no PDF dependency.
+1. **Automatic backfill** (`classify` does this transparently): tries, in
+   config order (`abstract_backfill.sources`, default
+   `[primo, osti, semanticscholar]`):
+   - **Primo** (opt-in, see below) — an institutional Ex Libris discovery-
+     layer endpoint aggregating publisher metadata (Elsevier, Springer,
+     IEEE, ACM, ...). Tried first when configured, since it tolerates a
+     much higher request rate in practice than OSTI/Semantic Scholar and
+     frequently covers publishers OpenAlex's own abstract reconstruction
+     misses.
+   - [OSTI](https://www.osti.gov) (DOE-funded work, via its `description`
+     field).
+   - [Semantic Scholar](https://www.semanticscholar.org) (broader
+     coverage).
+
+   All three are free, unauthenticated, and no-op quickly on a miss.
 2. **Manual escalation** for high-value works that step 1 couldn't resolve:
    ```bash
    wake gaps <seed>                          # surface candidates, ranked by influence
@@ -22,5 +33,50 @@ classification, never eagerly for the full citing set):
    (`pip install 'wake[pdf]'`).
 
 Recovered abstracts are tagged with their source (`abstract_source`:
-`osti`, `semanticscholar`, `pdf-extract`, or `human-text`) and the count is
-shown in the brief's Reach section.
+`primo`, `osti`, `semanticscholar`, `pdf-extract`, or `human-text`) and the
+count is shown in the brief's Reach section.
+
+## Primo (opt-in institutional discovery-layer backfill)
+
+[`wake/sources/primo.py`](../wake/sources/primo.py) can query an Ex Libris
+Primo instance — the discovery-layer catalog many university and lab
+libraries run in front of their journal subscriptions — for a citing
+work's abstract, and (for works with no DOI at all) attempt to recover
+one via a title-similarity-guarded search.
+
+**This is entirely opt-in and disabled by default.** A Primo endpoint is
+specific to one institution's library subscription — there is no shared
+default, and no wake install ever contacts a Primo instance unless you
+explicitly configure one. Set these environment variables (in your own
+`.env` or shell profile — never in a committed `wake.config.yaml`):
+
+| Variable | Purpose |
+|---|---|
+| `WAKE_PRIMO_BASE_URL` | Your institution's Primo host, e.g. `https://your-institution.primo.exlibrisgroup.com` |
+| `WAKE_PRIMO_VID` | Primo view ID, e.g. `01YOUR_INST:01YOUR_INST` |
+| `WAKE_PRIMO_INST` | Primo institution code, e.g. `01YOUR_INST` |
+| `WAKE_PRIMO_SCOPE` | Search scope (optional, default `MyInst_and_CI`) |
+
+`wake config validate` surfaces `WAKE_PRIMO_BASE_URL` as an optional env
+var once set. Alternatively (or in addition — env vars always win), set
+the equivalent fields under `abstract_backfill.primo` in
+`wake.config.yaml`; see that file's commented-out example block for the
+exact shape. Two config knobs worth knowing:
+
+- `title_similarity_threshold` (default `0.85`) — how closely a title-only
+  search hit must match before its abstract/DOI is trusted, since a
+  generic title can return many loosely-related results.
+- `prefer_over_openalex` (default `false`) — when `true`, Primo's
+  abstract is looked up for *every* citing work, not just ones OpenAlex
+  left abstract-less, and preferred over OpenAlex's own (reconstructed-
+  from-inverted-index) abstract when Primo has one. A Primo miss in this
+  mode keeps whatever abstract OpenAlex already supplied rather than
+  falling through to OSTI/Semantic Scholar — those remain gap-fillers,
+  not a second-guessing cascade.
+
+Primo is not used as a PDF source: its full-text links only ever resolve
+for records already open access, which OpenAlex/OSTI/arXiv/Unpaywall
+already surface via `wake fetch-pdf` — see `BACKLOG.md` for the related,
+still-open idea of harvesting OpenAlex's own OA PDF location during
+`wake citing`, a strictly earlier and non-redundant opportunity that
+Primo's OA links can't add to.
