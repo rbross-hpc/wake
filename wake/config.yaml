@@ -4,9 +4,23 @@
 # text. They're independently configurable here -- no separate
 # "classify_full_text"-style model role is needed to distinguish the two,
 # since that distinction is which *stage* is running, not a model setting.
+#
+# classify defaults to the cheaper/faster Claude Haiku 4.5 (packaged
+# default since v0.4.24): a live 843-work PVFS A/B run (classify-4,
+# unchanged prompt) measured Haiku at ~2.7-3x lower per-call latency than
+# Sonnet 4.6 with a cleaner completion rate (0 errors vs. 4). The main
+# behavioral difference is a systematic "cites" -> "related" shift (Haiku
+# resolves ~72% of what Sonnet calls "cites" to "related" instead) --
+# accepted deliberately: classify only ever produces *provisional*
+# labels, and the cites/related boundary is genuinely ambiguous from an
+# abstract alone (see vocabulary.py's definitions -- "related" is
+# "complementary work in the same ecosystem," which is arguably true of
+# most works in this fallback bucket). evidence (full-text-grounded,
+# produces the non-provisional "proposed"/"verified" finding) stays on
+# Sonnet 4.6 -- that's the stage where judgment quality actually matters.
 models:
   describe: "Claude Sonnet 4.6"
-  classify: "Claude Sonnet 4.6"
+  classify: "Claude Haiku 4.5"
   pdf_abstract_extract: "Claude Sonnet 4.6"
   evidence: "Claude Sonnet 4.6"
 

@@ -145,7 +145,7 @@ Create `wake.config.yaml` in your working directory (or run `wake config init`):
 ```yaml
 models:
   describe: "Claude Sonnet 4.6"
-  classify: "Claude Sonnet 4.6"
+  classify: "Claude Haiku 4.5"
   pdf_abstract_extract: "Claude Sonnet 4.6"
   evidence: "Claude Sonnet 4.6"
 
@@ -156,6 +156,12 @@ cost:
   rates_per_1k_usd:
     "Claude Sonnet 4.6": {in: 0.003, out: 0.015}
 ```
+
+`classify` (abstract/title-only, always-`provisional` labels) defaults to
+the cheaper/faster Claude Haiku 4.5; `describe`/`pdf_abstract_extract`/
+`evidence` (full-text-grounded, produces the non-provisional `proposed`/
+`verified` finding) stay on Claude Sonnet 4.6 — see `wake/config.yaml`'s
+comment above `models:` for the live A/B data behind that split.
 
 Run `wake config show` to see the full resolved configuration, including
 sections not shown above (`abstract_backfill`, `gaps`, `pdf_extract`,

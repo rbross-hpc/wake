@@ -240,7 +240,7 @@ def init_local() -> tuple[Path, bool]:
         "# See: wake config show\n\n"
         "models:\n"
         "  describe: \"Claude Sonnet 4.6\"\n"
-        "  classify: \"Claude Sonnet 4.6\"\n\n"
+        "  classify: \"Claude Haiku 4.5\"\n\n"
         "openalex:\n"
         "  rate_limit_s: 1.0\n"
     )
