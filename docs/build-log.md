@@ -2778,3 +2778,49 @@ separately in `BACKLOG.md`'s "Open items carried forward"); no Haiku entry added
 guards (`test_show_reflects_correct_model_defaults`, `test_init_local_writes_consistent_model_name`) only
 assert that `"Claude Sonnet 4.6"` appears somewhere and `"4.7"` does not, both still true since
 `describe`/`pdf_abstract_extract`/`evidence` remain on Sonnet 4.6.
+
+## v0.4.25 — `__version__` derived from package metadata, no longer a stale hardcoded literal (`fix/version-from-metadata`)
+
+Closes the `wake/__init__.py`'s `__version__` staleness item from `BACKLOG.md`'s "Open items carried
+forward" (moved to this file's "Built" index): `__version__` had been hardcoded `"0.1.0"` since the
+project's first commit and never bumped despite ~24 documented `v0.4.x` releases in this file.
+`state.py::mark_stage_complete` stamps this constant into every packet's `.state.json` as `tool_version`
+(both top-level and per-stage), so that field was useless as a provenance/era signal -- confirmed live
+during the v0.4.23 PVFS session, where `tool_version: "0.1.0"` on a classify-2 sidecar nearly caused a
+wrong inference about whether the packet predated the v0.4.21 CiTO taxonomy refactor.
+
+### What was built
+
+- `pyproject.toml` -- `version = "0.1.0"` -> `"0.4.24"`, matching the actual most-recently-shipped
+  build-log entry at the time of this fix. This is now the single source of truth for wake's version.
+- `wake/__init__.py` -- `__version__` is no longer a literal. It's read via
+  `importlib.metadata.version("wake")` at import time, so it always reflects whatever `pyproject.toml`
+  says for however wake was actually installed (`pip install -e .`, a built wheel, etc.) -- one number to
+  keep in sync per release, not two files that can silently disagree. Falls back to the obviously-
+  placeholder `"0.0.0+unknown"` (never a fabricated real-looking version) if `PackageNotFoundError` is
+  raised -- e.g. wake's source directory is on `PYTHONPATH` without ever having been `pip install`ed.
+- `tests/test_version.py` (new) -- asserts `wake.__version__` equals `importlib.metadata.version("wake")`
+  directly (not just "looks like a version string"), asserts it's no longer the stale `"0.1.0"` literal
+  (regression guard for the specific bug), and asserts the `PackageNotFoundError` fallback path returns
+  `"0.0.0+unknown"` via a monkeypatched `importlib.metadata.version`.
+
+### Explicitly not changed
+
+- The golden-packet fixture's frozen `.state.json`/sidecar files still say `"tool_version": "0.1.0"` --
+  correct to leave as-is, since that's a historical snapshot of what a real past run actually recorded,
+  not something that should retroactively reflect the current version.
+- No change to `state.py::mark_stage_complete`'s use of `tool_version` -- it still stamps `__version__`
+  into every packet exactly as before; the fix is that the value stamped is now trustworthy.
+- Per-stage `prompt_version`/`model` fields (already the more reliable provenance signal per the
+  original BACKLOG note) are unchanged -- this fix makes `tool_version` usable too, rather than replacing
+  it with those fields.
+- Future releases must still remember to bump `pyproject.toml`'s `version` by hand -- this fix removes
+  the *two-files-can-disagree* failure mode, not the need for a human to bump the number at all. No
+  automated release-versioning tooling (e.g. setuptools-scm) was introduced; out of scope for this pass.
+
+### Verification
+
+`ruff check wake/ tests/` clean, `mypy` clean, full offline suite green (`pytest tests/ -m 'not network'`,
+947 passed / 15 deselected -- 3 new from `test_version.py`, no regressions). Live-checked
+`python -c "import wake; print(wake.__version__)"` after `pip install -e .` prints `0.4.24`, matching
+`pyproject.toml`.

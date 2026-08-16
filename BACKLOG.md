@@ -82,6 +82,8 @@ sections), narrative packaging/export.
 | M | Primo abstract/DOI/PDF-URL backfill (opt-in institutional discovery-layer source) | this file — "Built — Theme M", `feature/primo-abstract-backfill` + `feature/oa-pdf-url-capture` |
 | — | `classify-4` prompt enrichment + title-only short-circuit | [build log](docs/build-log.md) — v0.4.22, design record in `PLAN.md` |
 | — | `classify-4` description-only + required, non-destructive re-resolve | [build log](docs/build-log.md) — v0.4.23, design record in `PLAN.md` |
+| — | Packaged `classify` model default switched to Claude Haiku 4.5 | [build log](docs/build-log.md) — v0.4.24 |
+| — | `__version__` derived from package metadata (was hardcoded `"0.1.0"`) | [build log](docs/build-log.md) — v0.4.25 |
 
 ---
 
@@ -287,19 +289,6 @@ Revisit only if/when MinerU or another genuinely slow step gets adopted.
 
 ## Open items carried forward (not yet decided)
 
-- **`wake/__init__.py`'s `__version__ = "0.1.0"` has never been bumped**,
-  despite ~22 documented `v0.4.x` releases in `docs/build-log.md`.
-  `state.py::mark_stage_complete` stamps this stale constant into every
-  packet's `.state.json` as `tool_version` (both top-level and per-stage)
-  — so that field is useless as a provenance/era signal. Confirmed live:
-  a session investigating the PVFS packet (`W2110298485`) saw
-  `tool_version: "0.1.0"` on a classify-2 sidecar and wrongly inferred it
-  predated the v0.4.21 CiTO taxonomy refactor; only inspecting the raw
-  on-disk relationship labels (already in the post-refactor vocabulary)
-  caught the false lead. Fix: derive `__version__` from a single real
-  source (package metadata, or bump it per release), and/or treat the
-  per-stage `prompt_version`/`model` fields already captured in
-  `.state.json` as the real provenance signal rather than `tool_version`.
 - Author-email discovery strategy for Theme A2 (Crossref? ORCID? PDF
   parsing?) — no source currently reliably provides this; not attempted
   in the A2 build.
