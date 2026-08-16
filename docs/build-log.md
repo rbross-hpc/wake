@@ -2702,3 +2702,79 @@ cited-by` under the new description-only classify-4. A full 843-work description
 the two preserved snapshots (`wake-out-classify-2/`, `wake-out-classify-4-abstractonly/`) remains a
 natural follow-up but is not required to close this pass. Product features next: Theme B (DOE-relevance
 signals), Theme H (non-publication evidence search).
+
+## v0.4.24 — packaged `classify` model default switched to Claude Haiku 4.5 (`feature/classify-haiku-default`)
+
+Closes the full 843-work description-only comparison flagged as a natural follow-up at the end of v0.4.23
+(above), reframed as a model comparison rather than a second prompt-shape comparison: the classify-4
+prompt itself is unchanged.
+
+### Investigation
+
+A live A/B run of the (unchanged) classify-4 prompt against the PVFS packet (843 citing works,
+`W2110298485`), swapping only `models.classify` from Claude Sonnet 4.6 to Claude Haiku 4.5 via a local
+`wake.config.yaml` override (no code touched for the experiment itself):
+
+- **Completion**: Haiku classified all 843/843 with **0 errors**, vs. Sonnet's 839/843 (4 errors) on the
+  equivalent abstract-only classify-4 run preserved at `wake-out-classify-4-abstractonly/W2110298485/`.
+- **Speed**: mean per-call wall time 2.83s (Haiku) vs. 7.67s (Sonnet) across the classify stage's
+  `.cost.jsonl` records -- roughly 2.7x faster overall, closer to 3x once the fixed 0.5s inter-call delay
+  common to both runs is backed out.
+- **Label distribution**: the two runs diverge sharply on the two most common labels -- Haiku:
+  `related` 535 (63.5%), `cites` 134 (15.9%); Sonnet: `cites` 573 (68.3%), `related` 127 (15.1%). Per-work
+  diff (843 shared IDs, excluding both-`low_signal` short-circuits): 35.1% exact-label agreement overall,
+  but 72% of Sonnet's `cites` works (398/550) were relabeled `related` by Haiku specifically -- reading
+  the paired justification text for a sample showed near-identical reasoning ("same ecosystem, no direct
+  dependency") resolved to different labels, not a comprehension gap. `extends` and `benchmarks` fared
+  better at ~48-50% direct overlap. Haiku's mean confidence was +0.19 higher than Sonnet's on matched
+  works.
+- **Cost**: comparable input-token cost per call (1276 vs. 1303 mean in-tokens, same prompt/seed
+  description); Haiku produced longer justifications on average (99 vs. 74 mean out-tokens). Neither
+  model has a `cost.rates_per_1k_usd` entry, so no live-$ comparison was possible.
+
+Full run artifacts and analysis preserved outside this repo at `/workspaces/wake-pvfs/haiku-root/` and
+`/workspaces/wake-pvfs/HAIKU-COMPARISON.md`.
+
+### Decision
+
+Adopt Haiku 4.5 as the packaged `classify` default. The `cites`/`related` divergence was accepted
+deliberately rather than treated as a regression: `classify` output is always `verification_status:
+"provisional"` (see `classify.py`'s docstring on the provisional -> proposed -> verified lifecycle), and
+the boundary between the two labels is genuinely ambiguous from an abstract alone -- `related`'s own
+definition ("complementary work or infrastructure in the same ecosystem... an affirmative 'these are
+related' judgment") is arguably satisfiable by most of the works landing in `cites`'s fallback bucket
+("no more specific relationship... including unclear/indirect/merely contextual mentions"). The 2.7-3x
+latency win and cleaner completion rate were judged to outweigh a label shift that only affects a
+provisional, not-yet-human-reviewed field. `describe`, `pdf_abstract_extract`, and `evidence` all remain
+on Sonnet 4.6, unchanged -- `evidence` in particular is the stage that reads full citing-work PDF text and
+produces the non-provisional `proposed`/`verified` finding, where judgment quality matters most and
+nothing in this investigation touched that stage.
+
+### What was built
+
+Config-only change, no prompt/behavior code touched:
+
+- `wake/config.yaml` -- `models.classify: "Claude Sonnet 4.6"` -> `"Claude Haiku 4.5"`. Comment block
+  above `models:` extended to document the split and point at this entry's evidence.
+- `wake/config.py::init_local` -- the starter `wake.config.yaml` written by `wake config init` updated to
+  match (`classify: "Claude Haiku 4.5"`; `describe` stays Sonnet 4.6).
+- `README.md` -- sample `wake.config.yaml` and a new sentence explaining the split.
+
+**Cache consequence** (same class of effect as any prior classify prompt-version bump): classify sidecars
+are cache-keyed on `model` (see `classify.py`'s `_load_sidecar`/`classify_all` checks), so this
+invalidates every existing packet's classify sidecars -- the next `wake classify` run against any packet
+re-classifies from scratch under Haiku.
+
+**Not changed**: no code in `classify.py` (prompt, parsing, short-circuit logic all untouched); no new
+model-role config surface; `wake/__init__.py`'s stale `__version__ = "0.1.0"` left as-is (tracked
+separately in `BACKLOG.md`'s "Open items carried forward"); no Haiku entry added to
+`cost.rates_per_1k_usd` (real rates not available at time of this change -- both Sonnet and Haiku report
+`unpriced: true` today).
+
+### Verification
+
+`ruff check wake/ tests/` clean, `mypy` clean, full offline suite green (`pytest tests/ -m 'not network'`)
+-- no test asserts `classify`'s default model specifically; `test_config.py`'s two model-name regression
+guards (`test_show_reflects_correct_model_defaults`, `test_init_local_writes_consistent_model_name`) only
+assert that `"Claude Sonnet 4.6"` appears somewhere and `"4.7"` does not, both still true since
+`describe`/`pdf_abstract_extract`/`evidence` remain on Sonnet 4.6.
