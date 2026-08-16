@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "wake"
-version         = "0.4.25"
+version         = "0.4.26"
 description     = "Evidence-backed impact analysis for research papers"
 readme          = "README.md"
 requires-python = ">=3.10"
@@ -20,7 +20,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-mock", "pytest-cov", "ruff", "mypy"]
+# httpx is a real test dependency (tests/test_openai_client.py constructs
+# real openai.APIStatusError instances via httpx.Response/httpx.Request),
+# not just something that happened to come along with openai -- declare
+# it explicitly rather than relying on it transitively. It used to ride
+# in for free via openai<3's own dependency on httpx; openai 3.x switched
+# to a differently-importable package instead, which silently broke CI
+# (see docs/build-log.md's v0.4.26 entry).
+dev = ["pytest", "pytest-mock", "pytest-cov", "ruff", "mypy", "httpx"]
 pdf = ["pypdf>=4.0", "pdfplumber>=0.10"]
 
 [project.scripts]
