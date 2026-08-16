@@ -2834,3 +2834,61 @@ v0.4.25, per the process note added to `AGENTS.md` in that same change -- each b
 own version, bumped in the commit that lands it, not a trailing follow-up); `v0.4.24` moved to the actual
 Haiku merge commit; `v0.4.25` tagged on the reconciliation merge. `wake.__version__` now correctly prints
 `0.4.25`.
+
+## v0.4.26 — CI fix: declare `httpx` as an explicit dev dependency (`fix/ci-httpx-dep`)
+
+CI started failing on every push after the v0.4.24/v0.4.25 work landed (reported live: `pytest tests/ -m
+"not network" -q` errored during collection on all four Python-version matrix jobs):
+
+```
+ERROR collecting tests/test_openai_client.py
+ImportError while importing test module '.../tests/test_openai_client.py'.
+tests/test_openai_client.py:10: in <module>
+    import httpx
+E   ModuleNotFoundError: No module named 'httpx'
+```
+
+### Root cause
+
+`tests/test_openai_client.py` does `import httpx` directly and uses `httpx.Response`/`httpx.Request` to
+construct real `openai.APIStatusError` subclass instances for its retry-policy tests (`_fake_openai_error`
+helper) -- a genuine, longstanding test dependency (added in the `refactor: split LLM retry policy by
+failure class` commit) that was never declared in `pyproject.toml`. It worked by accident for as long as
+`openai < 3` depended on `httpx` itself, so `pip install -e ".[dev]"` pulled it in transitively. `openai`
+3.x (released independently of any wake change; CI's `pip install -e ".[dev,pdf]"` resolves the
+unconstrained `openai>=1.0` dependency to whatever's newest) switched its own HTTP dependency to a
+differently-importable package, so the transitive `httpx` import silently stopped being satisfied. Not
+caused by the v0.4.24 (classify model) or v0.4.25 (`__version__`) changes -- neither touched dependencies
+or this test file; the trigger was purely a new upstream `openai` release landing between pushes.
+
+Confirmed live in this session's sandbox before diagnosing: a stray `httpx` had been `pip install`ed
+earlier for unrelated local debugging, which silently masked the bug locally while it broke on CI's clean
+runner -- a reminder that a passing local `pytest` run doesn't guarantee a dependency is actually declared
+correctly.
+
+### Investigation: is `openai` 3.x itself safe to run against?
+
+Before picking a fix, checked whether every `openai.*` exception class `wake/llm/openai_client.py`
+references (`OpenAIError`, `RateLimitError`, `InternalServerError`, `APIConnectionError`,
+`APITimeoutError`, `AuthenticationError`, `BadRequestError`, `NotFoundError`, `PermissionDeniedError`,
+`UnprocessableEntityError`, `ConflictError`, `APIStatusError`) still exists under the installed `openai
+3.1.0` -- all present, none renamed or removed. So the runtime dependency itself needed no change; only
+the missing *test* dependency was the actual bug.
+
+### What was built
+
+- `pyproject.toml`: added `httpx` to the `dev` optional-dependency group (`dev = ["pytest", "pytest-mock",
+  "pytest-cov", "ruff", "mypy", "httpx"]`) -- declares the dependency the test suite has always actually
+  needed, rather than pinning `openai` to an older major version to keep receiving it for free as a side
+  effect. No `openai` version bound added (see investigation above -- not needed).
+- `docs/build-log.md`: this entry.
+- Version bumped `0.4.25` -> `0.4.26` in the same commit, per the release discipline written up in
+  `AGENTS.md`'s new "Releasing / version bumps" section (v0.4.25's own addendum).
+
+### Verification
+
+Reproduced the CI failure faithfully first: with the stray local `httpx` uninstalled (clean environment,
+matching CI), `pytest tests/ -m "not network"` failed identically (`ModuleNotFoundError: No module named
+'httpx'`) before this fix. After `pip install -e ".[dev,pdf]"` with the updated `pyproject.toml`: `ruff
+check wake/ tests/` clean, `mypy` clean, full offline suite green (947 passed, 15 deselected -- unchanged
+from the v0.4.25 baseline, confirming this is a pure dependency-declaration fix with no behavior change).
