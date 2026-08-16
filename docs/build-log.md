@@ -2824,3 +2824,13 @@ wrong inference about whether the packet predated the v0.4.21 CiTO taxonomy refa
 947 passed / 15 deselected -- 3 new from `test_version.py`, no regressions). Live-checked
 `python -c "import wake; print(wake.__version__)"` after `pip install -e .` prints `0.4.24`, matching
 `pyproject.toml`.
+
+**Addendum**: the commit above left `pyproject.toml` at `0.4.24` (the version of the *previous* entry,
+v0.4.24) even though it's itself a new, distinct shipped change -- exactly the kind of build-log/version
+drift this fix exists to prevent. Caught immediately after tagging: `v0.4.24` had been placed on this
+entry's own merge commit rather than the actual v0.4.24 (Haiku) merge. Reconciled in the same session,
+`docs/agents-release-note` branch: `pyproject.toml` bumped `0.4.24` -> `0.4.25` (this bump commit *is*
+v0.4.25, per the process note added to `AGENTS.md` in that same change -- each build-log entry gets its
+own version, bumped in the commit that lands it, not a trailing follow-up); `v0.4.24` moved to the actual
+Haiku merge commit; `v0.4.25` tagged on the reconciliation merge. `wake.__version__` now correctly prints
+`0.4.25`.
