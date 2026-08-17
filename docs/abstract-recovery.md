@@ -52,12 +52,12 @@ explicitly configure one. Set these environment variables (in your own
 
 | Variable | Purpose |
 |---|---|
-| `WAKE_PRIMO_BASE_URL` | Your institution's Primo host, e.g. `https://your-institution.primo.exlibrisgroup.com` |
-| `WAKE_PRIMO_VID` | Primo view ID, e.g. `01YOUR_INST:01YOUR_INST` |
-| `WAKE_PRIMO_INST` | Primo institution code, e.g. `01YOUR_INST` |
-| `WAKE_PRIMO_SCOPE` | Search scope (optional, default `MyInst_and_CI`) |
+| `PRIMO_BASE_URL` | Your institution's Primo host, e.g. `https://your-institution.primo.exlibrisgroup.com` |
+| `PRIMO_VID` | Primo view ID, e.g. `01YOUR_INST:01YOUR_INST` |
+| `PRIMO_INST` | Primo institution code, e.g. `01YOUR_INST` |
+| `PRIMO_SCOPE` | Search scope (optional, default `MyInst_and_CI`) |
 
-`wake config validate` surfaces `WAKE_PRIMO_BASE_URL` as an optional env
+`wake config validate` surfaces `PRIMO_BASE_URL` as an optional env
 var once set. Alternatively (or in addition — env vars always win), set
 the equivalent fields under `abstract_backfill.primo` in
 `wake.config.yaml`; see that file's commented-out example block for the

@@ -24,10 +24,10 @@ None) unless a base URL is supplied via config or environment — see
 Configuration (all optional; unset = feature inactive):
   Environment variables (checked first, so a real endpoint never needs to
   live in a committed config file):
-    WAKE_PRIMO_BASE_URL  -- e.g. "https://anl.primo.exlibrisgroup.com"
-    WAKE_PRIMO_VID       -- e.g. "01ANL_INST:01ANL"
-    WAKE_PRIMO_INST      -- e.g. "01ANL_INST"
-    WAKE_PRIMO_SCOPE     -- e.g. "MyInst_and_CI" (default if unset)
+    PRIMO_BASE_URL  -- e.g. "https://anl.primo.exlibrisgroup.com"
+    PRIMO_VID       -- e.g. "01ANL_INST:01ANL"
+    PRIMO_INST      -- e.g. "01ANL_INST"
+    PRIMO_SCOPE     -- e.g. "MyInst_and_CI" (default if unset)
   config.yaml `abstract_backfill.primo` block (see config.yaml's commented
   example) as a fallback for any of the above not set via environment.
 
@@ -76,12 +76,12 @@ def _endpoint() -> dict[str, str] | None:
     explicitly configured an institutional Primo endpoint.
     """
     cfg = _cfg()
-    base_url = os.environ.get("WAKE_PRIMO_BASE_URL") or cfg.get("base_url")
+    base_url = os.environ.get("PRIMO_BASE_URL") or cfg.get("base_url")
     if not base_url:
         return None
-    vid = os.environ.get("WAKE_PRIMO_VID") or cfg.get("vid")
-    inst = os.environ.get("WAKE_PRIMO_INST") or cfg.get("inst")
-    scope = os.environ.get("WAKE_PRIMO_SCOPE") or cfg.get("scope") or _DEFAULT_SCOPE
+    vid = os.environ.get("PRIMO_VID") or cfg.get("vid")
+    inst = os.environ.get("PRIMO_INST") or cfg.get("inst")
+    scope = os.environ.get("PRIMO_SCOPE") or cfg.get("scope") or _DEFAULT_SCOPE
     if not vid or not inst:
         return None
     return {

@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 # Primo (wake.sources.primo) is opt-in and reads its endpoint from
-# WAKE_PRIMO_* environment variables (see that module's docstring). A
+# PRIMO_* environment variables (see that module's docstring). A
 # developer running the suite locally may well have these set in their
 # own shell/.env for real analysis work — exactly the "convenient for
 # me, inert for everyone else" setup this feature is designed around.
@@ -14,17 +14,17 @@ import pytest
 # the ambient environment, so every test gets a clean slate here; tests
 # that specifically want Primo "configured" set these explicitly via
 # monkeypatch.setenv within the test itself.
-_WAKE_PRIMO_ENV_VARS = (
-    "WAKE_PRIMO_BASE_URL",
-    "WAKE_PRIMO_VID",
-    "WAKE_PRIMO_INST",
-    "WAKE_PRIMO_SCOPE",
+_PRIMO_ENV_VARS = (
+    "PRIMO_BASE_URL",
+    "PRIMO_VID",
+    "PRIMO_INST",
+    "PRIMO_SCOPE",
 )
 
 
 @pytest.fixture(autouse=True)
 def _clear_primo_env(monkeypatch):
-    for var in _WAKE_PRIMO_ENV_VARS:
+    for var in _PRIMO_ENV_VARS:
         monkeypatch.delenv(var, raising=False)
 
 

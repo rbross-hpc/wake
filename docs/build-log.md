@@ -2892,3 +2892,38 @@ matching CI), `pytest tests/ -m "not network"` failed identically (`ModuleNotFou
 'httpx'`) before this fix. After `pip install -e ".[dev,pdf]"` with the updated `pyproject.toml`: `ruff
 check wake/ tests/` clean, `mypy` clean, full offline suite green (947 passed, 15 deselected -- unchanged
 from the v0.4.25 baseline, confirming this is a pure dependency-declaration fix with no behavior change).
+
+## v0.4.27 — Primo env vars dropped the `WAKE_` prefix (`refactor/rename-primo-env-vars`)
+
+Renamed all four Primo environment variables from `WAKE_PRIMO_*` to `PRIMO_*`, at the requesting user's
+explicit direction (a hard rename, no backward-compatible fallback, since these are opt-in
+institution-specific vars a single operator sets in their own `.env`/shell -- not a public API with
+external consumers to avoid breaking):
+
+- `WAKE_PRIMO_BASE_URL` -> `PRIMO_BASE_URL`
+- `WAKE_PRIMO_VID` -> `PRIMO_VID`
+- `WAKE_PRIMO_INST` -> `PRIMO_INST`
+- `WAKE_PRIMO_SCOPE` -> `PRIMO_SCOPE`
+
+### What was built
+
+Every reference to the old names updated in the same change, code and docs together:
+
+- `wake/sources/primo.py`: the four `os.environ.get(...)` reads in `_endpoint()`, plus its module
+  docstring.
+- `wake/config.py`: the `_OPTIONAL_ENVS` key (`WAKE_PRIMO_BASE_URL` -> `PRIMO_BASE_URL`) and its
+  description string's two inline mentions.
+- `wake/config.yaml`: the commented `abstract_backfill.primo` example block's guidance comment.
+- `wake/backfill.py`: module docstring mention.
+- `tests/conftest.py`: `_PRIMO_ENV_VARS` (formerly `_WAKE_PRIMO_ENV_VARS`) autouse-clear tuple and
+  comment.
+- `tests/test_primo.py`: `_ENV_VARS` tuple, every `monkeypatch.setenv` call, and a docstring reference.
+- `docs/abstract-recovery.md`: the env-var table and surrounding body text.
+- `BACKLOG.md`: historical reference updated to match.
+
+### Verification
+
+`rtk grep -rn "WAKE_PRIMO"` across the repo returns zero matches post-rename. `tests/test_primo.py` and
+`tests/test_config.py` pass (47 passed, 1 skipped). Full offline suite (`pytest tests/ -m "not network"`)
+green: 947 passed, 15 deselected -- unchanged from the v0.4.26 baseline, confirming this is a pure
+rename with no behavior change beyond the env var names themselves.

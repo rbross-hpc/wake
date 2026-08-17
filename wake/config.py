@@ -41,7 +41,7 @@ _OPTIONAL_ENVS = {
     "SEMANTICSCHOLAR_API_KEY": "Raises Semantic Scholar's unauthenticated rate limit (~100 req/5min without one)",
     "CORE_API_KEY": "Enables CORE.ac.uk as a `wake fetch-pdf` source (free key at core.ac.uk/services/api)",
     "WAKE_WORK_DIR": "Default root for wake-out/ cache (else cwd, or per-call --work-dir)",
-    "WAKE_PRIMO_BASE_URL": "Enables Primo as an abstract/DOI backfill source (your institution's Primo endpoint; also requires WAKE_PRIMO_VID and WAKE_PRIMO_INST, see docs/abstract-recovery.md)",
+    "PRIMO_BASE_URL": "Enables Primo as an abstract/DOI backfill source (your institution's Primo endpoint; also requires PRIMO_VID and PRIMO_INST, see docs/abstract-recovery.md)",
 }
 
 _ALL_ENV_TIERS: dict[str, dict[str, str]] = {
