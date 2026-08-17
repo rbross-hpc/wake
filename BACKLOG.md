@@ -220,7 +220,7 @@ reconstruction had missed (Elsevier/Springer/IEEE sources).
   `display.oa == free_for_read` — verified against live paywalled IEEE/
   Elsevier/ACM records, which only ever exposed a `linktorsrc` abstract-
   page link, never a PDF). Institutional endpoint resolved from
-  `WAKE_PRIMO_BASE_URL`/`_VID`/`_INST`/`_SCOPE` env vars first, then an
+  `PRIMO_BASE_URL`/`_VID`/`_INST`/`_SCOPE` env vars first, then an
   optional `abstract_backfill.primo` config block — every function is a
   safe no-op with no network call unless explicitly configured, since a
   Primo endpoint is one institution's library subscription, never a

@@ -45,7 +45,7 @@ Primo is tried first by default (see config.yaml's abstract_backfill
 block) because it tolerates a much higher request rate in practice than
 OSTI/Semantic Scholar, but it is entirely opt-in: with no Primo endpoint
 configured (the default for every wake install other than one that has
-set WAKE_PRIMO_BASE_URL or the config's primo.base_url), every Primo call
+set PRIMO_BASE_URL or the config's primo.base_url), every Primo call
 in this module is a fast, silent no-op and behavior is unchanged from
 before Primo support existed.
 """

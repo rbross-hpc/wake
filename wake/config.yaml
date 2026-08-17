@@ -54,7 +54,7 @@ abstract_backfill:
   # institution's library subscription -- it must never be a shared
   # default, or every wake install would silently query someone else's
   # Primo instance. Leave this whole block absent/disabled and instead
-  # set these as environment variables (WAKE_PRIMO_BASE_URL, _VID, _INST,
+  # set these as environment variables (PRIMO_BASE_URL, _VID, _INST,
   # _SCOPE -- see docs/abstract-recovery.md) in your own .env/shell; env
   # vars always take precedence over this block, so nothing institution-
   # specific ever needs to be committed here. The example below shows the

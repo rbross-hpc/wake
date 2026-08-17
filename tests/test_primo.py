@@ -13,7 +13,7 @@ from wake import config
 from wake.errors import RateLimited
 from wake.sources import primo
 
-_ENV_VARS = ("WAKE_PRIMO_BASE_URL", "WAKE_PRIMO_VID", "WAKE_PRIMO_INST", "WAKE_PRIMO_SCOPE")
+_ENV_VARS = ("PRIMO_BASE_URL", "PRIMO_VID", "PRIMO_INST", "PRIMO_SCOPE")
 
 
 @pytest.fixture(autouse=True)
@@ -84,7 +84,7 @@ def test_get_doi_by_title_noop_without_endpoint():
 
 
 def test_endpoint_requires_vid_and_inst_even_with_base_url(monkeypatch):
-    monkeypatch.setenv("WAKE_PRIMO_BASE_URL", "https://example.primo.exlibrisgroup.com")
+    monkeypatch.setenv("PRIMO_BASE_URL", "https://example.primo.exlibrisgroup.com")
     # vid/inst deliberately left unset.
     assert primo._endpoint() is None
     assert primo.is_enabled() is False
@@ -94,9 +94,9 @@ def test_endpoint_requires_vid_and_inst_even_with_base_url(monkeypatch):
 
 
 def test_endpoint_resolves_from_env(monkeypatch):
-    monkeypatch.setenv("WAKE_PRIMO_BASE_URL", "https://example.primo.exlibrisgroup.com/")
-    monkeypatch.setenv("WAKE_PRIMO_VID", "01EX_INST:01EX")
-    monkeypatch.setenv("WAKE_PRIMO_INST", "01EX_INST")
+    monkeypatch.setenv("PRIMO_BASE_URL", "https://example.primo.exlibrisgroup.com/")
+    monkeypatch.setenv("PRIMO_VID", "01EX_INST:01EX")
+    monkeypatch.setenv("PRIMO_INST", "01EX_INST")
     endpoint = primo._endpoint()
     assert endpoint is not None
     assert endpoint["base_url"] == "https://example.primo.exlibrisgroup.com"  # trailing slash stripped
@@ -116,9 +116,9 @@ def test_endpoint_env_overrides_config(monkeypatch):
             "inst": "CONFIG_INST",
         },
     )
-    monkeypatch.setenv("WAKE_PRIMO_BASE_URL", "https://env-configured.example.com")
-    monkeypatch.setenv("WAKE_PRIMO_VID", "ENV_VID")
-    monkeypatch.setenv("WAKE_PRIMO_INST", "ENV_INST")
+    monkeypatch.setenv("PRIMO_BASE_URL", "https://env-configured.example.com")
+    monkeypatch.setenv("PRIMO_VID", "ENV_VID")
+    monkeypatch.setenv("PRIMO_INST", "ENV_INST")
     endpoint = primo._endpoint()
     assert endpoint["base_url"] == "https://env-configured.example.com"
     assert endpoint["vid"] == "ENV_VID"
@@ -142,9 +142,9 @@ def test_endpoint_falls_back_to_config_when_env_unset(monkeypatch):
 
 
 def _configure(monkeypatch):
-    monkeypatch.setenv("WAKE_PRIMO_BASE_URL", "https://example.primo.exlibrisgroup.com")
-    monkeypatch.setenv("WAKE_PRIMO_VID", "01EX_INST:01EX")
-    monkeypatch.setenv("WAKE_PRIMO_INST", "01EX_INST")
+    monkeypatch.setenv("PRIMO_BASE_URL", "https://example.primo.exlibrisgroup.com")
+    monkeypatch.setenv("PRIMO_VID", "01EX_INST:01EX")
+    monkeypatch.setenv("PRIMO_INST", "01EX_INST")
 
 
 # --- DOI normalization / description cleaning (pure functions) ---
@@ -415,7 +415,7 @@ def test_get_record_by_title_single_query_for_multiple_fields(monkeypatch):
 
 @pytest.mark.network
 def test_primo_live_hit_requires_real_endpoint_env():
-    """Only runs meaningfully with WAKE_PRIMO_BASE_URL/_VID/_INST set in
+    """Only runs meaningfully with PRIMO_BASE_URL/_VID/_INST set in
     the live environment; otherwise this is just is_enabled() == False
     and the assertion is trivially satisfied (no network call made)."""
     if not primo.is_enabled():
