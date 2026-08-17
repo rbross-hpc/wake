@@ -5,6 +5,21 @@ from __future__ import annotations
 
 import pytest
 
+
+# wake.pdf_fetch._fetch_pdf_to sleeps `rate_limit_s` (default 1.0s) after
+# every non-openalex_oa source attempt as a courtesy delay against live
+# APIs (see wake/pdf_fetch.py). Tests that exercise the real source chain
+# (rather than mocking wake.pdf_fetch.fetch_pdf wholesale) pay that delay
+# per source tried, which adds up to several real seconds per test across
+# the suite for no test value. Silence it suite-wide by default; the one
+# test that actually asserts the delay contract
+# (test_fetch_pdf_courtesy_delay_contract in tests/test_pdf_fetch.py)
+# shadows this with its own recording mock.
+@pytest.fixture(autouse=True)
+def _no_pdf_fetch_courtesy_delay(monkeypatch):
+    monkeypatch.setattr("wake.pdf_fetch.time.sleep", lambda *_a, **_k: None)
+
+
 # Primo (wake.sources.primo) is opt-in and reads its endpoint from
 # PRIMO_* environment variables (see that module's docstring). A
 # developer running the suite locally may well have these set in their

@@ -2927,3 +2927,45 @@ Every reference to the old names updated in the same change, code and docs toget
 `tests/test_config.py` pass (47 passed, 1 skipped). Full offline suite (`pytest tests/ -m "not network"`)
 green: 947 passed, 15 deselected -- unchanged from the v0.4.26 baseline, confirming this is a pure
 rename with no behavior change beyond the env var names themselves.
+
+## v0.4.28 — Silence pdf_fetch's courtesy delay in tests (`test/speed-up-pdf-fetch-delays`)
+
+`wake/pdf_fetch.py`'s `_fetch_pdf_to` sleeps `rate_limit_s` (config-configurable, default 1.0s) after
+every non-`openalex_oa` source attempt, as a courtesy delay against live publisher/aggregator APIs. Any
+test that exercises the real source-fallback chain -- rather than mocking `wake.pdf_fetch.fetch_pdf`
+wholesale -- pays that delay for real, once per source tried. Investigated after the full offline suite
+(`pytest tests/ -m "not network"`) was observed taking 5-6 minutes; profiling
+`tests/test_pdf_verify.py::test_from_pdf_cli_error_on_missing_file` with `cProfile` showed 5.7s of its
+~7s runtime was `time.sleep` inside `_fetch_pdf_to`, called from the CLI's `evidence --from-pdf` path
+even though that test only cares about PDF-metadata verification, not PDF acquisition. The same pattern
+recurred across `tests/test_pdf_fetch.py`, `tests/test_pdf_verify.py`, and `tests/test_timeline.py`.
+
+### What was built
+
+- `tests/conftest.py`: new autouse fixture `_no_pdf_fetch_courtesy_delay` that patches
+  `wake.pdf_fetch.time.sleep` to a no-op for every test in the suite by default. Chosen over patching
+  `rate_limit_s` to `0` via config, because `_fetch_pdf_to` hardcodes a `1.0`s fallback for any source
+  absent from the `rate_limit_s` map (line 248) -- zeroing the config dict wouldn't zero that fallback,
+  whereas patching `time.sleep` directly neutralizes the delay regardless of where its duration comes
+  from.
+- `tests/test_pdf_fetch.py`: new `test_fetch_pdf_courtesy_delay_contract`, the one test that actually
+  asserts the delay behavior rather than having it silently muted -- it shadows the autouse fixture with
+  its own recording mock and asserts: `openalex_oa` never sleeps (its URL is already in hand, no network
+  call of its own), a source with an explicit `rate_limit_s` entry sleeps that exact value, and a source
+  absent from the map falls back to the hardcoded `1.0`s default, all in source order. This pins the one
+  piece of behavior that was previously only exercised as an incidental side effect of real sleeping,
+  with nothing checking the value -- so it doesn't regress silently now that sleeping is muted elsewhere.
+- No production code changed. Real network calls made by tests that don't mock the source-lookup
+  functions themselves (e.g. `tests/test_pdf_verify.py`'s CLI tests, which mock `check_pdf_metadata` but
+  not the underlying `osti`/`semanticscholar` lookups) are left as-is -- explicitly out of scope for this
+  change, which targets only the sleep-based slowness.
+
+### Verification
+
+Before: `pytest tests/ -m "not network"` took ~350s (947 passed, 15 deselected). After: same suite, same
+pass count plus the one new test (948 passed, 15 deselected), in ~28-100s depending on machine load --
+per-file spot checks: `test_pdf_fetch.py` 20s+ -> 0.34s, `test_pdf_verify.py` ~32s -> 2.87s,
+`test_timeline.py` ~26s -> 2.44s, `test_evidence_rendering.py` ~32s -> 2.81s, `test_seed_fetch_pdf.py`
+~14s -> 1.94s. `ruff check wake/ tests/` and `mypy wake/` both clean. No test assertions changed in any
+pre-existing test -- confirmed by re-running the full suite and comparing pass counts against the
+pre-change baseline (947 -> 948, delta is exactly the one new contract test).

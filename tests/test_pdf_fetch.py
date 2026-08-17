@@ -3,7 +3,7 @@
 """Tests for wake.pdf_fetch — the PDF-acquisition orchestrator, offline."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from wake import pdf_fetch
 
@@ -345,6 +345,41 @@ def test_fetch_pdf_default_source_order_has_openalex_oa_first_and_primo_before_c
     assert sources[0] == "openalex_oa"
     assert sources.index("primo") < sources.index("core")
     assert sources.index("osti") < sources.index("primo")
+
+
+def test_fetch_pdf_courtesy_delay_contract(tmp_path):
+    """_fetch_pdf_to sleeps `rate_limit_s` (default 1.0s) after every
+    non-openalex_oa source attempt as a courtesy delay against live APIs
+    -- but never for openalex_oa, since that source's URL is already in
+    hand and never makes a network call of its own. This is the one test
+    that actually exercises time.sleep for real (every other pdf_fetch
+    test gets it silenced by the autouse _no_pdf_fetch_courtesy_delay
+    fixture in conftest.py, which would otherwise hide a regression
+    here)."""
+    fake_cfg = {
+        "sources": ["openalex_oa", "osti", "semanticscholar"],
+        "rate_limit_s": {"osti": 2.5},  # semanticscholar left unset -> default 1.0
+    }
+    with patch("wake.pdf_fetch._cfg", return_value=fake_cfg), \
+         patch("wake.pdf_fetch.osti.get_fulltext_pdf_url_by_doi", return_value="https://osti.example/paywall.pdf"), \
+         patch("wake.pdf_fetch.semanticscholar.get_open_access_pdf_url_by_doi", return_value="https://s2.example/real.pdf"), \
+         patch("wake.pdf_fetch.requests.get") as mock_get, \
+         patch("wake.pdf_fetch.time.sleep") as mock_sleep:
+        mock_get.side_effect = [
+            _mock_response(content=_FAKE_HTML_BYTES),  # openalex_oa: not a real PDF
+            _mock_response(content=_FAKE_HTML_BYTES),  # osti: not a real PDF
+            _mock_response(content=_FAKE_PDF_BYTES),   # semanticscholar: real PDF
+        ]
+        result = pdf_fetch.fetch_pdf(
+            "W123", "W456", doi="10.1016/fake",
+            oa_pdf_url="https://oa.example/paper.pdf", base=tmp_path, verbose=False,
+        )
+    assert result["ok"] is True
+    assert result["source"] == "semanticscholar"
+    # openalex_oa is tried (its URL yields no valid PDF, so the chain
+    # falls through) but never sleeps; only osti and semanticscholar do,
+    # each for their own configured/default delay, in source order.
+    assert mock_sleep.call_args_list == [call(2.5), call(1.0)]
 
 
 def test_fallback_links_includes_google_scholar_when_title_present():
